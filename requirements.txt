@@ -1,8 +1,12 @@
-# Criar um ambiente virtual (ex: chamado 'venv_combined_script')
-python -m venv venv_combined_script
+# requirements.txt
 
-# Ativar o ambiente virtual
-# No Windows:
-# venv_combined_script\Scripts\activate
-# No macOS/Linux:
-# source venv_combined_script/bin/activate
+# Para carregar variáveis de ambiente de arquivos .env
+python-dotenv~=1.0.0
+
+# SDK oficial do Google para interagir com os modelos Gemini
+# Usado tanto pelo Harvester (para análise de imagem, mesmo que falhe com o modelo especificado)
+# quanto pelo Analisador de Leads (para processamento de texto).
+google-generativeai~=0.6.0
+
+# Para automação de navegador (web scraping na fase Harvester)
+playwright~=1.44.0
