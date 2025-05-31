@@ -1,0 +1,29 @@
+{
+  "original_query": "escritórios de advocacia em curitiba",
+  "collection_timestamp": "2025-05-29T14:52:45.581542",
+  "total_sites_targeted_for_processing": 48,
+  "total_sites_processed_in_extraction_phase": 48,
+  "sites_data": [
+
+    {
+      "url": "https://romano.adv.br/",
+      "google_search_data": {
+        "title": "Romano Advogados – Escritório de Advocacia Empresarial ...",
+        "snippet": "Romano Advogados https:// · Translate this page"
+      },
+      "extracted_text_content": "FALHA NA EXTRAÇÃO: TIMEOUT NA NAVEGAÇÃO.",
+      "extraction_status_message": "FALHA NA EXTRAÇÃO: TIMEOUT NA NAVEGAÇÃO.",
+      "screenshot_filepath": null
+    },
+    {
+      "url": "https://araujolisot.com.br/",
+      "google_search_data": {
+        "title": "Araujo & Lisot Advogados: Escritório de advocacia em ...",
+        "snippet": "https:// · Translate this page"
+      },
+      "extracted_text_content": "Lorem Ipsum 3\n22 de março de 2021\nLorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut\nLorem Ipsum 2\n22 de março de 2021\nLorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut\nLorem Ipsum\n22 de março de 2021\nLorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut",
+      "extraction_status_message": "SUCESSO NA EXTRAÇÃO",
+      "screenshot_filepath": "screenshot_extract_araujolisotcombr__142812.png"
+    }  
+   ]
+}
