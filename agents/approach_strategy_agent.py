@@ -3,7 +3,7 @@ Approach Strategy Agent for Nellia Prospector
 Develops strategic approach plans for leads with personas.
 """
 
-from typing import Dict, List, Optional
+from typing import Optional
 from datetime import datetime
 from loguru import logger
 import json
@@ -15,18 +15,21 @@ from data_models.lead_structures import (
     CommunicationChannel
 )
 from agents.base_agent import BaseAgent
-from core_logic.llm_client import LLMClient
+from core_logic.llm_client import LLMClientBase
 
-
-class ApproachStrategyAgent(BaseAgent):
+class ApproachStrategyAgent(BaseAgent[LeadWithPersona, LeadWithStrategy]):
     """Agent responsible for creating strategic approach plans for leads"""
     
-    def __init__(self, llm_client: Optional[LLMClient] = None, product_service_context: str = ""):
-        super().__init__(agent_name="ApproachStrategyAgent")
-        self.llm_client = llm_client or LLMClient()
+    def __init__(self, llm_client: Optional[LLMClientBase] = None, product_service_context: str = ""):
+        super().__init__(
+            name="ApproachStrategyAgent",
+            description="Develops strategic approach plans for leads with personas",
+            llm_client=llm_client,
+            config={"product_service_context": product_service_context}
+        )
         self.product_service_context = product_service_context
     
-    def execute(self, lead_with_persona: LeadWithPersona) -> LeadWithStrategy:
+    def process(self, lead_with_persona: LeadWithPersona) -> LeadWithStrategy:
         """
         Create a strategic approach plan for the lead with persona
         
@@ -36,175 +39,190 @@ class ApproachStrategyAgent(BaseAgent):
         Returns:
             LeadWithStrategy with complete approach strategy
         """
-        self.start_execution()
+        logger.info(f"Creating strategy for: {lead_with_persona.analyzed_lead.validated_lead.site_data.url}")
         
-        try:
-            logger.info(f"Creating strategy for lead: {lead_with_persona.analyzed_lead.validated_lead.site_data.url}")
-            
-            # Create strategy using LLM
-            strategy = self._create_strategy(lead_with_persona)
-            
-            # Build result
-            result = LeadWithStrategy(
-                lead_with_persona=lead_with_persona,
-                strategy=strategy,
-                strategy_timestamp=datetime.now()
-            )
-            
-            self.end_execution(success=True)
-            logger.info(f"Strategy created: {strategy.primary_channel.value} approach for {strategy.first_interaction_goal}")
-            
-            return result
-            
-        except Exception as e:
-            self.end_execution(success=False, error=str(e))
-            logger.error(f"Error creating strategy: {e}")
-            raise
+        # Build the prompt for strategy creation
+        prompt = self._build_strategy_prompt(lead_with_persona)
+        
+        # Generate LLM response
+        response = self.generate_llm_response(prompt)
+        
+        # Parse the response
+        strategy_data = self.parse_llm_json_response(response, None)
+        
+        # Create ApproachStrategy from parsed data
+        strategy = self._create_approach_strategy(strategy_data)
+        
+        # Build and return result
+        result = LeadWithStrategy(
+            lead_with_persona=lead_with_persona,
+            strategy=strategy,
+            strategy_timestamp=datetime.now()
+        )
+        
+        logger.info(f"Strategy created: {strategy.primary_channel.value} approach for {strategy.first_interaction_goal}")
+        return result
     
-    def _create_strategy(self, lead_with_persona: LeadWithPersona) -> ApproachStrategy:
-        """Create strategy using LLM analysis"""
-        
-        # Prepare context for LLM
-        strategy_context = {
-            "url": str(lead_with_persona.analyzed_lead.validated_lead.site_data.url),
-            "company_sector": lead_with_persona.analyzed_lead.analysis.company_sector,
-            "company_size": lead_with_persona.analyzed_lead.analysis.company_size_estimate,
-            "main_services": lead_with_persona.analyzed_lead.analysis.main_services,
-            "challenges": lead_with_persona.analyzed_lead.analysis.potential_challenges,
-            "culture": lead_with_persona.analyzed_lead.analysis.company_culture_values,
-            "persona_role": lead_with_persona.persona.likely_role,
-            "persona_name": lead_with_persona.persona.fictional_name,
-            "persona_responsibilities": lead_with_persona.persona.key_responsibilities,
-            "persona_goals": lead_with_persona.persona.professional_goals,
-            "persona_challenges": lead_with_persona.persona.main_challenges,
-            "persona_motivations": lead_with_persona.persona.motivations,
-            "communication_style": lead_with_persona.persona.communication_style,
-            "decision_making": lead_with_persona.persona.decision_making_process,
-            "product_service": self.product_service_context
-        }
-        
-        prompt = self._build_strategy_prompt(strategy_context)
-        
-        # Get LLM response
-        response = self.llm_client.generate_text(prompt)
-        
-        # Parse response into ApproachStrategy
-        return self._parse_strategy_response(response)
-    
-    def _build_strategy_prompt(self, context: dict) -> str:
+    def _build_strategy_prompt(self, lead_with_persona: LeadWithPersona) -> str:
         """Build the prompt for strategy creation"""
         
-        return f"""
-Você é um Estrategista de Vendas e Abordagem Consultiva Sênior.
-Sua tarefa é desenvolver um plano de abordagem personalizado e eficaz para a persona identificada na empresa analisada.
+        analyzed_lead = lead_with_persona.analyzed_lead
+        persona = lead_with_persona.persona
+        
+        # Extract Brazilian business culture context
+        brazilian_context = self._get_brazilian_business_context(analyzed_lead.analysis.company_sector)
+        
+        return f"""Você é um Estrategista de Vendas B2B Sênior especializado no mercado brasileiro.
+Sua tarefa é desenvolver um plano de abordagem personalizado e eficaz para conquistar o tomador de decisão identificado.
+
+OBJETIVO: Criar uma estratégia que resulte em 527% ROI através de abordagem altamente personalizada.
 
 CONTEXTO DA EMPRESA:
-- URL: {context['url']}
-- Setor: {context['company_sector']}
-- Tamanho: {context['company_size']}
-- Principais serviços: {', '.join(context['main_services'])}
-- Desafios identificados: {', '.join(context['challenges'])}
-- Cultura: {context['culture']}
+- URL: {analyzed_lead.validated_lead.site_data.url}
+- Setor: {analyzed_lead.analysis.company_sector}
+- Tamanho: {analyzed_lead.analysis.company_size_estimate or 'Não determinado'}
+- Principais serviços: {', '.join(analyzed_lead.analysis.main_services)}
+- Desafios identificados: {', '.join(analyzed_lead.analysis.potential_challenges)}
+- Cultura: {analyzed_lead.analysis.company_culture_values or 'Não determinada'}
+- Diagnóstico: {analyzed_lead.analysis.general_diagnosis}
 
-CONTEXTO DA PERSONA ({context['persona_role']}):
-- Nome fictício: {context['persona_name']}
-- Responsabilidades: {', '.join(context['persona_responsibilities'])}
-- Objetivos profissionais: {', '.join(context['persona_goals'])}
-- Principais desafios: {', '.join(context['persona_challenges'])}
-- Motivações: {', '.join(context['persona_motivations'])}
-- Estilo de comunicação: {context['communication_style']}
-- Processo de decisão: {context['decision_making']}
+CONTEXTO DA PERSONA ({persona.likely_role}):
+- Nome fictício: {persona.fictional_name}
+- Responsabilidades: {', '.join(persona.key_responsibilities)}
+- Objetivos profissionais: {', '.join(persona.professional_goals)}
+- Principais desafios: {', '.join(persona.main_challenges)}
+- Motivações: {', '.join(persona.motivations)}
+- Estilo de comunicação: {persona.communication_style}
+- Processo de decisão: {persona.decision_making_process or 'Não especificado'}
 
-PRODUTO/SERVIÇO A SER OFERECIDO:
-{context['product_service']}
+PRODUTO/SERVIÇO NELLIA:
+{self.product_service_context or "Soluções de IA para otimização de processos de vendas e geração de leads B2B"}
+
+{brazilian_context}
 
 INSTRUÇÕES:
-Desenvolva um plano de abordagem estratégico específico para esta persona e empresa. Responda no formato JSON com as seguintes chaves:
+Desenvolva um plano de abordagem estratégico que conecte as necessidades específicas desta persona 
+com os benefícios do nosso produto/serviço. Foque na criação de valor e relacionamento.
 
+Responda APENAS com JSON válido no seguinte formato:
 {{
     "primary_channel": "email|linkedin|whatsapp|phone",
     "secondary_channel": "email|linkedin|whatsapp|phone|null",
     "tone_of_voice": "Tom e estilo de comunicação recomendado",
-    "key_value_propositions": ["valor1", "valor2", "valor3"],
+    "key_value_propositions": ["proposta1", "proposta2", "proposta3"],
     "talking_points": ["ponto1", "ponto2", "ponto3"],
     "potential_objections": {{
-        "objecao1": "resposta1",
-        "objecao2": "resposta2",
-        "objecao3": "resposta3"
+        "objecao1": "resposta consultiva 1",
+        "objecao2": "resposta consultiva 2",
+        "objecao3": "resposta consultiva 3"
     }},
     "opening_questions": ["pergunta1", "pergunta2"],
-    "first_interaction_goal": "Objetivo específico do primeiro contato",
-    "follow_up_strategy": "Estratégia de follow-up se necessário"
+    "first_interaction_goal": "Objetivo específico e mensurável do primeiro contato",
+    "follow_up_strategy": "Estratégia detalhada de follow-up"
 }}
 
-DIRETRIZES:
-- Base a estratégia no setor, persona e características da empresa
-- Escolha o canal mais apropriado considerando o perfil da persona
-- Foque nos benefícios mais relevantes do produto/serviço para ESTA persona
-- Antecipe objeções comuns e prepare respostas consultivas
-- Sugira perguntas abertas que despertem interesse genuíno
-- Seja específico e acionável
-
-Responda APENAS com o JSON válido, sem explicações adicionais.
-"""
+DIRETRIZES CRÍTICAS:
+- Escolha o canal baseado no perfil da persona e cultura da empresa
+- Conecte DIRETAMENTE nossos benefícios aos desafios identificados
+- Antecipe objeções e prepare respostas consultivas (não defensivas)
+- Sugira perguntas que despertem curiosidade genuína
+- Seja específico e acionável - evite generalidades
+- Considere o contexto brasileiro de relacionamento antes do negócio"""
     
-    def _parse_strategy_response(self, response: str) -> ApproachStrategy:
-        """Parse LLM response into ApproachStrategy"""
+    def _get_brazilian_business_context(self, sector: str) -> str:
+        """Get Brazilian business context based on sector"""
+        
+        context_map = {
+            "tecnologia": """
+CONTEXTO BRASILEIRO - SETOR TECNOLOGIA:
+- Decisores são técnicos e valorizam dados concretos
+- Comunicação pode ser mais direta e técnica
+- LinkedIn é muito utilizado para networking
+- Preferem casos de uso e ROI comprovados""",
+            
+            "serviços": """
+CONTEXTO BRASILEIRO - SETOR SERVIÇOS:
+- Relacionamento é fundamental - invista tempo nisso
+- Comunicação mais consultiva e menos técnica
+- Referências e networking são muito valorizados
+- Processo de decisão pode ser mais longo""",
+            
+            "indústria": """
+CONTEXTO BRASILEIRO - SETOR INDUSTRIAL:
+- Conservadores e focados em ROI tangível
+- Preferem reuniões presenciais ou por telefone
+- Hierarquia bem definida - respeite a cadeia
+- Casos de sucesso no setor são essenciais"""
+        }
+        
+        # Find matching context or use default
+        for key, context in context_map.items():
+            if key.lower() in sector.lower():
+                return context
+                
+        return """
+CONTEXTO BRASILEIRO GERAL:
+- Relacionamento precede negócio - invista na conexão pessoal
+- Respeite hierarquia e formalidade apropriada
+- Seja direto mas cordial
+- Demonstre conhecimento do mercado brasileiro"""
+    
+    def _create_approach_strategy(self, strategy_data: dict) -> ApproachStrategy:
+        """Create ApproachStrategy from parsed JSON data"""
         
         try:
-            # Clean response and extract JSON
-            response = response.strip()
-            if response.startswith('```json'):
-                response = response[7:]
-            if response.endswith('```'):
-                response = response[:-3]
-            response = response.strip()
-            
-            data = json.loads(response)
-            
             # Map channel strings to enum values
-            primary_channel = self._map_channel(data.get('primary_channel', 'email'))
+            primary_channel = self._map_channel(strategy_data.get('primary_channel', 'email'))
             secondary_channel = None
-            if data.get('secondary_channel') and data.get('secondary_channel') != 'null':
-                secondary_channel = self._map_channel(data.get('secondary_channel'))
+            
+            secondary_str = strategy_data.get('secondary_channel')
+            if secondary_str and secondary_str != 'null':
+                secondary_channel = self._map_channel(secondary_str)
             
             return ApproachStrategy(
                 primary_channel=primary_channel,
                 secondary_channel=secondary_channel,
-                tone_of_voice=data.get('tone_of_voice', 'Profissional e direto'),
-                key_value_propositions=data.get('key_value_propositions', ['Benefícios não especificados']),
-                talking_points=data.get('talking_points', ['Pontos não especificados']),
-                potential_objections=data.get('potential_objections', {'objeção': 'resposta'}),
-                opening_questions=data.get('opening_questions', ['Como está lidando com...?']),
-                first_interaction_goal=data.get('first_interaction_goal', 'Despertar interesse e agendar conversa'),
-                follow_up_strategy=data.get('follow_up_strategy', 'Follow-up em 3-5 dias úteis')
+                tone_of_voice=strategy_data.get('tone_of_voice', 'Profissional e consultivo'),
+                key_value_propositions=strategy_data.get('key_value_propositions', ['Otimização de processos', 'Aumento de eficiência']),
+                talking_points=strategy_data.get('talking_points', ['Benefícios específicos para o setor']),
+                potential_objections=strategy_data.get('potential_objections', {
+                    'já temos uma solução': 'Entendo. Que resultados vocês têm obtido?',
+                    'não temos orçamento': 'Compreendo. Vamos explorar o ROI potencial?'
+                }),
+                opening_questions=strategy_data.get('opening_questions', ['Como vocês lidam atualmente com esse desafio?']),
+                first_interaction_goal=strategy_data.get('first_interaction_goal', 'Despertar interesse e compreender necessidades'),
+                follow_up_strategy=strategy_data.get('follow_up_strategy', 'Follow-up educacional em 3-5 dias úteis')
             )
             
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse strategy JSON response: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to create strategy from data: {e}")
             # Return fallback strategy
             return ApproachStrategy(
                 primary_channel=CommunicationChannel.EMAIL,
                 secondary_channel=CommunicationChannel.LINKEDIN,
                 tone_of_voice="Profissional e consultivo",
-                key_value_propositions=["Otimização de processos", "Redução de custos", "Aumento de eficiência"],
-                talking_points=["Benefícios específicos para o setor", "Cases de sucesso similares"],
+                key_value_propositions=[
+                    "Otimização de processos de vendas",
+                    "Aumento de 527% no ROI",
+                    "Personalização de abordagem em escala"
+                ],
+                talking_points=[
+                    "Cases de sucesso no mercado brasileiro",
+                    "Integração com processos existentes",
+                    "Suporte especializado em português"
+                ],
                 potential_objections={
-                    "já temos uma solução": "Entendo. Que resultados vocês têm obtido com a solução atual?",
-                    "não temos orçamento": "Compreendo a preocupação. Vamos explorar o ROI potencial primeiro?",
-                    "não é prioridade": "Faz sentido. Quando seria um bom momento para reavaliarmos?"
+                    "já temos uma solução": "Entendo. Como está funcionando? Vamos comparar resultados?",
+                    "não temos orçamento": "Faz sentido. Vamos calcular o ROI potencial primeiro?",
+                    "não é prioridade": "Compreendo. Quando seria um bom momento para reavaliarmos?"
                 },
                 opening_questions=[
-                    "Como vocês lidam atualmente com [desafio identificado]?",
-                    "Qual o maior desafio que vocês enfrentam em [área relevante]?"
+                    "Como vocês lidam atualmente com a geração de leads qualificados?",
+                    "Qual o maior desafio no processo comercial atual?"
                 ],
                 first_interaction_goal="Despertar interesse e compreender necessidades específicas",
-                follow_up_strategy="Follow-up educacional com conteúdo relevante"
+                follow_up_strategy="Follow-up com conteúdo educacional personalizado"
             )
-        
-        except Exception as e:
-            logger.error(f"Error parsing strategy response: {e}")
-            raise
     
     def _map_channel(self, channel_str: str) -> CommunicationChannel:
         """Map string to CommunicationChannel enum"""

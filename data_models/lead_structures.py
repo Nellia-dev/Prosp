@@ -199,8 +199,221 @@ class PersonalizedOutreachMessage(A2AAgentMessage):
     final_prospect: FinalProspectPackage
 
 
+# Enhanced Intelligence and Processing Models for Integration with new-cw.py capabilities
+
+class ContactInformation(BaseModel):
+    """Contact information extracted from lead analysis"""
+    emails_found: List[str] = Field(default_factory=list, description="Email addresses found")
+    instagram_profiles: List[str] = Field(default_factory=list, description="Instagram profile URLs")
+    linkedin_profiles: List[str] = Field(default_factory=list, description="LinkedIn profile URLs")
+    phone_numbers: List[str] = Field(default_factory=list, description="Phone numbers found")
+    extraction_confidence: float = Field(default=0.0, ge=0, le=1, description="Confidence in extraction accuracy")
+    tavily_search_suggestions: List[str] = Field(default_factory=list, description="Suggested searches for additional contact info")
+
+class PainPointAnalysis(BaseModel):
+    """Deep analysis of company pain points and challenges"""
+    primary_pain_category: str = Field(..., description="Main category of pain point")
+    detailed_pain_points: List[Dict[str, str]] = Field(
+        default_factory=list, 
+        description="Detailed pain points with descriptions and impacts"
+    )
+    business_impact_assessment: str = Field(..., description="Assessment of business impact")
+    urgency_level: str = Field(default="medium", description="Urgency level: low, medium, high, critical")
+    investigative_questions: List[str] = Field(
+        default_factory=list, 
+        description="Strategic questions to deepen understanding"
+    )
+    potential_solutions_alignment: Dict[str, str] = Field(
+        default_factory=dict,
+        description="How offered solution aligns with each pain point"
+    )
+
+class CompetitorIntelligence(BaseModel):
+    """Competitive intelligence and market analysis"""
+    mentioned_competitors: List[str] = Field(default_factory=list, description="Competitors mentioned on site")
+    current_solutions: List[str] = Field(default_factory=list, description="Current solutions in use")
+    competitive_advantages: List[str] = Field(default_factory=list, description="Our advantages vs competitors")
+    market_positioning: Optional[str] = Field(None, description="Target's market position")
+    switching_barriers: List[str] = Field(default_factory=list, description="Barriers to switching from current solution")
+    competitive_threats: List[str] = Field(default_factory=list, description="Threats from existing solutions")
+
+class PurchaseTriggers(BaseModel):
+    """Purchase triggers and timing indicators"""
+    recent_events: List[str] = Field(default_factory=list, description="Recent company events")
+    market_signals: List[str] = Field(default_factory=list, description="Market timing signals")
+    timing_indicators: List[str] = Field(default_factory=list, description="Indicators of purchase timing")
+    growth_signals: List[str] = Field(default_factory=list, description="Company growth indicators")
+    urgency_drivers: List[str] = Field(default_factory=list, description="What's driving urgency")
+    budget_cycle_insights: Optional[str] = Field(None, description="Budget cycle information")
+
+class LeadQualification(BaseModel):
+    """Lead qualification scoring and assessment"""
+    qualification_tier: str = Field(..., description="High Potential, Medium, Low, Not Qualified")
+    qualification_score: float = Field(..., ge=0, le=1, description="Numerical qualification score")
+    qualification_reasoning: List[str] = Field(
+        default_factory=list, 
+        description="Reasons for qualification score"
+    )
+    fit_score: float = Field(default=0.0, ge=0, le=1, description="Product-market fit score")
+    readiness_score: float = Field(default=0.0, ge=0, le=1, description="Purchase readiness score")
+    authority_score: float = Field(default=0.0, ge=0, le=1, description="Decision-making authority score")
+    budget_likelihood: str = Field(default="unknown", description="Budget availability likelihood")
+
+class ExternalIntelligence(BaseModel):
+    """External intelligence gathered from Tavily and other sources"""
+    tavily_enrichment: str = Field(default="", description="Enriched data from Tavily API")
+    market_research: str = Field(default="", description="Additional market research")
+    news_analysis: str = Field(default="", description="Recent news and developments")
+    social_signals: List[str] = Field(default_factory=list, description="Social media signals")
+    enrichment_confidence: float = Field(default=0.0, ge=0, le=1, description="Confidence in enriched data")
+    sources_used: List[str] = Field(default_factory=list, description="Data sources utilized")
+
+class ToTStrategyOption(BaseModel):
+    """Tree of Thought strategy option"""
+    strategy_name: str = Field(..., description="Name of the strategy")
+    strategy_rationale: str = Field(..., description="Reasoning behind the strategy")
+    primary_channel: str = Field(..., description="Recommended communication channel")
+    key_hook: str = Field(..., description="Main conversation starter")
+    success_probability: str = Field(..., description="Estimated success probability")
+    pros: List[str] = Field(default_factory=list, description="Advantages of this strategy")
+    cons: List[str] = Field(default_factory=list, description="Disadvantages and risks")
+
+class ToTStrategyEvaluation(BaseModel):
+    """Tree of Thought strategy evaluation and selection"""
+    strategy_options: List[ToTStrategyOption] = Field(default_factory=list, description="Strategy options considered")
+    selected_strategy: ToTStrategyOption = Field(..., description="Selected optimal strategy")
+    evaluation_criteria: List[str] = Field(default_factory=list, description="Criteria used for evaluation")
+    decision_rationale: str = Field(..., description="Why this strategy was selected")
+    contingency_plan: Optional[str] = Field(None, description="Backup approach if primary fails")
+
+class ObjectionFramework(BaseModel):
+    """Framework for handling objections"""
+    common_objections: Dict[str, str] = Field(
+        default_factory=dict, 
+        description="Common objections and responses"
+    )
+    objection_categories: List[str] = Field(default_factory=list, description="Categories of objections")
+    response_templates: Dict[str, str] = Field(
+        default_factory=dict, 
+        description="Template responses for objection types"
+    )
+    escalation_strategies: List[str] = Field(
+        default_factory=list, 
+        description="Strategies when objections persist"
+    )
+
+class ValueProposition(BaseModel):
+    """Customized value proposition"""
+    proposition_text: str = Field(..., description="The value proposition statement")
+    target_pain_points: List[str] = Field(default_factory=list, description="Pain points this addresses")
+    quantified_benefits: List[str] = Field(default_factory=list, description="Quantifiable benefits")
+    proof_points: List[str] = Field(default_factory=list, description="Evidence supporting the proposition")
+    differentiation_factors: List[str] = Field(default_factory=list, description="How we differentiate")
+
+class EnhancedStrategy(BaseModel):
+    """Enhanced strategy combining multiple intelligence sources"""
+    external_intelligence: ExternalIntelligence = Field(..., description="External intelligence gathered")
+    contact_information: ContactInformation = Field(..., description="Contact information extracted")
+    pain_point_analysis: PainPointAnalysis = Field(..., description="Deep pain point analysis")
+    competitor_intelligence: CompetitorIntelligence = Field(..., description="Competitive analysis")
+    purchase_triggers: PurchaseTriggers = Field(..., description="Purchase timing triggers")
+    lead_qualification: LeadQualification = Field(..., description="Lead qualification assessment")
+    tot_strategy_evaluation: ToTStrategyEvaluation = Field(..., description="ToT strategy analysis")
+    value_propositions: List[ValueProposition] = Field(default_factory=list, description="Customized value props")
+    objection_framework: ObjectionFramework = Field(..., description="Objection handling framework")
+    strategic_questions: List[str] = Field(default_factory=list, description="Strategic discovery questions")
+
+class EnhancedPersonalizedMessage(BaseModel):
+    """Enhanced personalized message with multiple variants"""
+    primary_message: PersonalizedMessage = Field(..., description="Primary message variant")
+    alternative_messages: List[PersonalizedMessage] = Field(
+        default_factory=list, 
+        description="Alternative message variants for A/B testing"
+    )
+    personalization_score: float = Field(..., ge=0, le=1, description="Level of personalization achieved")
+    cultural_appropriateness_score: float = Field(
+        default=0.0, ge=0, le=1, 
+        description="Brazilian cultural appropriateness score"
+    )
+    estimated_response_rate: float = Field(
+        default=0.0, ge=0, le=1, 
+        description="Estimated response rate"
+    )
+    message_variants_rationale: str = Field(
+        default="", 
+        description="Explanation of why these variants were created"
+    )
+
+class InternalBriefing(BaseModel):
+    """Internal briefing for sales team"""
+    executive_summary: str = Field(..., description="60-second executive summary")
+    key_talking_points: List[str] = Field(default_factory=list, description="Key points for conversation")
+    critical_objections: Dict[str, str] = Field(
+        default_factory=dict, 
+        description="Most likely objections and responses"
+    )
+    success_metrics: List[str] = Field(default_factory=list, description="How to measure success")
+    next_steps: List[str] = Field(default_factory=list, description="Recommended next steps")
+    decision_maker_profile: str = Field(..., description="Quick decision maker overview")
+    urgency_level: str = Field(default="medium", description="Urgency of follow-up")
+
+class ComprehensiveProspectPackage(BaseModel):
+    """Complete enhanced prospect package with all intelligence"""
+    analyzed_lead: AnalyzedLead = Field(..., description="Base analyzed lead data")
+    enhanced_strategy: EnhancedStrategy = Field(..., description="Enhanced strategic analysis")
+    enhanced_personalized_message: EnhancedPersonalizedMessage = Field(
+        ..., description="Enhanced personalized messaging"
+    )
+    internal_briefing: InternalBriefing = Field(..., description="Internal sales briefing")
+    processing_metadata: Dict[str, Any] = Field(
+        default_factory=dict, 
+        description="Processing metadata and metrics"
+    )
+    confidence_score: float = Field(..., ge=0, le=1, description="Overall confidence in analysis")
+    roi_potential_score: float = Field(
+        default=0.0, ge=0, le=1, 
+        description="Estimated ROI potential (0-1 scale)"
+    )
+    brazilian_market_fit: float = Field(
+        default=0.0, ge=0, le=1, 
+        description="Brazilian market cultural fit score"
+    )
+    processing_timestamp: datetime = Field(default_factory=datetime.now)
+    
+    def to_enhanced_export_dict(self) -> Dict[str, Any]:
+        """Convert to enhanced dictionary suitable for export"""
+        base_dict = self.analyzed_lead.validated_lead.site_data
+        return {
+            "lead_url": str(base_dict.url),
+            "company_name": base_dict.google_search_data.title if base_dict.google_search_data else "Unknown",
+            "overall_confidence": self.confidence_score,
+            "roi_potential": self.roi_potential_score,
+            "qualification_tier": self.enhanced_strategy.lead_qualification.qualification_tier,
+            "qualification_score": self.enhanced_strategy.lead_qualification.qualification_score,
+            "primary_pain_category": self.enhanced_strategy.pain_point_analysis.primary_pain_category,
+            "selected_strategy": self.enhanced_strategy.tot_strategy_evaluation.selected_strategy.strategy_name,
+            "recommended_channel": self.enhanced_personalized_message.primary_message.channel.value,
+            "personalization_score": self.enhanced_personalized_message.personalization_score,
+            "brazilian_fit_score": self.brazilian_market_fit,
+            "contacts_found": len(self.enhanced_strategy.contact_information.emails_found),
+            "purchase_triggers": len(self.enhanced_strategy.purchase_triggers.recent_events),
+            "processing_timestamp": self.processing_timestamp.isoformat(),
+            "executive_summary": self.internal_briefing.executive_summary[:200] + "..."
+        }
+
 # Additional A2A message types for future implementation
 class InteractionLogMessage(A2AAgentMessage):
     """For logging interactions in a distributed system"""
     interaction_type: str
-    interaction_data: dict 
+    interaction_data: dict
+
+# Enhanced A2A messages for new capabilities
+class EnhancedProspectMessage(A2AAgentMessage):
+    """Message containing comprehensive prospect package for A2A communication"""
+    comprehensive_prospect: ComprehensiveProspectPackage
+
+class IntelligenceEnrichmentMessage(A2AAgentMessage):
+    """Message for external intelligence enrichment requests"""
+    company_name: str
+    enrichment_requirements: List[str]
+    tavily_queries: List[str]

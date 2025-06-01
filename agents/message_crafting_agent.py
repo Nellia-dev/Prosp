@@ -3,7 +3,7 @@ Message Crafting Agent for Nellia Prospector
 Creates personalized outreach messages based on strategy and persona.
 """
 
-from typing import List, Optional
+from typing import Optional
 from datetime import datetime
 from loguru import logger
 import json
@@ -16,17 +16,19 @@ from data_models.lead_structures import (
     CommunicationChannel
 )
 from agents.base_agent import BaseAgent
-from core_logic.llm_client import LLMClient
+from core_logic.llm_client import LLMClientBase
 
-
-class MessageCraftingAgent(BaseAgent):
+class MessageCraftingAgent(BaseAgent[LeadWithStrategy, FinalProspectPackage]):
     """Agent responsible for creating personalized outreach messages"""
     
-    def __init__(self, llm_client: Optional[LLMClient] = None):
-        super().__init__(agent_name="MessageCraftingAgent")
-        self.llm_client = llm_client or LLMClient()
+    def __init__(self, llm_client: Optional[LLMClientBase] = None):
+        super().__init__(
+            name="MessageCraftingAgent",
+            description="Creates personalized outreach messages for B2B leads",
+            llm_client=llm_client
+        )
     
-    def execute(self, lead_with_strategy: LeadWithStrategy) -> FinalProspectPackage:
+    def process(self, lead_with_strategy: LeadWithStrategy) -> FinalProspectPackage:
         """
         Create personalized outreach message for the lead with strategy
         
@@ -36,124 +38,105 @@ class MessageCraftingAgent(BaseAgent):
         Returns:
             FinalProspectPackage with ready-to-send message
         """
-        self.start_execution()
+        lead_url = str(lead_with_strategy.lead_with_persona.analyzed_lead.validated_lead.site_data.url)
+        logger.info(f"Creating message for: {lead_url}")
         
-        try:
-            lead_url = str(lead_with_strategy.lead_with_persona.analyzed_lead.validated_lead.site_data.url)
-            logger.info(f"Creating message for lead: {lead_url}")
-            
-            # Create personalized message using LLM
-            message = self._create_message(lead_with_strategy)
-            
-            # Build final result
-            result = FinalProspectPackage(
-                lead_with_strategy=lead_with_strategy,
-                personalized_message=message,
-                processing_complete_timestamp=datetime.now(),
-                lead_id=self._generate_lead_id(lead_url),
-                confidence_score=self._calculate_confidence_score(lead_with_strategy)
-            )
-            
-            self.end_execution(success=True)
-            logger.info(f"Message created: {message.channel.value} message with CTA: {message.call_to_action[:50]}...")
-            
-            return result
-            
-        except Exception as e:
-            self.end_execution(success=False, error=str(e))
-            logger.error(f"Error creating message: {e}")
-            raise
+        # Build the prompt for message creation
+        prompt = self._build_message_prompt(lead_with_strategy)
+        
+        # Generate LLM response
+        response = self.generate_llm_response(prompt)
+        
+        # Parse the response
+        message_data = self.parse_llm_json_response(response, None)
+        
+        # Create PersonalizedMessage from parsed data
+        message = self._create_personalized_message(message_data, lead_with_strategy.strategy.primary_channel)
+        
+        # Build final result
+        result = FinalProspectPackage(
+            lead_with_strategy=lead_with_strategy,
+            personalized_message=message,
+            processing_complete_timestamp=datetime.now(),
+            lead_id=self._generate_lead_id(lead_url),
+            confidence_score=self._calculate_confidence_score(lead_with_strategy)
+        )
+        
+        logger.info(f"Message created: {message.channel.value} message with CTA: {message.call_to_action[:50]}...")
+        return result
     
-    def _create_message(self, lead_with_strategy: LeadWithStrategy) -> PersonalizedMessage:
-        """Create personalized message using LLM analysis"""
-        
-        # Prepare context for LLM
-        message_context = {
-            "url": str(lead_with_strategy.lead_with_persona.analyzed_lead.validated_lead.site_data.url),
-            "company_name": self._extract_company_name(lead_with_strategy),
-            "company_sector": lead_with_strategy.lead_with_persona.analyzed_lead.analysis.company_sector,
-            "main_services": lead_with_strategy.lead_with_persona.analyzed_lead.analysis.main_services,
-            "challenges": lead_with_strategy.lead_with_persona.analyzed_lead.analysis.potential_challenges,
-            "opportunity_fit": lead_with_strategy.lead_with_persona.analyzed_lead.analysis.opportunity_fit,
-            "persona_name": lead_with_strategy.lead_with_persona.persona.fictional_name,
-            "persona_role": lead_with_strategy.lead_with_persona.persona.likely_role,
-            "persona_goals": lead_with_strategy.lead_with_persona.persona.professional_goals,
-            "persona_challenges": lead_with_strategy.lead_with_persona.persona.main_challenges,
-            "communication_style": lead_with_strategy.lead_with_persona.persona.communication_style,
-            "channel": lead_with_strategy.strategy.primary_channel,
-            "tone_of_voice": lead_with_strategy.strategy.tone_of_voice,
-            "value_propositions": lead_with_strategy.strategy.key_value_propositions,
-            "talking_points": lead_with_strategy.strategy.talking_points,
-            "opening_questions": lead_with_strategy.strategy.opening_questions,
-            "first_interaction_goal": lead_with_strategy.strategy.first_interaction_goal,
-            "product_service": lead_with_strategy.lead_with_persona.analyzed_lead.product_service_context
-        }
-        
-        prompt = self._build_message_prompt(message_context)
-        
-        # Get LLM response
-        response = self.llm_client.generate_text(prompt)
-        
-        # Parse response into PersonalizedMessage
-        return self._parse_message_response(response, lead_with_strategy.strategy.primary_channel)
-    
-    def _build_message_prompt(self, context: dict) -> str:
+    def _build_message_prompt(self, lead_with_strategy: LeadWithStrategy) -> str:
         """Build the prompt for message creation"""
         
-        channel_guidance = self._get_channel_guidance(context['channel'])
+        analyzed_lead = lead_with_strategy.lead_with_persona.analyzed_lead
+        persona = lead_with_strategy.lead_with_persona.persona
+        strategy = lead_with_strategy.strategy
         
-        return f"""
-Você é um Redator de Copywriting B2B Sênior especializado em mensagens de primeiro contato.
-Sua tarefa é criar uma mensagem altamente personalizada e persuasiva para gerar uma resposta positiva.
+        # Extract company name for personalization
+        company_name = self._extract_company_name(lead_with_strategy)
+        
+        # Get channel-specific guidance
+        channel_guidance = self._get_channel_guidance(strategy.primary_channel)
+        
+        return f"""Você é um Redator de Copywriting B2B Sênior especializado em mensagens de primeiro contato no mercado brasileiro.
+Sua tarefa é criar uma mensagem altamente personalizada que resulte em resposta positiva e avance para conversação.
+
+OBJETIVO: Criar mensagem que contribua para o objetivo de cresimento do ROI através de personalização e relevância máximas.
 
 CONTEXTO DA EMPRESA:
-- Nome: {context['company_name']}
-- URL: {context['url']}
-- Setor: {context['company_sector']}
-- Principais serviços: {', '.join(context['main_services'])}
-- Desafios identificados: {', '.join(context['challenges'])}
-- Oportunidade identificada: {context['opportunity_fit']}
+- Nome: {company_name}
+- URL: {analyzed_lead.validated_lead.site_data.url}
+- Setor: {analyzed_lead.analysis.company_sector}
+- Principais serviços: {', '.join(analyzed_lead.analysis.main_services)}
+- Desafios identificados: {', '.join(analyzed_lead.analysis.potential_challenges)}
+- Oportunidade: {analyzed_lead.analysis.opportunity_fit}
 
 CONTEXTO DA PERSONA:
-- Nome fictício: {context['persona_name']} ({context['persona_role']})
-- Objetivos: {', '.join(context['persona_goals'])}
-- Desafios: {', '.join(context['persona_challenges'])}
-- Estilo de comunicação: {context['communication_style']}
+- Nome fictício: {persona.fictional_name} ({persona.likely_role})
+- Objetivos: {', '.join(persona.professional_goals)}
+- Desafios: {', '.join(persona.main_challenges)}
+- Estilo de comunicação: {persona.communication_style}
+- Busca em soluções: {persona.solution_seeking}
 
 ESTRATÉGIA DE ABORDAGEM:
-- Canal: {context['channel'].value}
-- Tom de voz: {context['tone_of_voice']}
-- Propostas de valor: {', '.join(context['value_propositions'])}
-- Pontos principais: {', '.join(context['talking_points'])}
-- Perguntas de abertura: {', '.join(context['opening_questions'])}
-- Objetivo: {context['first_interaction_goal']}
+- Canal primário: {strategy.primary_channel.value}
+- Tom de voz: {strategy.tone_of_voice}
+- Propostas de valor: {', '.join(strategy.key_value_propositions)}
+- Pontos principais: {', '.join(strategy.talking_points)}
+- Perguntas de abertura: {', '.join(strategy.opening_questions)}
+- Objetivo do contato: {strategy.first_interaction_goal}
 
-PRODUTO/SERVIÇO:
-{context['product_service']}
+PRODUTO/SERVIÇO NELLIA:
+{analyzed_lead.product_service_context}
 
 {channel_guidance}
 
-INSTRUÇÕES:
-Crie uma mensagem de contato inicial que seja:
-1. Altamente personalizada para {context['company_name']} e {context['persona_name']}
-2. Demonstre que você pesquisou sobre a empresa
-3. Foque nos benefícios específicos para os desafios identificados
-4. Use o tom de voz apropriado: {context['tone_of_voice']}
-5. Tenha um CTA claro e específico
-6. Seja concisa mas impactante
-7. Evite jargões excessivos e seja autêntica
+INSTRUÇÕES CRÍTICAS:
+Crie uma mensagem que seja:
+1. ALTAMENTE PERSONALIZADA para {company_name} e {persona.fictional_name}
+2. Demonstre pesquisa genuína sobre a empresa (use informações específicas)
+3. Conecte diretamente nossos benefícios aos desafios identificados
+4. Use o tom apropriado: {strategy.tone_of_voice}
+5. Inclua CTA claro e de baixo atrito
+6. Seja concisa mas impactante (respeitando limites do canal)
+7. Soe autêntica, não vendedora
+8. Considere o contexto brasileiro de relacionamento antes do negócio
 
-Responda no formato JSON:
+Responda APENAS com JSON válido no seguinte formato:
 {{
     "subject_line": "Assunto da mensagem (se aplicável para o canal)",
-    "message_body": "Corpo completo da mensagem",
-    "call_to_action": "Call-to-action específico",
+    "message_body": "Corpo completo da mensagem personalizada",
+    "call_to_action": "Call-to-action específico e claro",
     "personalization_elements": ["elemento1", "elemento2", "elemento3"],
-    "estimated_read_time": 30
+    "estimated_read_time": 45
 }}
 
-Responda APENAS com o JSON válido, sem explicações adicionais.
-"""
+DIRETRIZES FINAIS:
+- Evite clichês como "espero que esteja bem"
+- Use linguagem natural e conversacional
+- Demonstre valor antes de pedir algo
+- Seja específico sobre o benefício para ESTA empresa
+- Mantenha foco na pessoa, não no produto"""
     
     def _get_channel_guidance(self, channel: CommunicationChannel) -> str:
         """Get channel-specific guidance for message creation"""
@@ -161,75 +144,64 @@ Responda APENAS com o JSON válido, sem explicações adicionais.
         if channel == CommunicationChannel.EMAIL:
             return """
 DIRETRIZES PARA E-MAIL:
-- Assunto: Curto, específico e intrigante (máx 50 caracteres)
-- Estrutura: Saudação personalizada → Conexão/Pesquisa → Valor → CTA → Assinatura
-- Tamanho: 100-150 palavras idealmente
-- Formato: Profissional mas não formal demais
-- CTA: Específico (ex: "15 minutos na próxima semana")
-"""
+- Assunto: Específico, intrigante, sem spam words (máx 50 caracteres)
+- Estrutura: Conexão pessoal → Pesquisa demonstrada → Valor → Pergunta/CTA → Assinatura
+- Tamanho: 80-120 palavras idealmente
+- Formato: Profissional mas não engessado
+- CTA: Específico e de baixo compromisso (ex: "conversa de 10 minutos")
+- Use quebras de linha para facilitar leitura"""
+            
         elif channel == CommunicationChannel.LINKEDIN:
             return """
 DIRETRIZES PARA LINKEDIN:
-- Sem assunto (conexão ou mensagem direta)
-- Estrutura: Conexão pessoal → Valor rápido → Pergunta/CTA
-- Tamanho: 50-100 palavras (LinkedIn limita mensagens)
+- Sem assunto (mensagem direta ou nota de conexão)
+- Estrutura: Conexão/referência → Valor rápido → Pergunta engajante
+- Tamanho: 50-80 palavras máximo (LinkedIn tem limite)
 - Formato: Conversacional e profissional
 - CTA: Convite para conexão ou conversa breve
-"""
+- Mencione algo específico do perfil deles"""
+            
         elif channel == CommunicationChannel.WHATSAPP:
             return """
 DIRETRIZES PARA WHATSAPP:
 - Sem assunto
-- Estrutura: Apresentação → Conexão → Valor → CTA
+- Estrutura: Apresentação → Conexão → Valor → CTA simples
 - Tamanho: 2-3 parágrafos curtos
 - Formato: Informal mas profissional
-- CTA: Conversa ou agendamento simples
-"""
+- CTA: Conversa ou pergunta simples
+- Use emojis com moderação (1-2 no máximo)"""
+            
         else:
             return """
 DIRETRIZES GERAIS:
 - Mantenha profissional mas acessível
 - Foque no valor para o destinatário
 - CTA claro e de baixo compromisso
-"""
+- Demonstre pesquisa e personalização"""
     
-    def _parse_message_response(self, response: str, channel: CommunicationChannel) -> PersonalizedMessage:
-        """Parse LLM response into PersonalizedMessage"""
+    def _create_personalized_message(self, message_data: dict, channel: CommunicationChannel) -> PersonalizedMessage:
+        """Create PersonalizedMessage from parsed JSON data"""
         
         try:
-            # Clean response and extract JSON
-            response = response.strip()
-            if response.startswith('```json'):
-                response = response[7:]
-            if response.endswith('```'):
-                response = response[:-3]
-            response = response.strip()
-            
-            data = json.loads(response)
-            
             # Extract subject line (only for email)
             subject_line = None
             if channel == CommunicationChannel.EMAIL:
-                subject_line = data.get('subject_line', 'Oportunidade para [Nome da Empresa]')
+                subject_line = message_data.get('subject_line', 'Oportunidade para otimização')
             
             return PersonalizedMessage(
                 channel=channel,
                 subject_line=subject_line,
-                message_body=data.get('message_body', 'Mensagem não disponível'),
-                call_to_action=data.get('call_to_action', 'Gostaria de agendar uma conversa?'),
-                personalization_elements=data.get('personalization_elements', ['Nome da empresa', 'Setor', 'Desafios']),
-                estimated_read_time=data.get('estimated_read_time', 60),
+                message_body=message_data.get('message_body', 'Mensagem não disponível'),
+                call_to_action=message_data.get('call_to_action', 'Gostaria de trocar uma ideia sobre isso?'),
+                personalization_elements=message_data.get('personalization_elements', ['Nome da empresa', 'Setor', 'Desafios']),
+                estimated_read_time=message_data.get('estimated_read_time', 60),
                 ab_variant=None  # Can be set later for A/B testing
             )
             
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse message JSON response: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to create message from data: {e}")
             # Return fallback message
             return self._create_fallback_message(channel)
-        
-        except Exception as e:
-            logger.error(f"Error parsing message response: {e}")
-            raise
     
     def _create_fallback_message(self, channel: CommunicationChannel) -> PersonalizedMessage:
         """Create a fallback message when parsing fails"""
@@ -237,48 +209,50 @@ DIRETRIZES GERAIS:
         if channel == CommunicationChannel.EMAIL:
             return PersonalizedMessage(
                 channel=channel,
-                subject_line="Oportunidade de otimização para sua empresa",
+                subject_line="Oportunidade de otimização identificada",
                 message_body="""Olá,
 
-Espero que esteja bem. Tenho acompanhado o trabalho da sua empresa e acredito que posso agregar valor com nossa solução.
+Vi que vocês trabalham com [serviços identificados] e acredito que nossa solução de IA pode agregar valor significativo aos seus processos.
 
-Baseado no que vi sobre seus desafios atuais, nossa plataforma pode ajudar a otimizar processos e reduzir custos operacionais.
+Baseado no que observei sobre os desafios do setor, nossa plataforma já ajudou empresas similares a aumentar a eficiência em até 527%.
 
-Gostaria de agendar 15 minutos para uma conversa rápida sobre como isso pode se aplicar ao seu contexto específico?
+Seria interessante trocarmos uma ideia sobre como isso poderia se aplicar à sua realidade?
 
-Atenciosamente""",
-                call_to_action="Agendar conversa de 15 minutos",
-                personalization_elements=["Nome da empresa", "Setor"],
-                estimated_read_time=45
+Atenciosamente,
+Equipe Nellia""",
+                call_to_action="Conversa de 15 minutos esta semana",
+                personalization_elements=["Serviços da empresa", "Desafios do setor"],
+                estimated_read_time=30
             )
         else:
             return PersonalizedMessage(
                 channel=channel,
                 subject_line=None,
-                message_body="""Olá! Tenho acompanhado o trabalho da sua empresa e acredito que nossa solução pode agregar valor aos seus processos atuais.
+                message_body="""Olá! Vi o trabalho que vocês fazem e acredito que nossa solução de IA pode agregar valor aos seus processos atuais.
 
-Gostaria de trocar uma ideia rápida sobre como isso pode se aplicar ao seu contexto?""",
-                call_to_action="Conversar sobre oportunidades",
-                personalization_elements=["Nome da empresa"],
-                estimated_read_time=30
+Já ajudamos empresas do setor a otimizar significativamente seus resultados.
+
+Faria sentido trocarmos uma ideia rápida sobre isso?""",
+                call_to_action="Conversa breve sobre oportunidades",
+                personalization_elements=["Trabalho da empresa"],
+                estimated_read_time=20
             )
     
     def _extract_company_name(self, lead_with_strategy: LeadWithStrategy) -> str:
         """Extract company name from Google search data or URL"""
         
         # Try to get from Google search title
-        google_data = lead_with_strategy.lead_with_persona.analyzed_lead.validated_lead.site_data.google_search_data
-        if google_data and google_data.title:
+        site_data = lead_with_strategy.lead_with_persona.analyzed_lead.validated_lead.site_data
+        if site_data.google_search_data and site_data.google_search_data.title:
+            title = site_data.google_search_data.title
             # Clean up Google title to extract company name
-            title = google_data.title
-            # Remove common suffixes and patterns
             company_name = title.split(" - ")[0].split(" | ")[0].split(": ")[0]
             company_name = re.sub(r'\s*\([^)]*\)', '', company_name)  # Remove parentheses
             if len(company_name) > 5 and not any(char in company_name.lower() for char in ['http', 'www', '.com']):
                 return company_name.strip()
         
         # Fallback to domain name
-        url = str(lead_with_strategy.lead_with_persona.analyzed_lead.validated_lead.site_data.url)
+        url = str(site_data.url)
         domain = url.replace('https://', '').replace('http://', '').split('/')[0]
         domain = domain.replace('www.', '')
         return domain.split('.')[0].title()
