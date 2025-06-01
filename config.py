@@ -17,7 +17,7 @@ load_dotenv()
 class LLMConfig:
     """LLM configuration settings"""
     provider: str = "gemini"  # gemini, openai
-    model_name: str = "gemini-1.5-flash-latest"
+    model_name: str = "gemini-2.0-flash"
     temperature: float = 0.7
     max_tokens: int = 8192
     max_retries: int = 3
