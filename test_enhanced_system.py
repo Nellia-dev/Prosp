@@ -41,7 +41,8 @@ def create_test_data():
             "word_count": 45,
             "char_count": 280,
             "language": "pt"
-        }
+        },
+        extraction_status_message="Extraction successful"  # Added this line
     )
     
     return HarvesterOutput(
@@ -71,7 +72,7 @@ def test_enhanced_processing():
     
     print(f"✅ Processor initialized")
     print(f"   - Mode: {processor.processing_mode.value}")
-    print(f"   - Tavily enabled: {bool(processor.enhanced_processor.tavily_api_key)}")
+    print(f"   - Tavily enabled: {bool(processor.enhanced_processor.tavily_api_key if hasattr(processor, 'enhanced_processor') and processor.enhanced_processor else False)}") # Adjusted for safety
     print(f"   - Product context: {processor.product_service_context[:50]}...")
     
     try:
@@ -150,7 +151,8 @@ def test_standard_vs_enhanced():
     print("\nTesting Enhanced Mode...")
     enhanced_processor = EnhancedNelliaProspector(
         product_service_context="Plataforma de automação de vendas B2B",
-        processing_mode=ProcessingMode.ENHANCED
+        processing_mode=ProcessingMode.ENHANCED,
+        tavily_api_key=os.getenv("TAVILY_API_KEY") # Optional
     )
     
     enhanced_results = enhanced_processor.process_leads(test_data, limit=1)
@@ -182,28 +184,46 @@ def main():
     if not os.getenv('GEMINI_API_KEY'):
         print("\n❌ GEMINI_API_KEY is required for testing!")
         print("Please set it in your .env file or environment variables.")
-        return False
+        return False # Changed to return False for clarity
     
     # Run tests
     success = True
     
     try:
-        success &= test_enhanced_processing()
+        enhanced_test_passed = test_enhanced_processing()
+        if not enhanced_test_passed:
+            success = False
+        
+        # Only run comparison if enhanced test passed, or run independently
+        # For now, let's assume it can run even if the first one has issues,
+        # as it might test different aspects or simpler modes.
         test_standard_vs_enhanced()
         
-        if success:
-            print("\n🎉 All tests passed! Enhanced Nellia Prospector is ready!")
+        if success: # This 'success' only reflects enhanced_test_passed currently
+            print("\n🎉 Enhanced test section passed! Nellia Prospector is ready for further testing!")
             print("\nNext steps:")
             print("1. Add real harvester data files")
             print("2. Configure Tavily API for external intelligence")
             print("3. Run with: python enhanced_main.py harvester_file.json -p 'Your product'")
             print("4. Try different modes: --mode enhanced|standard|hybrid")
-        
+        else:
+            print("\n⚠️ Some tests in the enhanced processing section failed.")
+
     except Exception as e:
-        print(f"\n💥 Test suite failed: {e}")
-        success = False
+        print(f"\n💥 Test suite encountered an unhandled exception: {e}")
+        import traceback
+        traceback.print_exc()
+        success = False # Overall suite failure
     
     return success
 
 if __name__ == "__main__":
-    main()
+    # This will print True if all tests (that update 'success' flag) pass, False otherwise.
+    # The script will exit with 0 if main() returns True (or anything not False/0/None), and 1 if it returns False.
+    # To make it more explicit for CI/CD:
+    if main():
+        print("\n✅✅✅ Overall test suite completed successfully. ✅✅✅")
+        exit(0)
+    else:
+        print("\n❌❌❌ Overall test suite failed. ❌❌❌")
+        exit(1)
