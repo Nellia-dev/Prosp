@@ -30,7 +30,7 @@ class SiteData(BaseModel):
     """Individual lead data from harvester"""
     url: HttpUrl = Field(..., description="Website URL")
     google_search_data: Optional[GoogleSearchData] = Field(None, description="Google search data")
-    extracted_text_content: str = Field(..., description="Extracted text content from the website")
+    extracted_text_content: Optional[str] = Field(None, description="Extracted text content from the website") # Made Optional
     extraction_status_message: str = Field(..., description="Status message of extraction")
     screenshot_filepath: Optional[str] = Field(None, description="Path to screenshot if available")
     
@@ -212,39 +212,38 @@ class ContactInformation(BaseModel):
 
 class PainPointAnalysis(BaseModel):
     """Deep analysis of company pain points and challenges"""
-    primary_pain_category: str = Field(..., description="Main category of pain point")
-    detailed_pain_points: List[Dict[str, str]] = Field(
-        default_factory=list, 
-        description="Detailed pain points with descriptions and impacts"
-    )
-    business_impact_assessment: str = Field(..., description="Assessment of business impact")
+    primary_pain_category: str = Field(default="Não especificado", description="Main category of pain point") # Added default
+    detailed_pain_points: List[DetailedPainPointSchema] = Field(default_factory=list) # Uses new schema
+    business_impact_assessment: Optional[str] = Field(None, description="Overall assessment of business impact from agent's raw text") # Made optional
     urgency_level: str = Field(default="medium", description="Urgency level: low, medium, high, critical")
     investigative_questions: List[str] = Field(
         default_factory=list, 
         description="Strategic questions to deepen understanding"
     )
-    potential_solutions_alignment: Dict[str, str] = Field(
-        default_factory=dict,
-        description="How offered solution aligns with each pain point"
-    )
+    # potential_solutions_alignment: Dict[str, str] = Field( # This is now part of DetailedPainPointSchema
+    #     default_factory=dict,
+    #     description="How offered solution aligns with each pain point"
+    # )
+    raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
+    error_message: Optional[str] = None
 
 class CompetitorIntelligence(BaseModel):
     """Competitive intelligence and market analysis"""
-    mentioned_competitors: List[str] = Field(default_factory=list, description="Competitors mentioned on site")
-    current_solutions: List[str] = Field(default_factory=list, description="Current solutions in use")
-    competitive_advantages: List[str] = Field(default_factory=list, description="Our advantages vs competitors")
-    market_positioning: Optional[str] = Field(None, description="Target's market position")
-    switching_barriers: List[str] = Field(default_factory=list, description="Barriers to switching from current solution")
-    competitive_threats: List[str] = Field(default_factory=list, description="Threats from existing solutions")
+    identified_competitors: List[CompetitorDetailSchema] = Field(default_factory=list) # Uses new schema
+    other_notes: Optional[str] = Field(None, description="Other general notes on competitive landscape")
+    raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
+    error_message: Optional[str] = None
+    # Old fields removed: mentioned_competitors, current_solutions, competitive_advantages, 
+    # market_positioning, switching_barriers, competitive_threats
 
 class PurchaseTriggers(BaseModel):
     """Purchase triggers and timing indicators"""
-    recent_events: List[str] = Field(default_factory=list, description="Recent company events")
-    market_signals: List[str] = Field(default_factory=list, description="Market timing signals")
-    timing_indicators: List[str] = Field(default_factory=list, description="Indicators of purchase timing")
-    growth_signals: List[str] = Field(default_factory=list, description="Company growth indicators")
-    urgency_drivers: List[str] = Field(default_factory=list, description="What's driving urgency")
-    budget_cycle_insights: Optional[str] = Field(None, description="Budget cycle information")
+    identified_triggers: List[IdentifiedTriggerSchema] = Field(default_factory=list) # Uses new schema
+    other_observations: Optional[str] = Field(None, description="Other general observations on triggers")
+    raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
+    error_message: Optional[str] = None
+    # Old fields removed: recent_events, market_signals, timing_indicators, 
+    # growth_signals, urgency_drivers, budget_cycle_insights
 
 class LeadQualification(BaseModel):
     """Lead qualification scoring and assessment"""
@@ -258,6 +257,100 @@ class LeadQualification(BaseModel):
     readiness_score: float = Field(default=0.0, ge=0, le=1, description="Purchase readiness score")
     authority_score: float = Field(default=0.0, ge=0, le=1, description="Decision-making authority score")
     budget_likelihood: str = Field(default="unknown", description="Budget availability likelihood")
+    error_message: Optional[str] = None # Added for consistency
+
+# --- Schemas mapping to Agent Outputs ---
+
+class DetailedPainPointSchema(BaseModel): 
+    """Maps to PainPointDeepeningOutput.DetailedPainPoint"""
+    pain_description: str
+    business_impact: str
+    solution_alignment: str
+
+class CompetitorDetailSchema(BaseModel):
+    """Maps to CompetitorIdentificationOutput.CompetitorDetail"""
+    name: str
+    description: Optional[str] = None
+    perceived_strength: Optional[str] = None
+    perceived_weakness: Optional[str] = None
+
+class IdentifiedTriggerSchema(BaseModel):
+    """Maps to BuyingTriggerIdentificationOutput.IdentifiedTrigger"""
+    trigger_description: str
+    relevance_explanation: str
+
+class ToTStrategyOptionModel(BaseModel): 
+    """Maps to ToTStrategyGenerationOutput.ToTStrategyOptionModel - Aligns with existing ToTStrategyOption but for direct agent output mapping"""
+    strategy_name: str
+    angle_or_hook: str
+    tone_of_voice: str
+    primary_channels: List[str]
+    key_points_or_arguments: List[str]
+    opening_question: str
+
+class EvaluatedStrategyModel(BaseModel): 
+    """Maps to ToTStrategyEvaluationOutput.EvaluatedStrategyModel"""
+    strategy_name: str
+    suitability_assessment: str
+    strengths: List[str]
+    weaknesses_or_risks: List[str]
+    suggested_improvements: List[str]
+    confidence_score: str 
+    confidence_justification: str
+
+class ActionPlanStepModel(BaseModel): 
+    """Maps to ToTActionPlanSynthesisOutput.ActionPlanStepModel"""
+    step_number: int
+    channel: str
+    action_description: str
+    key_message_or_argument: str
+    cta: Optional[str] = None
+
+class ToTActionPlanSynthesisModel(BaseModel): 
+    """Maps to ToTActionPlanSynthesisOutput"""
+    recommended_strategy_name: str = "Estratégia Combinada/Refinada"
+    primary_angle_hook: str = "Não especificado"
+    tone_of_voice: str = "Consultivo"
+    action_sequence: List[ActionPlanStepModel] = Field(default_factory=list)
+    key_talking_points: List[str] = Field(default_factory=list)
+    main_opening_question: str = "Não especificado"
+    success_metrics: List[str] = Field(default_factory=list)
+    contingency_plan: Optional[str] = None
+    error_message: Optional[str] = None
+
+class ContactStepDetailSchema(BaseModel): 
+    """Maps to DetailedApproachPlanOutput.ContactStepDetail"""
+    step_number: int
+    channel: str
+    objective: str
+    key_topics_arguments: List[str]
+    key_questions: List[str] = Field(default_factory=list)
+    cta: str
+    supporting_materials: Optional[str] = None
+
+class DetailedApproachPlanModel(BaseModel): 
+    """Maps to DetailedApproachPlanOutput"""
+    main_objective: str = "Não especificado"
+    adapted_elevator_pitch: str = "Não especificado"
+    contact_sequence: List[ContactStepDetailSchema] = Field(default_factory=list)
+    engagement_indicators_to_monitor: List[str] = Field(default_factory=list)
+    potential_obstacles_attention_points: List[str] = Field(default_factory=list)
+    suggested_next_steps_if_successful: List[str] = Field(default_factory=list)
+    error_message: Optional[str] = None
+
+class ObjectionResponseModelSchema(BaseModel): 
+    """Maps to ObjectionHandlingOutput.ObjectionResponseModel"""
+    objection: str
+    response_strategy: str
+    suggested_response: str
+
+# ValueProposition is redefined later, so CustomValuePropModelSchema is implicitly handled by that.
+
+class InternalBriefingSectionSchema(BaseModel):
+    """Maps to InternalBriefingSummaryOutput.InternalBriefingSection"""
+    title: str
+    content: str
+# --- End of Agent Output Schemas ---
 
 class ExternalIntelligence(BaseModel):
     """External intelligence gathered from Tavily and other sources"""
@@ -267,61 +360,95 @@ class ExternalIntelligence(BaseModel):
     social_signals: List[str] = Field(default_factory=list, description="Social media signals")
     enrichment_confidence: float = Field(default=0.0, ge=0, le=1, description="Confidence in enriched data")
     sources_used: List[str] = Field(default_factory=list, description="Data sources utilized")
+    error_message: Optional[str] = None # Added for consistency
 
-class ToTStrategyOption(BaseModel):
-    """Tree of Thought strategy option"""
-    strategy_name: str = Field(..., description="Name of the strategy")
-    strategy_rationale: str = Field(..., description="Reasoning behind the strategy")
-    primary_channel: str = Field(..., description="Recommended communication channel")
-    key_hook: str = Field(..., description="Main conversation starter")
-    success_probability: str = Field(..., description="Estimated success probability")
-    pros: List[str] = Field(default_factory=list, description="Advantages of this strategy")
-    cons: List[str] = Field(default_factory=list, description="Disadvantages and risks")
 
-class ToTStrategyEvaluation(BaseModel):
-    """Tree of Thought strategy evaluation and selection"""
-    strategy_options: List[ToTStrategyOption] = Field(default_factory=list, description="Strategy options considered")
-    selected_strategy: ToTStrategyOption = Field(..., description="Selected optimal strategy")
+# ToTStrategyOption is effectively replaced by ToTStrategyOptionModel for agent output mapping
+# class ToTStrategyOption(BaseModel):
+#     """Tree of Thought strategy option"""
+#     strategy_name: str = Field(..., description="Name of the strategy")
+#     strategy_rationale: str = Field(..., description="Reasoning behind the strategy")
+#     primary_channel: str = Field(..., description="Recommended communication channel") # To be primary_channels: List[str]
+#     key_hook: str = Field(..., description="Main conversation starter")
+#     success_probability: str = Field(..., description="Estimated success probability")
+#     pros: List[str] = Field(default_factory=list, description="Advantages of this strategy")
+#     cons: List[str] = Field(default_factory=list, description="Disadvantages and risks")
+
+# ToTStrategyEvaluation is replaced by the new ToT models in EnhancedStrategy
+# class ToTStrategyEvaluation(BaseModel):
+#     """Tree of Thought strategy evaluation and selection"""
+#     strategy_options: List[ToTStrategyOptionModel] = Field(default_factory=list, description="Strategy options considered, now using new model")
+#     selected_strategy: ToTStrategyOptionModel = Field(..., description="Selected optimal strategy, now using new model")
     evaluation_criteria: List[str] = Field(default_factory=list, description="Criteria used for evaluation")
     decision_rationale: str = Field(..., description="Why this strategy was selected")
     contingency_plan: Optional[str] = Field(None, description="Backup approach if primary fails")
 
 class ObjectionFramework(BaseModel):
     """Framework for handling objections"""
-    common_objections: Dict[str, str] = Field(
-        default_factory=dict, 
-        description="Common objections and responses"
-    )
-    objection_categories: List[str] = Field(default_factory=list, description="Categories of objections")
-    response_templates: Dict[str, str] = Field(
-        default_factory=dict, 
-        description="Template responses for objection types"
-    )
-    escalation_strategies: List[str] = Field(
-        default_factory=list, 
-        description="Strategies when objections persist"
-    )
+    anticipated_objections: List[ObjectionResponseModelSchema] = Field(default_factory=list)
+    raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
+    error_message: Optional[str] = None
+    # common_objections: Dict[str, str] = Field(
+    #     default_factory=dict, 
+    #     description="Common objections and responses"
+    # )
+    # objection_categories: List[str] = Field(default_factory=list, description="Categories of objections")
+    # response_templates: Dict[str, str] = Field(
+    #     default_factory=dict, 
+    #     description="Template responses for objection types"
+    # )
+    # escalation_strategies: List[str] = Field(
+    #     default_factory=list, 
+    #     description="Strategies when objections persist"
+    # )
 
-class ValueProposition(BaseModel):
-    """Customized value proposition"""
-    proposition_text: str = Field(..., description="The value proposition statement")
-    target_pain_points: List[str] = Field(default_factory=list, description="Pain points this addresses")
-    quantified_benefits: List[str] = Field(default_factory=list, description="Quantifiable benefits")
-    proof_points: List[str] = Field(default_factory=list, description="Evidence supporting the proposition")
-    differentiation_factors: List[str] = Field(default_factory=list, description="How we differentiate")
+
+# --- Value Proposition Models ---
+# class CustomValuePropModelSchema(BaseModel): # Maps to CustomValuePropModel from agent
+#     title: str
+#     connection_to_pain_or_trigger: str
+#     key_benefit: str
+#     differentiation_factor: str
+#     call_to_value: str
+
+class ValueProposition(BaseModel): # Redefined to match CustomValuePropModel from agent
+    """Customized value proposition, aligned with ValuePropositionCustomizationOutput"""
+    title: str = Field(..., description="Title of the value proposition")
+    connection_to_pain_or_trigger: str = Field(..., description="How it connects to lead's context")
+    key_benefit: str = Field(..., description="Main benefit for the lead")
+    differentiation_factor: str = Field(..., description="Unique selling point for this context")
+    call_to_value: str = Field(..., description="Impactful phrase or call to reflection/action")
+    error_message: Optional[str] = None # If a specific VP failed to generate
+    # proposition_text: str (old field)
+    # target_pain_points: List[str] (old field)
+    # quantified_benefits: List[str] (old field)
+    # proof_points: List[str] (old field)
+    # differentiation_factors: List[str] (old field, now a single string)
+
 
 class EnhancedStrategy(BaseModel):
     """Enhanced strategy combining multiple intelligence sources"""
-    external_intelligence: ExternalIntelligence = Field(..., description="External intelligence gathered")
-    contact_information: ContactInformation = Field(..., description="Contact information extracted")
-    pain_point_analysis: PainPointAnalysis = Field(..., description="Deep pain point analysis")
-    competitor_intelligence: CompetitorIntelligence = Field(..., description="Competitive analysis")
-    purchase_triggers: PurchaseTriggers = Field(..., description="Purchase timing triggers")
-    lead_qualification: LeadQualification = Field(..., description="Lead qualification assessment")
-    tot_strategy_evaluation: ToTStrategyEvaluation = Field(..., description="ToT strategy analysis")
-    value_propositions: List[ValueProposition] = Field(default_factory=list, description="Customized value props")
-    objection_framework: ObjectionFramework = Field(..., description="Objection handling framework")
-    strategic_questions: List[str] = Field(default_factory=list, description="Strategic discovery questions")
+    external_intelligence: Optional[ExternalIntelligence] = None # Made optional
+    contact_information: Optional[ContactInformation] = None # Made optional
+    pain_point_analysis: Optional[PainPointAnalysis] = None # Made optional
+    competitor_intelligence: Optional[CompetitorIntelligence] = None # Made optional
+    purchase_triggers: Optional[PurchaseTriggers] = None # Made optional
+    lead_qualification: Optional[LeadQualification] = None # Made optional
+    
+    # ToT strategy outputs
+    tot_generated_strategies: Optional[List[ToTStrategyOptionModel]] = None
+    tot_evaluated_strategies: Optional[List[EvaluatedStrategyModel]] = None
+    tot_synthesized_action_plan: Optional[ToTActionPlanSynthesisModel] = None # Replaces old tot_strategy_evaluation
+    
+    detailed_approach_plan: Optional[DetailedApproachPlanModel] = None # New field
+
+    value_propositions: List[ValueProposition] = Field(default_factory=list) # Uses new ValueProposition structure
+    objection_framework: Optional[ObjectionFramework] = None # Made optional
+    strategic_questions: List[str] = Field(default_factory=list) # Already List[str], compatible
+    
+    # Removed fields that are now part of structured models or less relevant
+    # final_action_plan: Optional[str] 
+    # detailed_approach_plan_text: Optional[str]
 
 class EnhancedPersonalizedMessage(BaseModel):
     """Enhanced personalized message with multiple variants"""
@@ -330,7 +457,7 @@ class EnhancedPersonalizedMessage(BaseModel):
         default_factory=list, 
         description="Alternative message variants for A/B testing"
     )
-    personalization_score: float = Field(..., ge=0, le=1, description="Level of personalization achieved")
+    personalization_score: float = Field(default=0.0, ge=0, le=1, description="Level of personalization achieved") # Added default
     cultural_appropriateness_score: float = Field(
         default=0.0, ge=0, le=1, 
         description="Brazilian cultural appropriateness score"
@@ -343,19 +470,28 @@ class EnhancedPersonalizedMessage(BaseModel):
         default="", 
         description="Explanation of why these variants were created"
     )
+    error_message: Optional[str] = None # Added for consistency
 
-class InternalBriefing(BaseModel):
-    """Internal briefing for sales team"""
-    executive_summary: str = Field(..., description="60-second executive summary")
-    key_talking_points: List[str] = Field(default_factory=list, description="Key points for conversation")
-    critical_objections: Dict[str, str] = Field(
-        default_factory=dict, 
-        description="Most likely objections and responses"
-    )
-    success_metrics: List[str] = Field(default_factory=list, description="How to measure success")
-    next_steps: List[str] = Field(default_factory=list, description="Recommended next steps")
-    decision_maker_profile: str = Field(..., description="Quick decision maker overview")
-    urgency_level: str = Field(default="medium", description="Urgency of follow-up")
+# New InternalBriefing that matches the structure of InternalBriefingSummaryOutput from the agent
+# class InternalBriefingSectionSchema(BaseModel): # Defined earlier
+#     title: str
+#     content: str
+
+class InternalBriefing(BaseModel): # Replaces old InternalBriefing
+    executive_summary: str = "Não especificado"
+    lead_overview: Optional[InternalBriefingSectionSchema] = None 
+    persona_profile_summary: Optional[InternalBriefingSectionSchema] = None
+    pain_points_and_needs: Optional[InternalBriefingSectionSchema] = None
+    buying_triggers_opportunity: Optional[InternalBriefingSectionSchema] = None
+    lead_qualification_summary: Optional[InternalBriefingSectionSchema] = None
+    approach_strategy_summary: Optional[InternalBriefingSectionSchema] = None
+    custom_value_proposition_summary: Optional[InternalBriefingSectionSchema] = None
+    potential_objections_summary: Optional[InternalBriefingSectionSchema] = None
+    recommended_next_step: str = "Não especificado"
+    error_message: Optional[str] = None 
+    raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
+    # Removed old fields: key_talking_points, critical_objections, success_metrics, next_steps, decision_maker_profile, urgency_level
+    # These are now expected to be part of the structured content within the sections or the executive_summary.
 
 class ComprehensiveProspectPackage(BaseModel):
     """Complete enhanced prospect package with all intelligence"""

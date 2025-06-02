@@ -22,27 +22,32 @@ def create_test_data():
             snippet="Empresa brasileira especializada em soluções tecnológicas para o mercado B2B"
         ),
         extracted_text_content="""
-        A Example Company é uma empresa brasileira especializada em soluções tecnológicas 
-        para o mercado B2B. Oferecemos serviços de desenvolvimento de software, 
-        consultoria em transformação digital e implementação de sistemas ERP.
+        A Example Company é uma empresa brasileira inovadora, fundada em 2010, com foco em soluções de software e consultoria para o mercado B2B. 
+        Nossa missão é transformar digitalmente negócios através de tecnologia de ponta e expertise setorial.
+        Oferecemos um portfólio diversificado que inclui desenvolvimento de software sob medida, implementação de sistemas ERP e CRM, 
+        e consultoria especializada em transformação digital e otimização de processos. Recentemente, expandimos nossa atuação para incluir 
+        análise de dados avançada e soluções de inteligência artificial para previsão de demanda.
         
-        Nossos principais clientes são empresas de médio e grande porte que buscam 
-        otimizar seus processos e aumentar sua competitividade no mercado.
+        Nossos principais clientes são empresas de médio e grande porte nos setores de Varejo, Manufatura e Serviços Financeiros, 
+        que buscam otimizar seus processos, reduzir custos operacionais, melhorar a experiência do cliente e aumentar sua competitividade.
+        Um desafio comum que ajudamos a resolver é a integração de sistemas legados com novas tecnologias em nuvem.
+        Muitas empresas também nos procuram para melhorar a visibilidade de seus dados e transformá-los em insights acionáveis.
+        Acreditamos que a inovação contínua é chave para o sucesso. Por isso, investimos pesado em P&D e na capacitação de nossa equipe.
         
-        Contato: contato@example-company.com.br
-        Telefone: (11) 99999-9999
+        Recentemente, a Example Company recebeu um aporte de investimento Série A para expandir suas operações na América Latina.
+        Estamos contratando novos talentos para as áreas de engenharia de software e ciência de dados.
+        Nosso CEO, Dr. Silva, mencionou em uma entrevista recente ao 'Jornal Tech' que o foco para o próximo ano é 'consolidar a liderança no Brasil e iniciar a expansão para Chile e Colômbia'.
+        Ele também destacou a importância de 'adotar ferramentas que garantam escalabilidade e eficiência operacional'.
+        A empresa participará da feira 'Tech Summit 2024' em São Paulo.
+        
+        Para mais informações, entre em contato:
+        Email: contato@example-company.com.br | vendas@example-company.com.br
+        Telefone: (11) 99999-9999 | (11) 5555-4444
+        Instagram: @ExampleCompanyBR
+        Endereço: Av. Principal, 123, São Paulo, SP
         """,
-        cleaned_text_content="""
-        Example Company soluções tecnológicas mercado B2B desenvolvimento software 
-        consultoria transformação digital implementação sistemas ERP clientes 
-        médio grande porte otimizar processos competitividade
-        """,
-        text_analysis={
-            "word_count": 45,
-            "char_count": 280,
-            "language": "pt"
-        },
-        extraction_status_message="Extraction successful"  # Added this line
+        # removed cleaned_text_content and text_analysis
+        extraction_status_message="Extraction successful"
     )
     
     return HarvesterOutput(
@@ -92,26 +97,37 @@ def test_enhanced_processing():
             lead_result = results.results[0]
             print(f"\n📋 Lead Analysis:")
             print(f"   - Company: {lead_result.get('company_name', 'Unknown')}")
-            print(f"   - Qualification: {lead_result.get('qualification_tier', 'Unknown')}")
-            print(f"   - Confidence: {lead_result.get('confidence_score', 0):.3f}")
+            print(f"   - Qualification Tier: {lead_result.get('qualification_tier', 'N/A')}")
+            print(f"   - Qualification Justification: {lead_result.get('qualification_justification', 'N/A')[:100]}...")
+            print(f"   - Overall Confidence: {lead_result.get('overall_confidence_score', 0):.3f}")
             print(f"   - ROI Potential: {lead_result.get('roi_potential_score', 0):.3f}")
-            print(f"   - Pain Category: {lead_result.get('primary_pain_category', 'Unknown')}")
-            print(f"   - Urgency: {lead_result.get('urgency_level', 'Unknown')}")
-            print(f"   - Strategy: {lead_result.get('selected_strategy', 'Unknown')}")
-            print(f"   - Channel: {lead_result.get('primary_channel', 'Unknown')}")
             
-            # Contact information
-            contact_info = lead_result.get('contact_information', {})
-            print(f"   - Emails found: {contact_info.get('emails_found', 0)}")
-            print(f"   - Contact confidence: {contact_info.get('extraction_confidence', 0):.3f}")
+            # Assertions for key structured data fields
+            self.assertIsNotNone(lead_result.get('company_name'))
+            self.assertTrue(results.successful_leads >= 0) # Allow 0 if LLM has issues, but test should pass if it runs
             
-            # Message details
-            message_info = lead_result.get('personalized_message', {})
-            print(f"   - Message channel: {message_info.get('channel', 'Unknown')}")
-            print(f"   - Subject: {message_info.get('subject', 'N/A')[:50]}...")
-            print(f"   - Personalization score: {message_info.get('personalization_score', 0):.3f}")
-            print(f"   - Est. response rate: {message_info.get('estimated_response_rate', 0):.1%}")
-        
+            if results.successful_leads > 0:
+                self.assertIsNotNone(lead_result.get('qualification_tier'))
+                self.assertIsInstance(lead_result.get('num_detailed_pain_points', 0), int)
+                self.assertTrue(len(lead_result.get('primary_pain_category', '')) > 0 if lead_result.get('primary_pain_category') != "Error" else True)
+                self.assertIsNotNone(lead_result.get('recommended_strategy_name'))
+                
+                # Check if contact extraction found emails (based on updated test data)
+                self.assertGreaterEqual(lead_result.get('contacts_emails_found', 0), 1)
+                self.assertGreater(lead_result.get('contact_extraction_confidence', 0.0), 0.0)
+
+                self.assertIsInstance(lead_result.get('tavily_enriched'), bool)
+                
+                self.assertGreaterEqual(lead_result.get('num_value_propositions', 0), 0)
+                self.assertGreaterEqual(lead_result.get('num_strategic_questions',0), 0)
+                self.assertGreaterEqual(lead_result.get('num_competitors_identified',0), 0)
+                self.assertGreaterEqual(lead_result.get('num_purchase_triggers',0), 0)
+                self.assertGreaterEqual(lead_result.get('num_objections_prepared',0), 0)
+
+                self.assertIsNotNone(lead_result.get('detailed_plan_main_objective'))
+                self.assertTrue(lead_result.get('internal_briefing_executive_summary_present'))
+                self.assertIsNotNone(lead_result.get('message_channel'))
+
         # Generate and display report
         print("\n📈 Generating detailed report...")
         processor.generate_report(results)

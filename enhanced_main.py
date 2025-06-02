@@ -91,8 +91,8 @@ class EnhancedNelliaProspector:
         
         # Enhanced agent (for enhanced/hybrid modes)
         if self.processing_mode in [ProcessingMode.ENHANCED, ProcessingMode.HYBRID]:
-            self.enhanced_processor = EnhancedLeadProcessor(
-                self.llm_client,
+            self.enhanced_processor = EnhancedLeadProcessor( # No temperature argument
+                llm_client=self.llm_client, # Ensure llm_client is passed correctly
                 product_service_context=self.product_service_context,
                 competitors_list=self.competitors_list,
                 tavily_api_key=tavily_api_key
@@ -226,36 +226,106 @@ class EnhancedNelliaProspector:
                     comprehensive_package = self.enhanced_processor.process(analyzed_lead)
                     
                     # Create enhanced result
+                    # Create enhanced result dictionary
                     result = {
                         "url": str(site_data.url),
                         "company_name": comprehensive_package.processing_metadata.get("company_name", "Unknown"),
                         "processing_mode": "enhanced",
-                        "confidence_score": comprehensive_package.confidence_score,
+                        "overall_confidence_score": comprehensive_package.confidence_score,
                         "roi_potential_score": comprehensive_package.roi_potential_score,
                         "brazilian_market_fit": comprehensive_package.brazilian_market_fit,
-                        "qualification_tier": comprehensive_package.enhanced_strategy.lead_qualification.qualification_tier,
-                        "primary_pain_category": comprehensive_package.enhanced_strategy.pain_point_analysis.primary_pain_category,
-                        "urgency_level": comprehensive_package.enhanced_strategy.pain_point_analysis.urgency_level,
-                        "selected_strategy": comprehensive_package.enhanced_strategy.tot_strategy_evaluation.selected_strategy.strategy_name,
-                        "primary_channel": comprehensive_package.enhanced_strategy.tot_strategy_evaluation.selected_strategy.primary_channel,
-                        "contact_information": {
-                            "emails_found": len(comprehensive_package.enhanced_strategy.contact_information.emails_found),
-                            "extraction_confidence": comprehensive_package.enhanced_strategy.contact_information.extraction_confidence
-                        },
-                        "external_intelligence": {
-                            "tavily_enabled": bool(comprehensive_package.enhanced_strategy.external_intelligence.sources_used),
-                            "enrichment_confidence": getattr(comprehensive_package.enhanced_strategy.external_intelligence, 'enrichment_confidence', 0.0)
-                        },
-                        "personalized_message": {
-                            "channel": comprehensive_package.enhanced_personalized_message.primary_message.channel.value,
-                            "subject": comprehensive_package.enhanced_personalized_message.primary_message.subject_line,
-                            "personalization_score": comprehensive_package.enhanced_personalized_message.personalization_score,
-                            "estimated_response_rate": comprehensive_package.enhanced_personalized_message.estimated_response_rate
-                        },
-                        "processing_time": comprehensive_package.processing_metadata.get("total_processing_time", 0),
-                        "status": "enhanced_complete"
+                        "status": "enhanced_complete",
+                        "processing_time_seconds": comprehensive_package.processing_metadata.get("total_processing_time", 0),
                     }
+
+                    es = comprehensive_package.enhanced_strategy
+                    if es:
+                        # Lead Qualification
+                        if es.lead_qualification and not es.lead_qualification.error_message:
+                            result["qualification_tier"] = es.lead_qualification.qualification_tier
+                            result["qualification_justification"] = es.lead_qualification.justification
+                            result["qualification_confidence"] = es.lead_qualification.confidence_score
+                        else:
+                            result["qualification_tier"] = "Error"
+                            result["qualification_justification"] = es.lead_qualification.error_message if es.lead_qualification else "N/A"
+                        
+                        # Pain Point Analysis
+                        if es.pain_point_analysis and not es.pain_point_analysis.error_message:
+                            result["primary_pain_category"] = es.pain_point_analysis.primary_pain_category
+                            result["pain_urgency_level"] = es.pain_point_analysis.urgency_level
+                            result["num_detailed_pain_points"] = len(es.pain_point_analysis.detailed_pain_points)
+                        else:
+                            result["primary_pain_category"] = "Error"
+                            result["pain_urgency_level"] = es.pain_point_analysis.error_message if es.pain_point_analysis else "N/A"
+
+                        # ToT Synthesized Action Plan
+                        if es.tot_synthesized_action_plan and not es.tot_synthesized_action_plan.error_message:
+                            result["recommended_strategy_name"] = es.tot_synthesized_action_plan.recommended_strategy_name
+                            result["recommended_strategy_hook"] = es.tot_synthesized_action_plan.primary_angle_hook
+                            result["recommended_strategy_tone"] = es.tot_synthesized_action_plan.tone_of_voice
+                            result["num_action_steps"] = len(es.tot_synthesized_action_plan.action_sequence)
+                        else:
+                            result["recommended_strategy_name"] = "Error"
+                            result["recommended_strategy_hook"] = es.tot_synthesized_action_plan.error_message if es.tot_synthesized_action_plan else "N/A"
+
+                        # Detailed Approach Plan
+                        if es.detailed_approach_plan and not es.detailed_approach_plan.error_message:
+                            result["detailed_plan_main_objective"] = es.detailed_approach_plan.main_objective
+                            result["num_contact_sequence_steps"] = len(es.detailed_approach_plan.contact_sequence)
+                        else:
+                            result["detailed_plan_main_objective"] = "Error"
+                            
+                        # Contact Information
+                        if es.contact_information and not es.contact_information.error_message:
+                            result["contacts_emails_found"] = len(es.contact_information.emails_found)
+                            result["contacts_instagram_found"] = len(es.contact_information.instagram_profiles)
+                            result["contact_extraction_confidence"] = es.contact_information.extraction_confidence
+                        
+                        # External Intelligence
+                        if es.external_intelligence and not es.external_intelligence.error_message:
+                            result["tavily_enriched"] = bool(es.external_intelligence.tavily_enrichment and "enrichment failed" not in es.external_intelligence.tavily_enrichment.lower())
+                            result["enrichment_confidence"] = es.external_intelligence.enrichment_confidence
+                        
+                        # Value Propositions
+                        if es.value_propositions: # This is a list
+                            valid_vps = [vp for vp in es.value_propositions if not vp.error_message]
+                            result["num_value_propositions"] = len(valid_vps)
+                            if not valid_vps and es.value_propositions and es.value_propositions[0].error_message: # If all have errors
+                                result["value_propositions_error"] = es.value_propositions[0].error_message
+
+                        # Strategic Questions
+                        result["num_strategic_questions"] = len(es.strategic_questions) if es.strategic_questions and isinstance(es.strategic_questions, list) and not (len(es.strategic_questions) == 1 and "Error" in es.strategic_questions[0]) else 0
+                        
+                        # Competitor Intelligence
+                        if es.competitor_intelligence and not es.competitor_intelligence.error_message:
+                             result["num_competitors_identified"] = len(es.competitor_intelligence.identified_competitors)
+                        
+                        # Purchase Triggers
+                        if es.purchase_triggers and not es.purchase_triggers.error_message:
+                            result["num_purchase_triggers"] = len(es.purchase_triggers.identified_triggers)
+
+                        # Objection Framework
+                        if es.objection_framework and not es.objection_framework.error_message:
+                            result["num_objections_prepared"] = len(es.objection_framework.anticipated_objections)
+                    else:
+                        result["enhanced_strategy_error"] = "EnhancedStrategy object not populated."
+
+                    # Personalized Message details
+                    pm = comprehensive_package.enhanced_personalized_message
+                    if pm and not pm.error_message and pm.primary_message:
+                        result["message_channel"] = pm.primary_message.channel.value if pm.primary_message.channel else None
+                        result["message_subject_present"] = bool(pm.primary_message.subject_line)
+                        result["message_personalization_score"] = pm.personalization_score
+                    elif pm and pm.error_message:
+                         result["message_error"] = pm.error_message
                     
+                    # Internal Briefing
+                    ib = comprehensive_package.internal_briefing
+                    if ib and not ib.error_message:
+                        result["internal_briefing_executive_summary_present"] = bool(ib.executive_summary and ib.executive_summary != "Não especificado")
+                    elif ib and ib.error_message:
+                        result["internal_briefing_error"] = ib.error_message
+                        
                     results.append(result)
                     successful += 1
                     
