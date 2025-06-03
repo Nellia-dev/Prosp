@@ -11,7 +11,7 @@ class TestContactExtractionAgent(unittest.TestCase):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
         self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
         self.mock_llm_client.update_usage_stats = MagicMock()
-        
+
         self.agent = ContactExtractionAgent(llm_client=self.mock_llm_client)
 
     def test_process_success_finds_contacts(self):
@@ -27,7 +27,7 @@ class TestContactExtractionAgent(unittest.TestCase):
             company_name="Example Inc",
             product_service_offered="Test Services"
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, ContactExtractionOutput)
@@ -52,7 +52,7 @@ class TestContactExtractionAgent(unittest.TestCase):
             company_name="Example Inc",
             product_service_offered="Test Services"
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, ContactExtractionOutput)
@@ -72,19 +72,19 @@ class TestContactExtractionAgent(unittest.TestCase):
             company_name="Fallback Solutions",
             product_service_offered="Fallback Services"
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, ContactExtractionOutput)
         self.assertIsNotNone(result.error_message) # Expecting an error message due to parsing failure
         self.assertIn("JSON parsing failed", result.error_message)
-        
+
         # Check if regex fallback worked
         self.assertListEqual(result.emails_found, ["contact@fallback.com"])
         self.assertListEqual(result.instagram_profiles_found, ["@fallback_insta"])
         # Tavily suggestion would likely be empty or default from the model if JSON parsing failed for it
         self.assertEqual(result.tavily_search_suggestion, "") # Or whatever the default is in ContactExtractionOutput
-        
+
         self.mock_llm_client.generate.assert_called_once()
 
     def test_process_llm_returns_empty_response(self):
@@ -95,7 +95,7 @@ class TestContactExtractionAgent(unittest.TestCase):
             company_name="Empty Response Co",
             product_service_offered="Services"
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, ContactExtractionOutput)
@@ -118,7 +118,7 @@ class TestContactExtractionAgent(unittest.TestCase):
             company_name="Missing Fields Corp",
             product_service_offered="Partial Data"
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, ContactExtractionOutput)
@@ -128,7 +128,7 @@ class TestContactExtractionAgent(unittest.TestCase):
         if not (result.emails_found or result.instagram_profiles_found or result.tavily_search_suggestion):
              self.assertIsNotNone(result.error_message) # This condition is from the agent's code
         else:
-            self.assertIsNone(result.error_message) 
+            self.assertIsNone(result.error_message)
 
 
         self.assertListEqual(result.emails_found, ["onlyemail@example.com"])

@@ -45,9 +45,9 @@ class ValuePropositionCustomizationAgent(BaseAgent[ValuePropositionCustomization
             tr_persona = self._truncate_text(input_data.persona_profile, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 5)
             tr_pains = self._truncate_text(input_data.deepened_pain_points, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 4)
             tr_triggers = self._truncate_text(input_data.buying_triggers_report, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 4)
-            
+
             # Extract persona_fictional_name from persona_profile for the prompt
-            persona_fictional_name = "a persona" 
+            persona_fictional_name = "a persona"
             try:
                 # A simple regex to find a name like pattern (e.g., "Carlos Mendes,")
                 match = re.search(r"([A-Za-zÀ-ÖØ-öø-ÿ\s]+),", input_data.persona_profile)
@@ -115,7 +115,7 @@ class ValuePropositionCustomizationAgent(BaseAgent[ValuePropositionCustomization
                 return ValuePropositionCustomizationOutput(error_message="LLM call returned no response.")
 
             parsed_output = self.parse_llm_json_response(llm_response_str, ValuePropositionCustomizationOutput)
-            
+
             if parsed_output.error_message:
                  self.logger.warning(f"ValuePropositionCustomizationAgent JSON parsing failed. Raw response: {llm_response_str[:500]}")
 

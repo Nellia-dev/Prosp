@@ -13,7 +13,7 @@ class TestObjectionHandlingAgent(unittest.TestCase):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
         self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
         self.mock_llm_client.update_usage_stats = MagicMock()
-        
+
         self.agent = ObjectionHandlingAgent(llm_client=self.mock_llm_client)
 
     def test_process_success_anticipates_objections(self):
@@ -27,7 +27,7 @@ class TestObjectionHandlingAgent(unittest.TestCase):
             response_strategy="Reconhecer a Solução Z, destacar diferenciais chave para o cenário específico do lead, e propor análise comparativa focada nos ganhos não cobertos.",
             suggested_response="A Solução Z é uma boa ferramenta. O que nossos clientes que vieram da Z mais valorizam na nossa plataforma é [Diferencial A] e [Diferencial B], que são cruciais para [Problema Específico do Lead]. Que tal uma análise rápida focada nesses pontos?"
         )
-        
+
         mock_json_output_dict = {
             "anticipated_objections": [
                 mock_objection1.model_dump(),
@@ -35,7 +35,7 @@ class TestObjectionHandlingAgent(unittest.TestCase):
             ]
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
-        
+
         self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=200, input_tokens=100, output_tokens=100)
 
         test_input = ObjectionHandlingInput(
@@ -44,16 +44,16 @@ class TestObjectionHandlingAgent(unittest.TestCase):
             product_service_offered="Solução X de Otimização Financeira",
             company_name="Financeira Eficiente S.A."
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, ObjectionHandlingOutput)
         self.assertIsNone(result.error_message)
         self.assertEqual(len(result.anticipated_objections), 2)
-        
+
         self.assertEqual(result.anticipated_objections[0].objection, mock_objection1.objection)
         self.assertEqual(result.anticipated_objections[1].response_strategy, mock_objection2.response_strategy)
-        
+
         self.mock_llm_client.generate.assert_called_once()
         called_prompt = self.mock_llm_client.generate.call_args[0][0]
         self.assertIn("Responda APENAS com um objeto JSON", called_prompt)

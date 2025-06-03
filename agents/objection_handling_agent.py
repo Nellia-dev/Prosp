@@ -39,7 +39,7 @@ class ObjectionHandlingAgent(BaseAgent[ObjectionHandlingInput, ObjectionHandling
             # Truncate inputs
             tr_plan = self._truncate_text(input_data.detailed_approach_plan_text, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 3)
             tr_persona = self._truncate_text(input_data.persona_profile, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 3)
-            
+
             prompt_template = """
                 Você é um Especialista em Treinamento de Vendas, focado em preparação para objeções comuns no ciclo de vendas B2B.
                 Seu objetivo é antecipar objeções que a persona ({persona_fictional_name} da {company_name}) possa ter em relação ao {product_service_offered} e ao plano de abordagem, e sugerir respostas eficazes.
@@ -49,7 +49,7 @@ class ObjectionHandlingAgent(BaseAgent[ObjectionHandlingInput, ObjectionHandling
 
                 PERFIL DA PERSONA (para entender suas prioridades e preocupações):
                 {persona_profile}
-                
+
                 EMPRESA DO LEAD: {company_name}
                 PRODUTO/SERVIÇO OFERECIDO: {product_service_offered}
 
@@ -81,7 +81,7 @@ class ObjectionHandlingAgent(BaseAgent[ObjectionHandlingInput, ObjectionHandling
                 Não inclua nenhuma explicação ou texto adicional fora do objeto JSON.
             """
             # Extract persona_fictional_name from persona_profile for the prompt
-            persona_fictional_name = "a persona" 
+            persona_fictional_name = "a persona"
             try:
                 match = re.search(r"([A-Za-zÀ-ÖØ-öø-ÿ\s]+),", input_data.persona_profile)
                 if match:
@@ -104,7 +104,7 @@ class ObjectionHandlingAgent(BaseAgent[ObjectionHandlingInput, ObjectionHandling
                 return ObjectionHandlingOutput(error_message="LLM call returned no response.")
 
             parsed_output = self.parse_llm_json_response(llm_response_str, ObjectionHandlingOutput)
-            
+
             if parsed_output.error_message:
                  self.logger.warning(f"ObjectionHandlingAgent JSON parsing failed. Raw response: {llm_response_str[:500]}")
 

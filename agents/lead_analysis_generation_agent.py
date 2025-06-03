@@ -36,7 +36,7 @@ class LeadAnalysisGenerationAgent(BaseAgent[LeadAnalysisGenerationInput, LeadAna
             # Truncate inputs to avoid exceeding LLM context window
             truncated_lead_data = self._truncate_text(input_data.lead_data_str, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 3)
             truncated_enriched_data = self._truncate_text(input_data.enriched_data, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 3)
-            
+
             prompt_template = """
                 Você é um Analista de Negócios B2B experiente. Sua tarefa é gerar uma análise concisa e perspicaz de um lead para {product_service_offered}.
 
@@ -60,7 +60,7 @@ class LeadAnalysisGenerationAgent(BaseAgent[LeadAnalysisGenerationInput, LeadAna
 
                 ANÁLISE DO LEAD:
             """
-            
+
             formatted_prompt = prompt_template.format(
                 product_service_offered=input_data.product_service_offered,
                 lead_data_str=truncated_lead_data,

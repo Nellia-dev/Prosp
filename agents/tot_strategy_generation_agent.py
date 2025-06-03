@@ -95,12 +95,12 @@ class ToTStrategyGenerationAgent(BaseAgent[ToTStrategyGenerationInput, ToTStrate
                 return ToTStrategyGenerationOutput(error_message="LLM call returned no response.")
 
             parsed_output = self.parse_llm_json_response(llm_response_str, ToTStrategyGenerationOutput)
-            
+
             if parsed_output.error_message:
                  self.logger.warning(f"ToTStrategyGenerationAgent JSON parsing failed. Raw response: {llm_response_str[:500]}")
-            
+
             return parsed_output
-        
+
         except Exception as e:
             self.logger.error(f"An unexpected error occurred in {self.name}: {e}")
             import traceback

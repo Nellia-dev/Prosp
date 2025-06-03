@@ -133,13 +133,13 @@ class TestEnhancedLeadProcessor(unittest.TestCase):
         self.processor.strategic_question_generation_agent.execute.return_value = StrategicQuestionGenerationOutput(
             generated_questions=["Como a Example Corp planeja lidar com o crescimento X nos próximos Y meses?"]
         )
-        
+
         # ToT Agents
         mock_tot_generation_output = ToTStrategyGenerationOutput(
             proposed_strategies=[ToTStrategyOptionModel(strategy_name="Estratégia A", angle_or_hook="Foco na dor X", tone_of_voice="Consultivo", primary_channels=["Email"], key_points_or_arguments=["Ponto 1"], opening_question="Pergunta A?")]
         )
         self.processor.tot_strategy_generation_agent.execute.return_value = mock_tot_generation_output
-        
+
         mock_tot_evaluation_output = ToTStrategyEvaluationOutput(
             evaluated_strategies=[EvaluatedStrategyModel(strategy_name="Estratégia A", suitability_assessment="Boa", strengths=["Forte"], weaknesses_or_risks=["Nenhum"], suggested_improvements=["Nenhuma"], confidence_score="Alta", confidence_justification="Faz sentido.")]
         )
@@ -157,7 +157,7 @@ class TestEnhancedLeadProcessor(unittest.TestCase):
             contact_sequence=[ContactStepDetailSchema(step_number=1, channel="Email", objective="Introdução", key_topics_arguments=["Dor X"], key_questions=["Pergunta sobre X?"], cta="Call", supporting_materials="Case study A")]
         )
         self.processor.detailed_approach_plan_agent.execute.return_value = mock_detailed_plan_output
-        
+
         self.processor.objection_handling_agent.execute.return_value = ObjectionHandlingOutput(
             anticipated_objections=[ObjectionResponseModelSchema(objection="Custo?", response_strategy="Foco no ROI", suggested_response="Retorno em X meses.")]
         )
@@ -203,18 +203,18 @@ class TestEnhancedLeadProcessor(unittest.TestCase):
         self.assertEqual(es.purchase_triggers.identified_triggers[0].trigger_description, "Anunciaram nova rodada de investimento.")
         self.assertEqual(es.value_propositions[0].title, "Escale com Confiança")
         self.assertIn("Como a Example Corp planeja lidar com o crescimento X nos próximos Y meses?", es.strategic_questions)
-        
+
         self.assertIsNotNone(es.tot_synthesized_action_plan)
         self.assertEqual(es.tot_synthesized_action_plan.recommended_strategy_name, "Estratégia A (Refinada)")
         self.assertIsNotNone(es.detailed_approach_plan)
         self.assertEqual(es.detailed_approach_plan.main_objective, "Agendar reunião")
-        
+
         self.assertIsNotNone(es.objection_framework)
         self.assertEqual(es.objection_framework.anticipated_objections[0].objection, "Custo?")
-        
+
         self.assertIsNotNone(package_output.enhanced_personalized_message)
         self.assertEqual(package_output.enhanced_personalized_message.primary_message.subject_line, "Oportunidade para Example Corp")
-        
+
         self.assertIsNotNone(package_output.internal_briefing)
         self.assertEqual(package_output.internal_briefing.executive_summary, "Resumo: Lead Example Corp é promissor.")
 

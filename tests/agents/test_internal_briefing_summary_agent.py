@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 import json
 
 from agents.internal_briefing_summary_agent import (
-    InternalBriefingSummaryAgent, InternalBriefingSummaryInput, 
+    InternalBriefingSummaryAgent, InternalBriefingSummaryInput,
     InternalBriefingSummaryOutput, InternalBriefingSection
 )
 from core_logic.llm_client import LLMClientBase, LLMResponse
@@ -14,7 +14,7 @@ class TestInternalBriefingSummaryAgent(unittest.TestCase):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
         self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
         self.mock_llm_client.update_usage_stats = MagicMock()
-        
+
         self.agent = InternalBriefingSummaryAgent(llm_client=self.mock_llm_client)
 
     def test_process_success_generates_briefing(self):
@@ -55,7 +55,7 @@ class TestInternalBriefingSummaryAgent(unittest.TestCase):
             "recommended_next_step": "Enviar email personalizado para Dr. Ana K. com case de P&D."
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
-        
+
         self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=300, input_tokens=150, output_tokens=150)
 
         test_input_data = {
@@ -65,7 +65,7 @@ class TestInternalBriefingSummaryAgent(unittest.TestCase):
             # ... (other summarized data points as expected by the agent's prompt formatting)
         }
         test_input = InternalBriefingSummaryInput(all_lead_data=test_input_data)
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, InternalBriefingSummaryOutput)
@@ -74,7 +74,7 @@ class TestInternalBriefingSummaryAgent(unittest.TestCase):
         self.assertEqual(result.lead_overview.title, "Visão Geral do Lead")
         self.assertIn("Dr. Ana K.", result.persona_profile_summary.content)
         self.assertEqual(result.recommended_next_step, "Enviar email personalizado para Dr. Ana K. com case de P&D.")
-        
+
         self.mock_llm_client.generate.assert_called_once()
         called_prompt = self.mock_llm_client.generate.call_args[0][0]
         self.assertIn("Responda APENAS com um objeto JSON", called_prompt)

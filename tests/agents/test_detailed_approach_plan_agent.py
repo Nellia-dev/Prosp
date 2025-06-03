@@ -13,7 +13,7 @@ class TestDetailedApproachPlanAgent(unittest.TestCase):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
         self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
         self.mock_llm_client.update_usage_stats = MagicMock()
-        
+
         self.agent = DetailedApproachPlanAgent(llm_client=self.mock_llm_client)
 
     def test_process_success_generates_detailed_plan(self):
@@ -35,7 +35,7 @@ class TestDetailedApproachPlanAgent(unittest.TestCase):
             cta="Compartilhar um artigo e pedir opinião.",
             supporting_materials="Link para artigo B."
         )
-        
+
         mock_json_output_dict = {
             "main_objective": "Converter o lead Empresa Alfa em cliente da Solução Y.",
             "adapted_elevator_pitch": "A Solução Y ajuda empresas como a Empresa Alfa a superar o desafio X, resultando em Y% de melhoria.",
@@ -48,7 +48,7 @@ class TestDetailedApproachPlanAgent(unittest.TestCase):
             "suggested_next_steps_if_successful": ["Realizar demonstração personalizada", "Apresentar proposta comercial"]
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
-        
+
         self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=300, input_tokens=150, output_tokens=150)
 
         test_input = DetailedApproachPlanInput(
@@ -59,7 +59,7 @@ class TestDetailedApproachPlanAgent(unittest.TestCase):
             product_service_offered="Solução Y de Gestão de Inventário Inteligente",
             lead_url="http://empresaalfa.example.com"
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, DetailedApproachPlanOutput)
@@ -69,7 +69,7 @@ class TestDetailedApproachPlanAgent(unittest.TestCase):
         self.assertEqual(result.contact_sequence[0].channel, "Email Personalizado")
         self.assertEqual(result.contact_sequence[1].objective, "Reforçar valor e manter lead aquecido.")
         self.assertIn("Abertura de email", result.engagement_indicators_to_monitor)
-        
+
         self.mock_llm_client.generate.assert_called_once()
         called_prompt = self.mock_llm_client.generate.call_args[0][0]
         self.assertIn("Responda APENAS com um objeto JSON", called_prompt)
@@ -80,7 +80,7 @@ class TestDetailedApproachPlanAgent(unittest.TestCase):
         self.mock_llm_client.generate.return_value = LLMResponse(content=malformed_json_str, provider_name="mock", model_name="mock_model", total_tokens=10, input_tokens=5, output_tokens=5)
 
         test_input = DetailedApproachPlanInput(
-            lead_analysis=".", persona_profile=".", deepened_pain_points=".", 
+            lead_analysis=".", persona_profile=".", deepened_pain_points=".",
             final_action_plan_text=".", product_service_offered=".", lead_url="http://a.com"
         )
         result = self.agent.execute(test_input)

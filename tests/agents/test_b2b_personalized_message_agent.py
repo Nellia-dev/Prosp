@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 import json
 
 from agents.b2b_personalized_message_agent import (
-    B2BPersonalizedMessageAgent, B2BPersonalizedMessageInput, 
+    B2BPersonalizedMessageAgent, B2BPersonalizedMessageInput,
     B2BPersonalizedMessageOutput, ContactDetailsInput
 )
 from core_logic.llm_client import LLMClientBase, LLMResponse
@@ -14,7 +14,7 @@ class TestB2BPersonalizedMessageAgent(unittest.TestCase):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
         self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
         self.mock_llm_client.update_usage_stats = MagicMock()
-        
+
         self.agent = B2BPersonalizedMessageAgent(llm_client=self.mock_llm_client)
 
     def test_process_success_email(self):
@@ -24,7 +24,7 @@ class TestB2BPersonalizedMessageAgent(unittest.TestCase):
             "crafted_message_body": "Olá João,\n\nPercebi que a ExemploCorp busca otimizar X. Nossa solução Y pode ajudar com Z.\n\nGostaria de conversar?\n\nAtenciosamente,\n[Seu Nome]"
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
-        
+
         self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=100, input_tokens=50, output_tokens=50)
 
         test_input = B2BPersonalizedMessageInput(
@@ -36,7 +36,7 @@ class TestB2BPersonalizedMessageAgent(unittest.TestCase):
             company_name="ExemploCorp",
             persona_fictional_name="João Silva"
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, B2BPersonalizedMessageOutput)
@@ -81,7 +81,7 @@ class TestB2BPersonalizedMessageAgent(unittest.TestCase):
             lead_url="url", company_name="Empresa", persona_fictional_name="Persona"
         )
         result = self.agent.execute(test_input)
-        
+
         self.assertIsInstance(result, B2BPersonalizedMessageOutput)
         self.assertIsNotNone(result.error_message)
         self.assertIn("Nenhum canal de contato adequado encontrado.", result.error_message)

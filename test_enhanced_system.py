@@ -22,13 +22,13 @@ def create_test_data():
             snippet="Líder brasileira em IA e Machine Learning para otimização de processos B2B."
         ),
         extracted_text_content="""
-        A Example Company é uma empresa brasileira inovadora, fundada em 2010, com foco em soluções de software e consultoria para o mercado B2B. 
+        A Example Company é uma empresa brasileira inovadora, fundada em 2010, com foco em soluções de software e consultoria para o mercado B2B.
         Nossa missão é transformar digitalmente negócios através de tecnologia de ponta e expertise setorial.
-        Oferecemos um portfólio diversificado que inclui desenvolvimento de software sob medida, implementação de sistemas ERP e CRM, 
-        e consultoria especializada em transformação digital e otimização de processos. Recentemente, expandimos nossa atuação para incluir 
+        Oferecemos um portfólio diversificado que inclui desenvolvimento de software sob medida, implementação de sistemas ERP e CRM,
+        e consultoria especializada em transformação digital e otimização de processos. Recentemente, expandimos nossa atuação para incluir
         análise de dados avançada e soluções de inteligência artificial para previsão de demanda e detecção de anomalias.
 
-        Nossos principais clientes são empresas de médio e grande porte nos setores de Varejo, Manufatura e Serviços Financeiros, 
+        Nossos principais clientes são empresas de médio e grande porte nos setores de Varejo, Manufatura e Serviços Financeiros,
         que buscam otimizar seus processos, reduzir custos operacionais, melhorar a experiência do cliente e aumentar sua competitividade.
         Um desafio comum que ajudamos a resolver é a integração de sistemas legados com novas tecnologias em nuvem, garantindo a continuidade e segurança dos dados.
         Muitas empresas também nos procuram para melhorar a visibilidade de seus dados e transformá-los em insights acionáveis para tomada de decisão estratégica.
@@ -63,7 +63,7 @@ class TestEnhancedSystem(unittest.TestCase): # Inherit from unittest.TestCase
 
     def test_enhanced_processing(self):
         """Test enhanced processing mode"""
-        
+
         print("🧪 Testing Enhanced Nellia Prospector System")
         print("=" * 50)
         
@@ -75,12 +75,12 @@ class TestEnhancedSystem(unittest.TestCase): # Inherit from unittest.TestCase
             processing_mode=ProcessingMode.ENHANCED,
             tavily_api_key=os.getenv("TAVILY_API_KEY")
         )
-        
+
         print(f"✅ Processor initialized")
         print(f"   - Mode: {processor.processing_mode.value}")
         print(f"   - Tavily enabled: {bool(processor.enhanced_processor.tavily_api_key if hasattr(processor, 'enhanced_processor') and processor.enhanced_processor else False)}")
         print(f"   - Product context: {processor.product_service_context[:50]}...")
-        
+
         try:
             print("\n🔄 Processing test lead...")
             results = processor.process_leads(test_data, limit=1)
@@ -107,18 +107,18 @@ class TestEnhancedSystem(unittest.TestCase): # Inherit from unittest.TestCase
                 self.assertIsNotNone(lead_result.get('qualification_tier'), "Qualification tier should be present")
                 self.assertIsInstance(lead_result.get('qualification_justification', ''), str)
                 self.assertIsInstance(lead_result.get('num_detailed_pain_points', 0), int, "Number of pain points should be an int")
-                
+
                 primary_pain_cat = lead_result.get('primary_pain_category', '')
                 self.assertTrue(isinstance(primary_pain_cat, str), "Primary pain category should be a string")
                 if "Error" not in primary_pain_cat and primary_pain_cat != "N/A" and primary_pain_cat != "Não especificado":
                     self.assertTrue(len(primary_pain_cat) > 0, "Primary pain category, if not error/NA, should not be empty")
 
                 self.assertIsNotNone(lead_result.get('recommended_strategy_name'), "Recommended strategy name should be present")
-                
+
                 self.assertGreaterEqual(lead_result.get('contacts_emails_found', 0), 1, "Should find at least one email")
                 self.assertGreater(lead_result.get('contact_extraction_confidence', 0.0), 0.0, "Contact extraction confidence should be > 0")
                 self.assertIsInstance(lead_result.get('tavily_enriched'), bool, "Tavily enriched flag should be boolean")
-                
+
                 # Check counts, allowing for 0 if LLM doesn't find items based on test data
                 self.assertIsInstance(lead_result.get('num_value_propositions', 0), int)
                 self.assertIsInstance(lead_result.get('num_strategic_questions',0), int)
@@ -139,15 +139,15 @@ class TestEnhancedSystem(unittest.TestCase): # Inherit from unittest.TestCase
             # Generate and display report
             print("\n📈 Generating detailed report...")
             processor.generate_report(results)
-            
+
             # Save results to temporary file
             with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
                 processor.save_results(results, f.name)
                 print(f"\n💾 Test results saved to: {f.name}")
-            
+
             print("\n✅ Enhanced system test completed successfully!")
             return True
-            
+
         except Exception as e:
             print(f"\n❌ Test failed: {e}")
             import traceback
@@ -183,7 +183,7 @@ class TestEnhancedSystem(unittest.TestCase): # Inherit from unittest.TestCase
         if standard_results.total_leads > 0 :
              print(f"   - Success rate: {standard_results.metrics['success_rate']:.1%}")
         print(f"   - Tokens used: {standard_results.metrics.get('total_tokens_used', 0)}")
-        
+
         print(f"\nEnhanced Mode:")
         print(f"   - Processing time: {enhanced_results.processing_time:.2f}s")
         if enhanced_results.total_leads > 0:
@@ -191,7 +191,7 @@ class TestEnhancedSystem(unittest.TestCase): # Inherit from unittest.TestCase
             print(f"   - Avg confidence: {enhanced_results.metrics.get('avg_overall_confidence_score', enhanced_results.metrics.get('avg_confidence_score', 0)):.3f}") # Updated key
             print(f"   - Avg ROI potential: {enhanced_results.metrics.get('avg_roi_potential', 0):.3f}")
         print(f"   - Tokens used: {enhanced_results.metrics.get('total_tokens_used', 0)}")
-        
+
         if enhanced_results.results:
             enhanced_sample_result = enhanced_results.results[0]
             print(f"   - Sample Enhanced Lead Qualification: {enhanced_sample_result.get('qualification_tier', 'N/A')}")
@@ -210,13 +210,13 @@ def main_test_runner(): # Renamed to avoid conflict with unittest.main
     if not os.getenv('GEMINI_API_KEY'):
         print("\n❌ GEMINI_API_KEY is required for testing!")
         print("Please set it in your .env file or environment variables.")
-        return False 
-    
+        return False
+
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(TestEnhancedSystem))
     runner = unittest.TextTestRunner()
     result = runner.run(suite)
-    
+
     if result.wasSuccessful():
         print("\n🎉 All tests in enhanced_system_test passed! Nellia Prospector is ready for further testing!")
         print("\nNext steps:")

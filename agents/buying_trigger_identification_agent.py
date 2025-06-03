@@ -66,7 +66,7 @@ class BuyingTriggerIdentificationAgent(BaseAgent[BuyingTriggerIdentificationInpu
                 Para cada gatilho identificado:
                 1.  Descreva o gatilho.
                 2.  Explique brevemente por que ele pode ser um indicador de oportunidade para {product_service_offered}.
-                
+
                 Se nenhum gatilho claro for identificado, retorne uma lista vazia para "identified_triggers".
                 Use o campo "other_observations" para quaisquer notas gerais.
 
@@ -95,7 +95,7 @@ class BuyingTriggerIdentificationAgent(BaseAgent[BuyingTriggerIdentificationInpu
                 return BuyingTriggerIdentificationOutput(error_message="LLM call returned no response.")
 
             parsed_output = self.parse_llm_json_response(llm_response_str, BuyingTriggerIdentificationOutput)
-            
+
             if parsed_output.error_message:
                  self.logger.warning(f"BuyingTriggerIdentificationAgent JSON parsing failed. Raw response: {llm_response_str[:500]}")
             # No specific regex fallback here. Error from parse_llm_json_response will be propagated.

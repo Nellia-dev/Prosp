@@ -31,7 +31,7 @@ class B2BPersonaCreationAgent(BaseAgent[B2BPersonaCreationInput, B2BPersonaCreat
 
         try:
             truncated_analysis = self._truncate_text(input_data.lead_analysis, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 2)
-            
+
             prompt_template = """
                 Você é um Especialista em Marketing B2B e Vendas. Sua tarefa é criar um perfil de persona detalhado para um tomador de decisão chave, com base na análise do lead e no produto/serviço oferecido. Considere o contexto do mercado brasileiro.
 
@@ -71,7 +71,7 @@ class B2BPersonaCreationAgent(BaseAgent[B2BPersonaCreationInput, B2BPersonaCreat
                 persona_profile = llm_response
             else:
                 error_message = "LLM call returned no response or an empty response."
-        
+
         except Exception as e:
             import traceback
             traceback.print_exc()

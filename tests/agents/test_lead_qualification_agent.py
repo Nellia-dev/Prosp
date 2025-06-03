@@ -11,7 +11,7 @@ class TestLeadQualificationAgent(unittest.TestCase):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
         self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
         self.mock_llm_client.update_usage_stats = MagicMock()
-        
+
         self.agent = LeadQualificationAgent(llm_client=self.mock_llm_client)
 
     def test_process_success_high_potential(self):
@@ -21,7 +21,7 @@ class TestLeadQualificationAgent(unittest.TestCase):
             "confidence_score": 0.92
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
-        
+
         self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=40, input_tokens=20, output_tokens=20)
 
         test_input = LeadQualificationInput(
@@ -30,7 +30,7 @@ class TestLeadQualificationAgent(unittest.TestCase):
             deepened_pain_points="Sistemas atuais não suportam a demanda, causando perda de oportunidades.",
             product_service_offered="Plataforma de escalabilidade XaaS"
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, LeadQualificationOutput)
@@ -40,7 +40,7 @@ class TestLeadQualificationAgent(unittest.TestCase):
         self.assertEqual(result.confidence_score, 0.92)
         self.mock_llm_client.generate.assert_called_once()
         # call_args = self.mock_llm_client.generate.call_args
-        # called_prompt = call_args[0][0] 
+        # called_prompt = call_args[0][0]
         # self.assertIn(test_input.product_service_offered, called_prompt)
 
     def test_process_llm_returns_malformed_json(self):
@@ -53,7 +53,7 @@ class TestLeadQualificationAgent(unittest.TestCase):
             deepened_pain_points="Dores.",
             product_service_offered="Produto."
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, LeadQualificationOutput)
@@ -72,7 +72,7 @@ class TestLeadQualificationAgent(unittest.TestCase):
             deepened_pain_points="Dores.",
             product_service_offered="Produto."
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, LeadQualificationOutput)
@@ -87,13 +87,13 @@ class TestLeadQualificationAgent(unittest.TestCase):
         # However, our current LeadQualificationOutput.qualification_tier is just a string, so this will pass.
         # If it were an Enum, parse_llm_json_response would set an error.
         mock_json_output_dict = {
-            "qualification_tier": "Tier Desconhecido", 
+            "qualification_tier": "Tier Desconhecido",
             "justification": "LLM retornou um tier não esperado.",
             "confidence_score": 0.5
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
         self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=20, input_tokens=10, output_tokens=10)
-        
+
         test_input = LeadQualificationInput(
             lead_analysis="Análise.",
             persona_profile="Persona.",
@@ -101,7 +101,7 @@ class TestLeadQualificationAgent(unittest.TestCase):
             product_service_offered="Produto."
         )
         result = self.agent.execute(test_input)
-        
+
         self.assertIsInstance(result, LeadQualificationOutput)
         self.assertIsNone(result.error_message) # Pydantic will accept any string for qualification_tier
         self.assertEqual(result.qualification_tier, "Tier Desconhecido")

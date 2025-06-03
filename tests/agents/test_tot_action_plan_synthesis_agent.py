@@ -13,7 +13,7 @@ class TestToTActionPlanSynthesisAgent(unittest.TestCase):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
         self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
         self.mock_llm_client.update_usage_stats = MagicMock()
-        
+
         self.agent = ToTActionPlanSynthesisAgent(llm_client=self.mock_llm_client)
 
     def test_process_success_synthesizes_plan(self):
@@ -31,7 +31,7 @@ class TestToTActionPlanSynthesisAgent(unittest.TestCase):
             key_message_or_argument="Compartilhar artigo relevante sobre o setor e mencionar a Solução Y.",
             cta="Perguntar opinião sobre o artigo."
         )
-        
+
         mock_json_output_dict = {
             "recommended_strategy_name": "Abordagem Consultiva Refinada",
             "primary_angle_hook": "Resolver o desafio de escalabilidade com foco em ROI rápido.",
@@ -46,7 +46,7 @@ class TestToTActionPlanSynthesisAgent(unittest.TestCase):
             "contingency_plan": "Se não houver resposta, tentar contato via parceiro em comum após 7 dias."
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
-        
+
         self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=250, input_tokens=120, output_tokens=130)
 
         test_input = ToTActionPlanSynthesisInput(
@@ -54,7 +54,7 @@ class TestToTActionPlanSynthesisAgent(unittest.TestCase):
             proposed_strategies_text="Estratégia Original 1: ...\nEstratégia Original 2: ...",
             current_lead_summary="Empresa ABC, buscando escalar. CEO focado em ROI."
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, ToTActionPlanSynthesisOutput)
@@ -64,7 +64,7 @@ class TestToTActionPlanSynthesisAgent(unittest.TestCase):
         self.assertEqual(len(result.action_sequence), 2)
         self.assertEqual(result.action_sequence[0].channel, "Email")
         self.assertListEqual(result.success_metrics, ["Taxa de resposta ao email > 20%", "Agendamento de 5 calls/semana"])
-        
+
         self.mock_llm_client.generate.assert_called_once()
         called_prompt = self.mock_llm_client.generate.call_args[0][0]
         self.assertIn("Responda APENAS com um objeto JSON", called_prompt)
@@ -83,7 +83,7 @@ class TestToTActionPlanSynthesisAgent(unittest.TestCase):
         self.assertIsNotNone(result.error_message)
         self.assertIn("Failed to parse LLM response as JSON", result.error_message)
         # Check default values
-        self.assertEqual(result.recommended_strategy_name, "Estratégia Combinada/Refinada") 
+        self.assertEqual(result.recommended_strategy_name, "Estratégia Combinada/Refinada")
         self.assertEqual(len(result.action_sequence), 0)
 
 if __name__ == '__main__':

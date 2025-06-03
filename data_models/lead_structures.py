@@ -233,7 +233,7 @@ class CompetitorIntelligence(BaseModel):
     other_notes: Optional[str] = Field(None, description="Other general notes on competitive landscape")
     raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
     error_message: Optional[str] = None
-    # Old fields removed: mentioned_competitors, current_solutions, competitive_advantages, 
+    # Old fields removed: mentioned_competitors, current_solutions, competitive_advantages,
     # market_positioning, switching_barriers, competitive_threats
 
 class PurchaseTriggers(BaseModel):
@@ -242,7 +242,7 @@ class PurchaseTriggers(BaseModel):
     other_observations: Optional[str] = Field(None, description="Other general observations on triggers")
     raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
     error_message: Optional[str] = None
-    # Old fields removed: recent_events, market_signals, timing_indicators, 
+    # Old fields removed: recent_events, market_signals, timing_indicators,
     # growth_signals, urgency_drivers, budget_cycle_insights
 
 class LeadQualification(BaseModel):
@@ -261,7 +261,7 @@ class LeadQualification(BaseModel):
 
 # --- Schemas mapping to Agent Outputs ---
 
-class DetailedPainPointSchema(BaseModel): 
+class DetailedPainPointSchema(BaseModel):
     """Maps to PainPointDeepeningOutput.DetailedPainPoint"""
     pain_description: str
     business_impact: str
@@ -279,7 +279,7 @@ class IdentifiedTriggerSchema(BaseModel):
     trigger_description: str
     relevance_explanation: str
 
-class ToTStrategyOptionModel(BaseModel): 
+class ToTStrategyOptionModel(BaseModel):
     """Maps to ToTStrategyGenerationOutput.ToTStrategyOptionModel - Aligns with existing ToTStrategyOption but for direct agent output mapping"""
     strategy_name: str
     angle_or_hook: str
@@ -288,17 +288,17 @@ class ToTStrategyOptionModel(BaseModel):
     key_points_or_arguments: List[str]
     opening_question: str
 
-class EvaluatedStrategyModel(BaseModel): 
+class EvaluatedStrategyModel(BaseModel):
     """Maps to ToTStrategyEvaluationOutput.EvaluatedStrategyModel"""
     strategy_name: str
     suitability_assessment: str
     strengths: List[str]
     weaknesses_or_risks: List[str]
     suggested_improvements: List[str]
-    confidence_score: str 
+    confidence_score: str
     confidence_justification: str
 
-class ActionPlanStepModel(BaseModel): 
+class ActionPlanStepModel(BaseModel):
     """Maps to ToTActionPlanSynthesisOutput.ActionPlanStepModel"""
     step_number: int
     channel: str
@@ -306,7 +306,7 @@ class ActionPlanStepModel(BaseModel):
     key_message_or_argument: str
     cta: Optional[str] = None
 
-class ToTActionPlanSynthesisModel(BaseModel): 
+class ToTActionPlanSynthesisModel(BaseModel):
     """Maps to ToTActionPlanSynthesisOutput"""
     recommended_strategy_name: str = "Estratégia Combinada/Refinada"
     primary_angle_hook: str = "Não especificado"
@@ -318,7 +318,7 @@ class ToTActionPlanSynthesisModel(BaseModel):
     contingency_plan: Optional[str] = None
     error_message: Optional[str] = None
 
-class ContactStepDetailSchema(BaseModel): 
+class ContactStepDetailSchema(BaseModel):
     """Maps to DetailedApproachPlanOutput.ContactStepDetail"""
     step_number: int
     channel: str
@@ -328,7 +328,7 @@ class ContactStepDetailSchema(BaseModel):
     cta: str
     supporting_materials: Optional[str] = None
 
-class DetailedApproachPlanModel(BaseModel): 
+class DetailedApproachPlanModel(BaseModel):
     """Maps to DetailedApproachPlanOutput"""
     main_objective: str = "Não especificado"
     adapted_elevator_pitch: str = "Não especificado"
@@ -338,7 +338,7 @@ class DetailedApproachPlanModel(BaseModel):
     suggested_next_steps_if_successful: List[str] = Field(default_factory=list)
     error_message: Optional[str] = None
 
-class ObjectionResponseModelSchema(BaseModel): 
+class ObjectionResponseModelSchema(BaseModel):
     """Maps to ObjectionHandlingOutput.ObjectionResponseModel"""
     objection: str
     response_strategy: str
@@ -389,16 +389,16 @@ class ObjectionFramework(BaseModel):
     raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
     error_message: Optional[str] = None
     # common_objections: Dict[str, str] = Field(
-    #     default_factory=dict, 
+    #     default_factory=dict,
     #     description="Common objections and responses"
     # )
     # objection_categories: List[str] = Field(default_factory=list, description="Categories of objections")
     # response_templates: Dict[str, str] = Field(
-    #     default_factory=dict, 
+    #     default_factory=dict,
     #     description="Template responses for objection types"
     # )
     # escalation_strategies: List[str] = Field(
-    #     default_factory=list, 
+    #     default_factory=list,
     #     description="Strategies when objections persist"
     # )
 
@@ -434,20 +434,20 @@ class EnhancedStrategy(BaseModel):
     competitor_intelligence: Optional[CompetitorIntelligence] = None # Made optional
     purchase_triggers: Optional[PurchaseTriggers] = None # Made optional
     lead_qualification: Optional[LeadQualification] = None # Made optional
-    
+
     # ToT strategy outputs
     tot_generated_strategies: Optional[List[ToTStrategyOptionModel]] = None
     tot_evaluated_strategies: Optional[List[EvaluatedStrategyModel]] = None
     tot_synthesized_action_plan: Optional[ToTActionPlanSynthesisModel] = None # Replaces old tot_strategy_evaluation
-    
+
     detailed_approach_plan: Optional[DetailedApproachPlanModel] = None # New field
 
     value_propositions: List[ValueProposition] = Field(default_factory=list) # Uses new ValueProposition structure
     objection_framework: Optional[ObjectionFramework] = None # Made optional
     strategic_questions: List[str] = Field(default_factory=list) # Already List[str], compatible
-    
+
     # Removed fields that are now part of structured models or less relevant
-    # final_action_plan: Optional[str] 
+    # final_action_plan: Optional[str]
     # detailed_approach_plan_text: Optional[str]
 
 class EnhancedPersonalizedMessage(BaseModel):
@@ -479,7 +479,7 @@ class EnhancedPersonalizedMessage(BaseModel):
 
 class InternalBriefing(BaseModel): # Replaces old InternalBriefing
     executive_summary: str = "Não especificado"
-    lead_overview: Optional[InternalBriefingSectionSchema] = None 
+    lead_overview: Optional[InternalBriefingSectionSchema] = None
     persona_profile_summary: Optional[InternalBriefingSectionSchema] = None
     pain_points_and_needs: Optional[InternalBriefingSectionSchema] = None
     buying_triggers_opportunity: Optional[InternalBriefingSectionSchema] = None
@@ -488,7 +488,7 @@ class InternalBriefing(BaseModel): # Replaces old InternalBriefing
     custom_value_proposition_summary: Optional[InternalBriefingSectionSchema] = None
     potential_objections_summary: Optional[InternalBriefingSectionSchema] = None
     recommended_next_step: str = "Não especificado"
-    error_message: Optional[str] = None 
+    error_message: Optional[str] = None
     raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
     # Removed old fields: key_talking_points, critical_objections, success_metrics, next_steps, decision_maker_profile, urgency_level
     # These are now expected to be part of the structured content within the sections or the executive_summary.

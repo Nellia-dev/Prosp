@@ -11,7 +11,7 @@ class TestToTStrategyEvaluationAgent(unittest.TestCase):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
         self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
         self.mock_llm_client.update_usage_stats = MagicMock()
-        
+
         self.agent = ToTStrategyEvaluationAgent(llm_client=self.mock_llm_client)
 
     def test_process_success_evaluates_strategies(self):
@@ -33,7 +33,7 @@ class TestToTStrategyEvaluationAgent(unittest.TestCase):
             confidence_score="Média",
             confidence_justification="Potencial existe, mas com incertezas."
         )
-        
+
         mock_json_output_dict = {
             "evaluated_strategies": [
                 mock_eval_strategy1.model_dump(),
@@ -41,24 +41,24 @@ class TestToTStrategyEvaluationAgent(unittest.TestCase):
             ]
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
-        
+
         self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=200, input_tokens=100, output_tokens=100)
 
         test_input = ToTStrategyEvaluationInput(
             proposed_strategies_text="Estratégia 1: Abordagem Consultiva Direta...\nEstratégia 2: Networking via Evento do Setor...",
             current_lead_summary="Empresa Teste, Diretor de Ops focado em eficiência."
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, ToTStrategyEvaluationOutput)
         self.assertIsNone(result.error_message)
         self.assertEqual(len(result.evaluated_strategies), 2)
-        
+
         self.assertEqual(result.evaluated_strategies[0].strategy_name, mock_eval_strategy1.strategy_name)
         self.assertEqual(result.evaluated_strategies[0].suitability_assessment, mock_eval_strategy1.suitability_assessment)
         self.assertListEqual(result.evaluated_strategies[1].strengths, mock_eval_strategy2.strengths)
-        
+
         self.mock_llm_client.generate.assert_called_once()
         called_prompt = self.mock_llm_client.generate.call_args[0][0]
         self.assertIn("Responda APENAS com um objeto JSON", called_prompt)

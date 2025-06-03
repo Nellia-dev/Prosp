@@ -33,7 +33,7 @@ class TestTavilyEnrichmentAgent(unittest.TestCase):
             LLMResponse(content=mock_query_generation_response, provider_name="mock", model_name="mock_model", total_tokens=10, input_tokens=5, output_tokens=5),
             LLMResponse(content=mock_summarization_response, provider_name="mock", model_name="mock_model", total_tokens=20, input_tokens=10, output_tokens=10)
         ]
-        
+
         # Mocking Tavily search results
         mock_search_with_tavily.return_value = [
             {"url": "http://example.com/news1", "content": "Notícia 1 sobre Empresa Teste."},
@@ -51,7 +51,7 @@ class TestTavilyEnrichmentAgent(unittest.TestCase):
         self.assertTrue(result.tavily_api_called)
         self.assertEqual(result.enriched_data, mock_summarization_response)
         self.assertIsNone(result.error_message)
-        
+
         self.assertEqual(self.mock_llm_client.generate.call_count, 2) # One for queries, one for summary
         mock_search_with_tavily.assert_called() # Check that Tavily search was attempted
 
@@ -60,7 +60,7 @@ class TestTavilyEnrichmentAgent(unittest.TestCase):
         mock_query_generation_response = json.dumps(["pesquisa Empresa Teste"])
         # LLM for summarization won't be called if no Tavily results
         self.mock_llm_client.generate.return_value = LLMResponse(content=mock_query_generation_response, provider_name="mock", model_name="mock_model", total_tokens=10, input_tokens=5, output_tokens=5)
-        
+
         mock_search_with_tavily.return_value = [] # No results from Tavily
 
         test_input = TavilyEnrichmentInput(
@@ -74,14 +74,14 @@ class TestTavilyEnrichmentAgent(unittest.TestCase):
         # enriched_data should be the initial_extracted_text as no summarization happens
         self.assertEqual(result.enriched_data, test_input.initial_extracted_text)
         self.assertIn("Tavily API was called but returned no results", result.error_message if result.error_message else "")
-        
+
         self.mock_llm_client.generate.assert_called_once() # Only for query generation
         mock_search_with_tavily.assert_called_once()
 
     def test_process_llm_fails_query_generation(self):
         # Simulate LLM failing to generate search queries (e.g., returns empty or invalid JSON)
         self.mock_llm_client.generate.return_value = LLMResponse(content="não é json", provider_name="mock", model_name="mock_model", total_tokens=5, input_tokens=2, output_tokens=3)
-        
+
         # We still need to mock _search_with_tavily because the fallback query will call it
         with patch('agents.tavily_enrichment_agent.TavilyEnrichmentAgent._search_with_tavily') as mock_search:
             mock_search.return_value = [{"url": "http://example.com/fallback", "content": "Fallback content."}]
@@ -89,7 +89,7 @@ class TestTavilyEnrichmentAgent(unittest.TestCase):
             mock_summarization_response = "Resumo do fallback."
             # Need to ensure the generate mock can be called again for summarization
             # If generate is already configured with a single return_value, this might not work as expected without side_effect
-            
+
             # Reconfigure generate for this specific test case for multiple calls
             self.mock_llm_client.generate.side_effect = [
                 LLMResponse(content="não é json", provider_name="mock", model_name="mock_model", total_tokens=5, input_tokens=2, output_tokens=3), # For query gen
@@ -106,7 +106,7 @@ class TestTavilyEnrichmentAgent(unittest.TestCase):
             self.assertTrue(result.tavily_api_called) # Fallback query is made
             self.assertIn("Error decoding LLM response for search queries", result.error_message if result.error_message else "")
             self.assertEqual(result.enriched_data, mock_summarization_response) # Summarization of fallback search
-            
+
             self.assertEqual(self.mock_llm_client.generate.call_count, 2)
             mock_search.assert_called_once()
 
@@ -130,7 +130,7 @@ class TestTavilyEnrichmentAgent(unittest.TestCase):
         self.assertTrue(result.tavily_api_called)
         self.assertEqual(result.enriched_data, test_input.initial_extracted_text) # No enrichment data
         self.assertIn("Tavily API was called but returned no results", result.error_message if result.error_message else "") # Error from _search_with_tavily is generic "no results"
-        
+
         self.mock_llm_client.generate.assert_called_once()
         mock_requests_post.assert_called_once()
 

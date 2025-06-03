@@ -58,7 +58,7 @@ class StrategicQuestionGenerationAgent(BaseAgent[StrategicQuestionGenerationInpu
                     c.  Descubram objetivos ou aspirações ainda não mencionados.
                     d.  Sejam neutras e não sugiram uma solução específica.
                 4.  As perguntas devem ser concisas e diretas.
-                
+
                 Responda APENAS com um objeto JSON com a seguinte estrutura:
                 {{
                     "generated_questions": [
@@ -82,7 +82,7 @@ class StrategicQuestionGenerationAgent(BaseAgent[StrategicQuestionGenerationInpu
                 return StrategicQuestionGenerationOutput(error_message="LLM call returned no response.")
 
             parsed_output = self.parse_llm_json_response(llm_response_str, StrategicQuestionGenerationOutput)
-            
+
             if parsed_output.error_message:
                  self.logger.warning(f"StrategicQuestionGenerationAgent JSON parsing failed. Raw response: {llm_response_str[:500]}")
             # No specific regex fallback here. Error from parse_llm_json_response will be propagated.

@@ -128,10 +128,10 @@ class InternalBriefingSummaryAgent(BaseAgent[InternalBriefingSummaryInput, Inter
                 return InternalBriefingSummaryOutput(error_message="LLM call returned no response.")
 
             parsed_output = self.parse_llm_json_response(llm_response_str, InternalBriefingSummaryOutput)
-            
+
             if parsed_output.error_message:
                  self.logger.warning(f"InternalBriefingSummaryAgent JSON parsing failed. Raw response: {llm_response_str[:500]}")
-            
+
             return parsed_output
 
         except Exception as e:
@@ -148,7 +148,7 @@ if __name__ == '__main__':
         def generate_text_response(self, prompt: str) -> Optional[str]:
             if "BRIEFING INTERNO DO LEAD:" in prompt:
                 # Check if some key data points are in the prompt (simulating _format_dict_for_prompt)
-                assert "Empresa Exemplo" in prompt 
+                assert "Empresa Exemplo" in prompt
                 assert "Carlos Mendes" in prompt
                 assert "Eficiência Consultiva" in prompt # From a potential action plan
 

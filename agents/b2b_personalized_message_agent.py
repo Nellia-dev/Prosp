@@ -137,7 +137,7 @@ class B2BPersonalizedMessageAgent(BaseAgent[B2BPersonalizedMessageInput, B2BPers
                     # Fallback to trying to extract from raw string if specific fields are missing and error occurred
                     # This is tricky because parse_llm_json_response might return a model with defaults.
                     # We assume if error_message is set by parse_llm_json_response, the primary fields might be unset or default.
-                    
+
                     # Basic regex fallback (less critical if LLM is reliable with JSON)
                     temp_body = parsed_output.crafted_message_body
                     temp_subject = parsed_output.crafted_message_subject
@@ -149,30 +149,30 @@ class B2BPersonalizedMessageAgent(BaseAgent[B2BPersonalizedMessageInput, B2BPers
                              temp_subject = subject_match_re.group(1).strip()
                         if body_match_re:
                              temp_body = body_match_re.group(1).strip()
-                        
+
                     elif channel == "Instagram" and (not temp_body or temp_body == "Não foi possível gerar a mensagem."):
                         body_match_re = re.search(r"CORPO:\s*((.|\n)*)", llm_response_str, re.IGNORECASE)
                         if body_match_re:
                             temp_body = body_match_re.group(1).strip()
-                    
+
                     # Only override if regex found something and original parsing didn't for that field
                     final_subject = temp_subject if temp_subject and temp_subject != parsed_output.crafted_message_subject else parsed_output.crafted_message_subject
                     final_body = temp_body if temp_body and temp_body != "Não foi possível gerar a mensagem." else parsed_output.crafted_message_body
-                    
+
                     return B2BPersonalizedMessageOutput(
                         crafted_message_channel=channel, # channel is determined before LLM call
                         crafted_message_subject=final_subject,
                         crafted_message_body=final_body,
                         error_message=parsed_output.error_message or "JSON parsing failed, used regex fallback if possible."
                     )
-                
+
                 # Ensure channel from input is preserved if parsing is successful but channel field is not part of JSON
-                parsed_output.crafted_message_channel = channel 
+                parsed_output.crafted_message_channel = channel
                 return parsed_output
             else:
                 error_message = "LLM call returned no response or an empty response."
                 # Fall through to return default B2BPersonalizedMessageOutput with this error
-        
+
         except Exception as e:
             self.logger.error(f"An unexpected error occurred in {self.name}: {e}")
             import traceback
@@ -254,7 +254,7 @@ if __name__ == '__main__':
     mock_llm_insta = MockLLMClient() # Can reuse if prompt drives behavior
     agent_insta = B2BPersonalizedMessageAgent(llm_client=mock_llm_insta)
     test_contacts_insta = ContactDetailsInput(emails_found=[], instagram_profiles_found=["@carlosmendes_exemploinsta"])
-    
+
     input_data_insta = B2BPersonalizedMessageInput(
         final_action_plan_text=test_action_plan.replace("Email", "Instagram DM"), # Adjust plan for context
         customized_value_propositions_text=test_value_props,
@@ -274,5 +274,5 @@ if __name__ == '__main__':
     assert output_insta.crafted_message_subject is None
     assert "Carlos!" in output_insta.crafted_message_body # More informal
     assert output_insta.error_message is None
-    
+
     print("\nMock tests completed.")

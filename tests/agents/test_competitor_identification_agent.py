@@ -11,7 +11,7 @@ class TestCompetitorIdentificationAgent(unittest.TestCase):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
         self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
         self.mock_llm_client.update_usage_stats = MagicMock()
-        
+
         self.agent = CompetitorIdentificationAgent(llm_client=self.mock_llm_client)
 
     def test_process_success_finds_competitors(self):
@@ -27,7 +27,7 @@ class TestCompetitorIdentificationAgent(unittest.TestCase):
             perceived_strength="Ágil e inovadora.",
             perceived_weakness="Menor base de clientes."
         )
-        
+
         mock_json_output_dict = {
             "identified_competitors": [
                 mock_competitor1.model_dump(),
@@ -36,7 +36,7 @@ class TestCompetitorIdentificationAgent(unittest.TestCase):
             "other_notes": "O mercado parece ter alguns players consolidados e novas startups."
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
-        
+
         self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=60, input_tokens=30, output_tokens=30)
 
         test_input = CompetitorIdentificationInput(
@@ -44,17 +44,17 @@ class TestCompetitorIdentificationAgent(unittest.TestCase):
             product_service_offered="Software de Gestão Personalizado",
             known_competitors_list_str="Soluções Beta, Rival X" # Known but not in text
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, CompetitorIdentificationOutput)
         self.assertIsNone(result.error_message)
         self.assertEqual(len(result.identified_competitors), 2)
-        
+
         self.assertEqual(result.identified_competitors[0].name, mock_competitor1.name)
         self.assertEqual(result.identified_competitors[0].description, mock_competitor1.description)
         self.assertEqual(result.identified_competitors[1].name, mock_competitor2.name)
-        
+
         self.assertEqual(result.other_notes, "O mercado parece ter alguns players consolidados e novas startups.")
         self.mock_llm_client.generate.assert_called_once()
         # call_args = self.mock_llm_client.generate.call_args[0][0]

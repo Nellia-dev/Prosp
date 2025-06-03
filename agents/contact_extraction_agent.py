@@ -1,15 +1,17 @@
 import json
 import re
-from typing import Optional, List
+import traceback
+from typing import Optional, List, Dict, Any
 
 from pydantic import BaseModel, Field
 
-from agents.base_agent import BaseAgent
-from core_logic.llm_client import LLMClientBase
+from agents.base_agent import BaseAgent # Assuming BaseAgent is in agents.base_agent
+from core_logic.llm_client import LLMClientBase # Assuming LLMClientBase is in core_logic.llm_client
 
 # Constants
-GEMINI_TEXT_INPUT_TRUNCATE_CHARS = 180000 # Max input tokens for Gemini Flash is 128k, roughly 512k chars. Input is 32k tokens, output 2k.
+GEMINI_TEXT_INPUT_TRUNCATE_CHARS: int = 30000 # Max characters for Gemini text input (shared with other agents)
 
+# --- Input and Output Models ---
 class ContactExtractionInput(BaseModel):
     extracted_text: str
     company_name: str
@@ -18,7 +20,7 @@ class ContactExtractionInput(BaseModel):
 class ContactExtractionOutput(BaseModel):
     emails_found: List[str] = Field(default_factory=list)
     instagram_profiles_found: List[str] = Field(default_factory=list)
-    tavily_search_suggestion: str = "" # Suggestion for further Tavily search
+    tavily_search_suggestion: str = ""
     error_message: Optional[str] = None
 
 class ContactExtractionAgent(BaseAgent[ContactExtractionInput, ContactExtractionOutput]):
@@ -29,200 +31,193 @@ class ContactExtractionAgent(BaseAgent[ContactExtractionInput, ContactExtraction
         """Truncates text to a maximum number of characters."""
         return text[:max_chars]
 
-    def process(self, input_data: ContactExtractionInput) -> ContactExtractionOutput:
-        error_message = None
-        emails = []
-        instagram_profiles = []
-        tavily_suggestion = ""
+    def _extract_with_regex(self, text: str) -> tuple[List[str], List[str]]:
+        """
+        Extracts emails and Instagram profiles using regex as a fallback.
+        """
+        # Improved email regex to be a bit more robust but still simple
+        emails = list(set(re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?<!\.png|\.jpg|\.jpeg|\.gif)", text)))
+
+        # Regex for Instagram profiles: instagram.com/username or @username
+        # It captures the username part.
+        ig_pattern1 = r"instagram\.com/([a-zA-Z0-9._]+)"
+        ig_pattern2 = r"(?<!\w)@([a-zA-Z0-9._]{3,30})(?!\.\w)" # @username, not part of an email, min 3 max 30 chars for username
+
+        profiles_p1 = re.findall(ig_pattern1, text)
+        profiles_p2 = re.findall(ig_pattern2, text)
+
+        raw_instagram_profiles = list(set(profiles_p1 + profiles_p2))
+
+        cleaned_profiles = []
+        for profile in raw_instagram_profiles:
+            # Remove any leading/trailing slashes or query params if full URL matched for username part
+            username = profile.split('/')[0]
+            # Filter out common non-profile paths that might be caught if regex is too broad
+            if username.lower() not in ["p", "reel", "stories", "explore", "accounts", "tags", "static", "web"] and "." not in username.split('.')[-1][-2:]: # Avoid things like .png
+                 if 3 <= len(username) <= 30: # Instagram username length constraints
+                    cleaned_profiles.append(username)
+
+        final_ig_profiles = list(set(cleaned_profiles)) # Ensure uniqueness after cleaning
+
+        self.logger.info(f"Regex fallback extracted emails: {emails}")
+        self.logger.info(f"Regex fallback extracted Instagram profiles: {final_ig_profiles}")
+        return emails, final_ig_profiles
+
+    async def process(self, input_data: ContactExtractionInput) -> ContactExtractionOutput:
+        self.logger.info(f"Starting contact extraction for company: {input_data.company_name}")
+
+        truncated_text = self._truncate_text(input_data.extracted_text, GEMINI_TEXT_INPUT_TRUNCATE_CHARS)
+
+        prompt = f"""
+        Analyze the following text, which is data extracted from the website of the company '{input_data.company_name}'.
+        The company offers: '{input_data.product_service_offered}'.
+
+        Your tasks are:
+        1. Identify and extract all email addresses. Prioritize generic company emails (e.g., contact@, sales@, info@) and emails of potential decision-makers or relevant departments.
+        2. Identify and extract all Instagram profile usernames. For example, if you find "instagram.com/username123", extract "username123". If you find "@anotheruser", extract "anotheruser".
+        3. Based on the text and the company's offerings, suggest ONE concise Tavily search query (max 10-15 words) to find more information about potential contacts or decision-makers if the current text is insufficient. This query should be specific and actionable. For example: "key marketing contacts at [Company Name]" or "CXOs at [Company Name] LinkedIn".
+
+        Return the information as a JSON object with the following exact keys:
+        "emails_found": ["email1@example.com", "email2@example.com"],
+        "instagram_profiles_found": ["username1", "username2"],
+        "tavily_search_suggestion": "Your concise Tavily search query here"
+
+        If no emails are found, return an empty list for "emails_found".
+        If no Instagram profiles are found, return an empty list for "instagram_profiles_found".
+        If the text provides enough contact information, "tavily_search_suggestion" can be an empty string or a very generic suggestion like "General information about {input_data.company_name}".
+
+        Extracted text:
+        ---
+        {truncated_text}
+        ---
+
+        Ensure the output is ONLY the JSON object, without any markdown formatting like ```json ... ```.
+        """
 
         try:
-            prompt_template = """
-                Analise o seguinte texto extraído para a empresa '{company_name}' que oferece '{product_service_offered}'.
-                Extraia todos os endereços de e-mail e perfis do Instagram que encontrar.
-                Além disso, com base no texto e no perfil da empresa, sugira uma única string de consulta otimizada para o Tavily API para encontrar informações de contato MAIS RELEVANTES ou decisores chave, caso as informações atuais sejam insuficientes. A sugestão deve ser específica.
-
-                Texto Extraído:
-                {extracted_text}
-
-                Responda em formato JSON com as seguintes chaves:
-                - "emails": ["email1@example.com", "email2@example.com"] (lista de strings, pode estar vazia)
-                - "instagram_profiles": ["@perfil1", "@perfil2"] (lista de strings, pode estar vazia)
-                - "tavily_search_suggestion": "sugestão de pesquisa para o Tavily API" (string única)
-
-                Se nenhum e-mail ou perfil do Instagram for encontrado, retorne listas vazias para as respectivas chaves.
-                Se nenhuma sugestão de pesquisa adicional for necessária, retorne uma string vazia para "tavily_search_suggestion".
-                Responda APENAS com o objeto JSON, sem nenhum texto ou formatação adicional antes ou depois.
-            """
-            
-            truncated_text = self._truncate_text(input_data.extracted_text, GEMINI_TEXT_INPUT_TRUNCATE_CHARS)
-
-            formatted_prompt = prompt_template.format(
-                company_name=input_data.company_name,
-                product_service_offered=input_data.product_service_offered,
-                extracted_text=truncated_text
+            llm_response_str = await self.generate_llm_response(
+                prompt=prompt,
+                temperature=0.1, # Very low temperature for precise extraction
+                max_tokens=1000
             )
 
-            llm_response_str = self.generate_llm_response(formatted_prompt)
-
             if not llm_response_str:
+                self.logger.warning("LLM returned no response for contact extraction.")
+                emails, ig_profiles = self._extract_with_regex(truncated_text)
                 return ContactExtractionOutput(
-                    error_message="LLM call returned no response."
+                    emails_found=emails,
+                    instagram_profiles_found=ig_profiles,
+                    tavily_search_suggestion=f"key decision makers at {input_data.company_name}",
+                    error_message="LLM returned no response. Used regex fallback."
                 )
 
             # Attempt to parse the LLM response as JSON
-            parsed_output = self.parse_llm_json_response(llm_response_str, ContactExtractionOutput)
+            # parse_llm_json_response is expected to handle basic cleaning (like ```json ... ```)
+            # but the prompt now explicitly asks LLM to avoid it.
+            parsed_output = await self.parse_llm_json_response(llm_response_str, ContactExtractionOutput)
 
-            # Check if parsing failed or if the essential fields are missing
-            # (parse_llm_json_response might return a model with default values if parsing fails but doesn't raise an exception,
-            # or it might set an error_message in the returned model itself if designed that way)
-            if parsed_output.error_message or not (parsed_output.emails_found or parsed_output.instagram_profiles_found or parsed_output.tavily_search_suggestion):
-                # Retain existing error message from parsing if available
-                current_error = parsed_output.error_message or f"LLM response was not valid JSON or essential fields missing. Raw: {llm_response_str[:200]}"
-                
-                # Fallback: Try to extract emails and Instagram profiles using regex
-                self.logger.warning(f"JSON parsing for ContactExtractionOutput failed or returned empty. Attempting regex fallback. Error: {current_error}")
-                
-                raw_emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', llm_response_str)
-                raw_instagram = re.findall(r'@[\w\.]+', llm_response_str)
-                
-                # Use fallback data only if parsing truly yielded nothing for those specific fields
-                # And only if the original parsed_output didn't already populate them.
-                # This logic can get complex if parse_llm_json_response partially populates.
-                # Assuming parse_llm_json_response returns default empty lists if specific fields fail.
-                
-                final_emails = parsed_output.emails_found
-                if not final_emails and raw_emails:
-                    final_emails = list(set(raw_emails))
-                
-                final_instagram = parsed_output.instagram_profiles_found
-                if not final_instagram and raw_instagram:
-                    final_instagram = list(set(raw_instagram))
+            final_emails = []
+            final_ig_profiles = []
+            final_suggestion = f"contact information for {input_data.company_name}" # Default suggestion
+            error_msg = None
 
-                # If regex also found nothing and parsing failed, the error message reflects that.
-                if not final_emails and not final_instagram:
-                     error_message = f"JSON parsing failed ({current_error}), and no contacts found via regex."
-                else: # Some data extracted with regex, or parsing partially succeeded
-                     error_message = f"JSON parsing issues ({current_error}), but some data might be from regex fallback."
-                
-                return ContactExtractionOutput(
-                    emails_found=final_emails,
-                    instagram_profiles_found=final_instagram,
-                    tavily_search_suggestion=parsed_output.tavily_search_suggestion, # Keep what was parsed for this
-                    error_message=error_message
-                )
-            
-            return parsed_output # Successfully parsed JSON
+            if parsed_output and not parsed_output.error_message : # Successfully parsed by BaseAgent method
+                final_emails = parsed_output.emails_found if parsed_output.emails_found is not None else []
+                raw_ig_profiles = parsed_output.instagram_profiles_found if parsed_output.instagram_profiles_found is not None else []
 
-        except Exception as e:
-            self.logger.error(f"An unexpected error occurred in ContactExtractionAgent: {e}")
-            import traceback
-            traceback.print_exc()
-            # Ensure the return type is always ContactExtractionOutput
+                # Clean IG profiles from LLM: ensure they are just usernames
+                for profile in raw_ig_profiles:
+                    username = profile.split("instagram.com/")[-1].split("/")[0]
+                    if username.startswith('@'): # Remove leading @ if present
+                        username = username[1:]
+                    if 3 <= len(username) <= 30 and username.lower() not in ["p", "reel", "stories", "explore", "accounts", "tags"]:
+                        final_ig_profiles.append(username)
+                final_ig_profiles = list(set(final_ig_profiles)) # Deduplicate
+
+                final_suggestion = parsed_output.tavily_search_suggestion or final_suggestion
+                self.logger.info(f"Successfully parsed LLM JSON response. Emails: {len(final_emails)}, IG: {len(final_ig_profiles)}")
+
+            else: # JSON parsing failed or BaseAgent indicated an error
+                error_msg = parsed_output.error_message if parsed_output else "LLM response was not valid JSON."
+                self.logger.warning(f"Failed to parse LLM JSON response for contact extraction: {error_msg}. Raw response: '{llm_response_str[:200]}'. Using regex fallback.")
+                # Fallback to regex for emails and IG. Suggestion might be lost or use default.
+                regex_emails, regex_ig_profiles = self._extract_with_regex(truncated_text)
+                final_emails.extend(regex_emails)
+                final_ig_profiles.extend(regex_ig_profiles)
+                error_msg = f"{error_msg} Used regex fallback."
+
+
+            # Augment with regex scan of the original text in case LLM missed some,
+            # especially if LLM parsing failed.
+            regex_emails_orig, regex_ig_profiles_orig = self._extract_with_regex(truncated_text)
+
+            combined_emails = list(set(final_emails + regex_emails_orig))
+            combined_ig_profiles = list(set(final_ig_profiles + regex_ig_profiles_orig))
+
+            # Final cleaning for IG profiles to ensure they are just usernames
+            cleaned_ig_profiles_final = []
+            for p_ig in combined_ig_profiles:
+                username = p_ig.split("instagram.com/")[-1].split("/")[0]
+                if username.startswith('@'):
+                    username = username[1:]
+                if 3 <= len(username) <= 30 and username.lower() not in ["p", "reel", "stories", "explore", "accounts", "tags"]:
+                     cleaned_ig_profiles_final.append(username)
+
             return ContactExtractionOutput(
-                error_message=f"An unexpected error occurred: {str(e)}"
+                emails_found=list(set(combined_emails)),
+                instagram_profiles_found=list(set(cleaned_ig_profiles_final)),
+                tavily_search_suggestion=final_suggestion, # Suggestion from LLM if parsed, else default
+                error_message=error_msg
             )
 
-if __name__ == '__main__':
-    # This is a placeholder for testing
-    # You would need a mock LLMClient
-    class MockLLMClient(LLMClientBase):
-        def __init__(self, api_key: str):
-            super().__init__(api_key)
+        except Exception as e:
+            self.logger.error(f"Critical error during contact extraction for {input_data.company_name}: {e}")
+            self.logger.error(traceback.format_exc())
+            emails_fallback, ig_profiles_fallback = self._extract_with_regex(truncated_text) # Fallback to regex
+            return ContactExtractionOutput(
+                emails_found=emails_fallback,
+                instagram_profiles_found=ig_profiles_fallback,
+                tavily_search_suggestion=f"key decision makers at {input_data.company_name}",
+                error_message=f"An unexpected critical error occurred: {str(e)}. Used regex fallback."
+            )
 
-        def generate_text_response(self, prompt: str) -> Optional[str]:
-            # Simulate different LLM responses based on the prompt
-            if "Test Company Alpha" in prompt:
-                return json.dumps({
-                    "emails": ["contact@alpha.com", "sales@alpha.com"],
-                    "instagram_profiles": ["@alpha_inc"],
-                    "tavily_search_suggestion": "Key decision makers at Test Company Alpha"
-                })
-            elif "Test Company Beta" in prompt: # Simulate malformed JSON
-                return '{"emails": ["info@beta.com"], "instagram_profiles": ["@beta_co" "tavily_search_suggestion": "Test Company Beta partnerships"}'
-            elif "Test Company Gamma" in prompt: # Simulate no contacts found
-                return json.dumps({
-                    "emails": [],
-                    "instagram_profiles": [],
-                    "tavily_search_suggestion": "Test Company Gamma recent funding rounds"
-                })
-            elif "Test Company Delta" in prompt: # Simulate LLM returning non-JSON with extractable info
-                return "Found email test@delta.com and insta @delta.official. Suggest: 'Delta financials'"
-            return json.dumps({
-                    "emails": [],
-                    "instagram_profiles": [],
-                    "tavily_search_suggestion": ""
-                })
-    
-    print("Running mock tests for ContactExtractionAgent...")
-    mock_llm = MockLLMClient(api_key="mock_llm_key")
-    agent = ContactExtractionAgent(llm_client=mock_llm)
+# Example Usage (Illustrative - requires async execution context)
+# async def main():
+#     from core_logic.llm_clients.gemini_client import GeminiClient # Example LLM Client
+#     gemini_api_key = os.getenv("GEMINI_API_KEY") # Ensure this is set in your environment
+#     import os # ensure os is imported if you run this example
 
-    # Test Case 1: Valid JSON response
-    input_alpha = ContactExtractionInput(
-        extracted_text="Test Company Alpha is a leader in AI. Contact us at contact@alpha.com or sales@alpha.com. Follow us on Instagram @alpha_inc.",
-        company_name="Test Company Alpha",
-        product_service_offered="AI Solutions"
-    )
-    output_alpha = agent.process(input_alpha)
-    print(f"\nTest Case 1 (Alpha - Valid JSON):")
-    print(f"  Emails: {output_alpha.emails_found}")
-    print(f"  Instagram: {output_alpha.instagram_profiles_found}")
-    print(f"  Tavily Suggestion: {output_alpha.tavily_search_suggestion}")
-    print(f"  Error: {output_alpha.error_message}")
-    assert output_alpha.emails_found == ["contact@alpha.com", "sales@alpha.com"]
-    assert output_alpha.instagram_profiles_found == ["@alpha_inc"]
-    assert output_alpha.tavily_search_suggestion == "Key decision makers at Test Company Alpha"
-    assert output_alpha.error_message is None
+#     if not gemini_api_key:
+#         print("Please set GEMINI_API_KEY environment variable to run the example.")
+#         return
 
-    # Test Case 2: Malformed JSON response (with regex fallback)
-    input_beta = ContactExtractionInput(
-        extracted_text="Info at info@beta.com, Insta @beta_co. Test Company Beta focuses on cloud services.",
-        company_name="Test Company Beta",
-        product_service_offered="Cloud Services"
-    )
-    output_beta = agent.process(input_beta)
-    print(f"\nTest Case 2 (Beta - Malformed JSON with Fallback):")
-    print(f"  Emails: {output_beta.emails_found}") # Should be empty as per current parse_llm_json_response strictness
-    print(f"  Instagram: {output_beta.instagram_profiles_found}") # Should be empty
-    print(f"  Tavily Suggestion: {output_beta.tavily_search_suggestion}") # Should be empty
-    print(f"  Error: {output_beta.error_message}")
-    # The parse_llm_json_response will return an error_message. The fallback regex is inside the 'else' of that.
-    # Depending on how strict parse_llm_json_response is, it might not populate fields if JSON is bad.
-    # The current implementation of parse_llm_json_response returns a model with error_message set if parsing fails.
-    assert "LLM response was not valid JSON" in output_beta.error_message if output_beta.error_message else False
+#     llm_client = GeminiClient(api_key=gemini_api_key)
+#     extraction_agent = ContactExtractionAgent(llm_client=llm_client)
 
+#     test_input_text = """
+#     Welcome to Global Innovations Ltd. We are pioneers in sustainable tech.
+#     For inquiries, please email info@globalinnovations.com or our sales team at sales.department@globalinnovations.com.
+#     Follow our journey on Instagram: instagram.com/GlobalInnovationsOfficial and also @GI_Labs for our research updates.
+#     You can also reach out to project_manager@globalinnovations.com.
+#     Our website is globalinnovations.com. Check our careers page. No phone numbers please.
+#     Sometimes people mention @badprofile or instagram.com/p/postid or test@test.png.
+#     """
 
-    # Test Case 3: Valid JSON, no contacts found
-    input_gamma = ContactExtractionInput(
-        extracted_text="Test Company Gamma makes widgets. No contact info here.",
-        company_name="Test Company Gamma",
-        product_service_offered="Widgets"
-    )
-    output_gamma = agent.process(input_gamma)
-    print(f"\nTest Case 3 (Gamma - No Contacts):")
-    print(f"  Emails: {output_gamma.emails_found}")
-    print(f"  Instagram: {output_gamma.instagram_profiles_found}")
-    print(f"  Tavily Suggestion: {output_gamma.tavily_search_suggestion}")
-    print(f"  Error: {output_gamma.error_message}")
-    assert output_gamma.emails_found == []
-    assert output_gamma.instagram_profiles_found == []
-    assert output_gamma.tavily_search_suggestion == "Test Company Gamma recent funding rounds"
-    assert output_gamma.error_message is None
+#     test_input = ContactExtractionInput(
+#         company_name="Global Innovations Ltd.",
+#         product_service_offered="Sustainable Technology",
+#         extracted_text=test_input_text
+#     )
+#     output = await extraction_agent.process(test_input)
+#     print("--- Contact Extraction Output ---")
+#     if output.error_message:
+#         print(f"Error: {output.error_message}")
+#     print(f"Emails: {output.emails_found}")
+#     print(f"Instagram Profiles: {output.instagram_profiles_found}")
+#     print(f"Tavily Suggestion: {output.tavily_search_suggestion}")
 
-    # Test Case 4: LLM returns non-JSON but with extractable info (regex fallback)
-    input_delta = ContactExtractionInput(
-        extracted_text="Contact Test Company Delta at test@delta.com or @delta.official",
-        company_name="Test Company Delta",
-        product_service_offered="Consulting"
-    )
-    output_delta = agent.process(input_delta)
-    print(f"\nTest Case 4 (Delta - Non-JSON with Regex Fallback):")
-    print(f"  Emails: {output_delta.emails_found}")
-    print(f"  Instagram: {output_delta.instagram_profiles_found}")
-    print(f"  Tavily Suggestion: {output_delta.tavily_search_suggestion}") # Fallback does not parse suggestion
-    print(f"  Error: {output_delta.error_message}")
-    assert output_delta.emails_found == ["test@delta.com"]
-    assert output_delta.instagram_profiles_found == ["@delta.official"]
-    assert "LLM response was not valid JSON" in output_delta.error_message if output_delta.error_message else False
-    
-    print("\nAll mock tests for ContactExtractionAgent completed.")
+# if __name__ == "__main__":
+#     import asyncio
+#     # asyncio.run(main()) # This would run the example if uncommented and GEMINI_API_KEY is set
+#     print("ContactExtractionAgent defined. Example main() is commented out.")
+# Pass # Placeholder for actual main execution

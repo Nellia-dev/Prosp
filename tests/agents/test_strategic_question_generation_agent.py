@@ -11,7 +11,7 @@ class TestStrategicQuestionGenerationAgent(unittest.TestCase):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
         self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
         self.mock_llm_client.update_usage_stats = MagicMock()
-        
+
         self.agent = StrategicQuestionGenerationAgent(llm_client=self.mock_llm_client)
 
     def test_process_success_generates_questions(self):
@@ -23,7 +23,7 @@ class TestStrategicQuestionGenerationAgent(unittest.TestCase):
             ]
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
-        
+
         self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=70, input_tokens=35, output_tokens=35)
 
         test_input = StrategicQuestionGenerationInput(
@@ -31,7 +31,7 @@ class TestStrategicQuestionGenerationAgent(unittest.TestCase):
             persona_profile="Roberto Silva, CEO, focado em crescimento sustentável e inovação.",
             deepened_pain_points="Sistemas atuais podem não escalar. Equipe sobrecarregada com tarefas manuais."
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, StrategicQuestionGenerationOutput)

@@ -11,7 +11,7 @@ class TestLeadAnalysisGenerationAgent(unittest.TestCase):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
         self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
         self.mock_llm_client.update_usage_stats = MagicMock()
-        
+
         self.agent = LeadAnalysisGenerationAgent(llm_client=self.mock_llm_client)
 
     def test_process_success(self):
@@ -28,7 +28,7 @@ class TestLeadAnalysisGenerationAgent(unittest.TestCase):
             "analysis_report": mock_report_text
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
-        
+
         self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=100, input_tokens=50, output_tokens=50)
 
         test_input = LeadAnalysisGenerationInput(
@@ -36,14 +36,14 @@ class TestLeadAnalysisGenerationAgent(unittest.TestCase):
             enriched_data="Nenhuma informação adicional.",
             product_service_offered="Nossas Soluções Incríveis"
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, LeadAnalysisGenerationOutput)
         self.assertIsNone(result.error_message)
         self.assertEqual(result.analysis_report, mock_report_text)
         self.mock_llm_client.generate.assert_called_once()
-        
+
         # Check that the prompt requests JSON
         called_prompt = self.mock_llm_client.generate.call_args[0][0]
         self.assertIn("Responda APENAS com um objeto JSON", called_prompt)
@@ -67,7 +67,7 @@ class TestLeadAnalysisGenerationAgent(unittest.TestCase):
 
     def test_process_llm_returns_empty_response(self):
         self.mock_llm_client.generate.return_value = LLMResponse(content="", provider_name="mock", model_name="mock_model", total_tokens=2, input_tokens=1, output_tokens=1)
-        
+
         test_input = LeadAnalysisGenerationInput(
             lead_data_str='{}', enriched_data="", product_service_offered="Test Product"
         )

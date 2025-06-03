@@ -11,7 +11,7 @@ class TestToTStrategyGenerationAgent(unittest.TestCase):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
         self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
         self.mock_llm_client.update_usage_stats = MagicMock()
-        
+
         self.agent = ToTStrategyGenerationAgent(llm_client=self.mock_llm_client)
 
     def test_process_success_generates_strategies(self):
@@ -31,7 +31,7 @@ class TestToTStrategyGenerationAgent(unittest.TestCase):
             key_points_or_arguments=["Benefício Z da nossa plataforma.", "Alinhamento com tendências do setor discutidas no evento."],
             opening_question="Ótima apresentação no evento X! Como você vê a aplicação da tendência Y na prática da Empresa Teste?"
         )
-        
+
         mock_json_output_dict = {
             "proposed_strategies": [
                 mock_strategy1.model_dump(),
@@ -39,24 +39,24 @@ class TestToTStrategyGenerationAgent(unittest.TestCase):
             ]
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
-        
+
         self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=150, input_tokens=75, output_tokens=75)
 
         test_input = ToTStrategyGenerationInput(
             current_lead_summary="Empresa Teste, setor de SaaS, buscando escalar operações. Persona: Diretor de Ops.",
             product_service_offered="Plataforma de Otimização de Processos"
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, ToTStrategyGenerationOutput)
         self.assertIsNone(result.error_message)
         self.assertEqual(len(result.proposed_strategies), 2)
-        
+
         self.assertEqual(result.proposed_strategies[0].strategy_name, mock_strategy1.strategy_name)
         self.assertEqual(result.proposed_strategies[0].angle_or_hook, mock_strategy1.angle_or_hook)
         self.assertListEqual(result.proposed_strategies[1].primary_channels, mock_strategy2.primary_channels)
-        
+
         self.mock_llm_client.generate.assert_called_once()
         called_prompt = self.mock_llm_client.generate.call_args[0][0]
         self.assertIn("Responda APENAS com um objeto JSON", called_prompt)

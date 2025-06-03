@@ -43,7 +43,7 @@ The application requires certain API keys to be set as environment variables. Yo
 Create a `.env` file (copy from `.env.example` if it exists):
 ```env
 GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
-TAVILY_API_KEY="YOUR_TAVILY_API_KEY" 
+TAVILY_API_KEY="YOUR_TAVILY_API_KEY"
 # Add other necessary environment variables here
 ```
 

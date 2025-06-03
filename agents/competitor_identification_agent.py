@@ -53,7 +53,7 @@ class CompetitorIdentificationAgent(BaseAgent[CompetitorIdentificationInput, Com
                 {initial_extracted_text}
 
                 PRODUTO/SERVIÇO PRINCIPAL OFERECIDO PELA EMPRESA ANALISADA (inferido do texto ou fornecido):
-                {product_service_offered_by_lead} 
+                {product_service_offered_by_lead}
                 (Nota: Este é o produto/serviço da empresa que estamos analisando, não o produto da empresa que está usando esta ferramenta.)
 
                 {known_competitors_prompt_segment}
@@ -81,7 +81,7 @@ class CompetitorIdentificationAgent(BaseAgent[CompetitorIdentificationInput, Com
             """
             # Note: The prompt uses "product_service_offered_by_lead" to internally clarify.
             # The input "product_service_offered" is from the perspective of the lead being analyzed.
-            
+
             formatted_prompt = prompt_template.format(
                 initial_extracted_text=truncated_text,
                 product_service_offered_by_lead=input_data.product_service_offered, # This is correct, it's the lead's offering
@@ -94,13 +94,13 @@ class CompetitorIdentificationAgent(BaseAgent[CompetitorIdentificationInput, Com
                 return CompetitorIdentificationOutput(error_message="LLM call returned no response.")
 
             parsed_output = self.parse_llm_json_response(llm_response_str, CompetitorIdentificationOutput)
-            
+
             if parsed_output.error_message:
                  self.logger.warning(f"CompetitorIdentificationAgent JSON parsing failed. Raw response: {llm_response_str[:500]}")
             # No specific regex fallback here. Error from parse_llm_json_response will be propagated.
 
             return parsed_output
-        
+
         except Exception as e:
             self.logger.error(f"An unexpected error occurred in {self.name}: {e}")
             import traceback
@@ -169,5 +169,5 @@ if __name__ == '__main__':
     assert "CompetiMaster" in output_2.identified_competitors_report # Should be picked up now
     assert "RivalTech" not in output_2.identified_competitors_report # Not mentioned in text, so LLM might not include it unless text implies it
     assert output_2.error_message is None
-    
+
     print("\nMock tests completed.")

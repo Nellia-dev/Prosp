@@ -11,7 +11,7 @@ class TestB2BPersonaCreationAgent(unittest.TestCase):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
         self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
         self.mock_llm_client.update_usage_stats = MagicMock()
-        
+
         self.agent = B2BPersonaCreationAgent(llm_client=self.mock_llm_client)
 
     def test_process_success(self):
@@ -29,7 +29,7 @@ class TestB2BPersonaCreationAgent(unittest.TestCase):
             "persona_profile": mock_persona_text
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
-        
+
         self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=100, input_tokens=50, output_tokens=50)
 
         test_input = B2BPersonaCreationInput(
@@ -37,14 +37,14 @@ class TestB2BPersonaCreationAgent(unittest.TestCase):
             product_service_offered="Plataforma de Automação de Marketing",
             lead_url="http://techsolutions.example.com"
         )
-        
+
         result = self.agent.execute(test_input)
 
         self.assertIsInstance(result, B2BPersonaCreationOutput)
         self.assertIsNone(result.error_message)
         self.assertEqual(result.persona_profile, mock_persona_text)
         self.mock_llm_client.generate.assert_called_once()
-        
+
         called_prompt = self.mock_llm_client.generate.call_args[0][0]
         self.assertIn("Responda APENAS com um objeto JSON", called_prompt) # Check if prompt asks for JSON
         self.assertIn("persona_profile", called_prompt) # Check if the field name is in the prompt structure
@@ -66,7 +66,7 @@ class TestB2BPersonaCreationAgent(unittest.TestCase):
 
     def test_process_llm_returns_empty_response(self):
         self.mock_llm_client.generate.return_value = LLMResponse(content="", provider_name="mock", model_name="mock_model", total_tokens=2, input_tokens=1, output_tokens=1)
-        
+
         test_input = B2BPersonaCreationInput(
             lead_analysis="Análise.", product_service_offered="Produto.", lead_url="url"
         )

@@ -42,7 +42,7 @@ class PainPointDeepeningAgent(BaseAgent[PainPointDeepeningInput, PainPointDeepen
             # Truncate inputs
             truncated_analysis = self._truncate_text(input_data.lead_analysis, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 4)
             truncated_persona = self._truncate_text(input_data.persona_profile, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 4)
-            
+
             prompt_template = """
                 Você é um Consultor de Vendas Estratégicas especializado em identificar e aprofundar os pontos de dor de clientes B2B.
                 Seu objetivo é ajudar a equipe de vendas a entender melhor as necessidades implícitas e explícitas da persona na empresa '{company_name}'.
@@ -65,7 +65,7 @@ class PainPointDeepeningAgent(BaseAgent[PainPointDeepeningInput, PainPointDeepen
                     c.  Indique como o {product_service_offered} se alinha para resolver essa dor.
                 3.  Avalie o nível de urgência geral para resolver esses pontos de dor (low, medium, high, critical).
                 4.  Formule de 2 a 4 perguntas investigativas abertas e específicas para aprofundar a compreensão dos problemas e suas implicações.
-                
+
                 Retorne APENAS um objeto JSON com a seguinte estrutura:
                 {{
                     "primary_pain_category": "Categoria principal dos pontos de dor (string)",
@@ -95,7 +95,7 @@ class PainPointDeepeningAgent(BaseAgent[PainPointDeepeningInput, PainPointDeepen
                 return PainPointDeepeningOutput(error_message="LLM call returned no response.")
 
             parsed_output = self.parse_llm_json_response(llm_response_str, PainPointDeepeningOutput)
-            
+
             # If parsing failed, parse_llm_json_response might set parsed_output.error_message
             # or return a default model with an error message.
             if parsed_output.error_message:
