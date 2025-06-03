@@ -1,0 +1,199 @@
+---
+description: 
+globs: prospect/**
+alwaysApply: false
+---
+# Data Models & Validation Rules - Nellia Prospector
+
+## 🏗️ Pydantic Model Architecture
+
+### Core Principle: Data Enrichment Pipeline
+Each model MUST preserve ALL previous data while adding new fields:
+```
+HarvesterOutput → ValidatedLead → AnalyzedLead → LeadWithPersona → LeadWithStrategy → FinalProspectPackage
+```
+
+### Model Inheritance Pattern (MANDATORY)
+```python
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+
+class BaseLeadModel(BaseModel):
+    """Base model that all lead models inherit from"""
+    # Always preserve original data
+    _original_data: Optional[Dict[str, Any]] = Field(default=None, description="Original input data")
+    _processing_timestamp: datetime = Field(default_factory=datetime.now)
+    _processing_errors: List[str] = Field(default_factory=list)
+    
+    class Config:
+        extra = "allow"  # Allow additional fields during data flow
+        validate_assignment = True
+        use_enum_values = True
+```
+
+## 📊 Data Flow Validation Rules
+
+### 1. Field Preservation (CRITICAL)
+When creating new models, ALWAYS:
+```python
+class NewLeadModel(PreviousLeadModel):
+    # Add NEW fields here
+    new_field: str = Field(..., description="Description")
+    
+    # NEVER remove or modify existing fields from parent
+    # ALWAYS preserve the data flow
+```
+
+### 2. Validation Methods (MANDATORY)
+Every model MUST include validation:
+```python
+@validator('relevance_score')
+def validate_relevance_score(cls, v):
+    if not 0.0 <= v <= 1.0:
+        raise ValueError('Relevance score must be between 0.0 and 1.0')
+    return v
+
+@validator('company_name')
+def validate_company_name(cls, v):
+    if v and len(v.strip()) < 2:
+        raise ValueError('Company name must be at least 2 characters')
+    return v.strip() if v else None
+```
+
+### 3. Error State Handling
+```python
+class ProcessingStatus(str, Enum):
+    SUCCESS = "success"
+    ERROR = "error"
+    PARTIAL = "partial"
+    SKIPPED = "skipped"
+
+# Every output model must include:
+processing_status: ProcessingStatus = Field(default=ProcessingStatus.SUCCESS)
+error_message: Optional[str] = Field(default=None)
+confidence_score: float = Field(ge=0.0, le=1.0, default=0.0)
+```
+
+## 🔍 Brazilian Market Context Fields
+
+### Required Localization Fields
+```python
+# Cultural context for Brazilian B2B
+business_culture_notes: Optional[str] = Field(default=None, description="Brazilian business culture considerations")
+preferred_language: str = Field(default="pt-BR", description="Communication language preference")
+timezone: str = Field(default="America/Sao_Paulo", description="Business timezone")
+formality_level: str = Field(default="formal", description="Communication formality level")
+```
+
+## 🎯 Model-Specific Requirements
+
+### HarvesterOutput Model
+```python
+class HarvesterOutput(BaseModel):
+    """Raw data from Harvester service - DO NOT MODIFY"""
+    original_query: str
+    collection_timestamp: str
+    total_sites_targeted_for_processing: int
+    total_sites_processed_in_extraction_phase: int
+    sites_data: List[SiteData]
+```
+
+### AnalyzedLead Model (COMPLETED - Reference Only)
+- ✅ Must include: company_summary, identified_services_offered, potential_pain_points
+- ✅ Must have relevance_score (0.0-1.0)
+- ✅ Must preserve all original SiteData fields
+
+### LeadWithPersona Model (TO IMPLEMENT)
+```python
+class PersonaDetails(BaseModel):
+    likely_decision_maker_role: str = Field(..., description="CEO, CTO, Marketing Director, etc.")
+    primary_goals: List[str] = Field(..., description="Decision maker's main objectives")
+    key_challenges: List[str] = Field(..., description="Current business challenges")
+    communication_style: str = Field(..., description="formal, informal, technical, business")
+    preferred_contact_method: str = Field(..., description="email, linkedin, phone")
+    industry_expertise_level: str = Field(..., description="beginner, intermediate, expert")
+
+class LeadWithPersona(AnalyzedLead):
+    persona_details: PersonaDetails
+    persona_confidence_score: float = Field(ge=0.0, le=1.0)
+```
+
+### LeadWithStrategy Model (TO IMPLEMENT)
+```python
+class ApproachPlan(BaseModel):
+    key_talking_points: List[str] = Field(..., description="Main value propositions to discuss")
+    value_proposition_angles: List[str] = Field(..., description="Specific angles for this lead")
+    first_interaction_objective: str = Field(..., description="Goal for initial contact")
+    recommended_channel: str = Field(..., description="Best communication channel")
+    timing_recommendations: Optional[str] = Field(default=None)
+    followup_strategy: Optional[str] = Field(default=None)
+
+class LeadWithStrategy(LeadWithPersona):
+    approach_plan: ApproachPlan
+    strategy_confidence_score: float = Field(ge=0.0, le=1.0)
+```
+
+### FinalProspectPackage Model (TO IMPLEMENT)
+```python
+class MessageVariant(BaseModel):
+    subject_line: str = Field(..., description="Email subject or message opener")
+    message_body: str = Field(..., description="Complete message content")
+    call_to_action: str = Field(..., description="Specific CTA")
+    personalization_elements: List[str] = Field(..., description="Personalized references used")
+
+class FinalProspectPackage(LeadWithStrategy):
+    primary_message: MessageVariant
+    alternative_messages: List[MessageVariant] = Field(default_factory=list)
+    estimated_conversion_probability: float = Field(ge=0.0, le=1.0)
+    message_tone: str = Field(..., description="professional, friendly, urgent, consultative")
+    ready_for_outreach: bool = Field(default=True)
+```
+
+## ⚠️ Critical Validation Rules
+
+### Data Integrity Checks
+1. **No Data Loss**: Every transformation must preserve original data
+2. **Required Fields**: All mandatory fields must be present and valid
+3. **Score Consistency**: All confidence scores must be 0.0-1.0
+4. **Status Tracking**: Every model must track processing status
+5. **Error Handling**: Failed processing must return error state, not crash
+
+### Performance Constraints
+- Model validation should complete in <100ms
+- Memory usage per lead should be <10MB
+- No recursive validation loops
+- Use lazy loading for large optional fields
+
+### Brazilian Market Compliance
+- All models must support Portuguese content
+- Date/time fields must use Brazilian timezone
+- Cultural context must be preserved through pipeline
+- LGPD compliance for personal data handling
+
+## 🧪 Testing Requirements
+
+### Unit Tests for Every Model
+```python
+def test_model_validation():
+    # Test valid data
+    # Test invalid data (should raise ValidationError)
+    # Test edge cases (empty strings, None values)
+    # Test Brazilian-specific fields
+
+def test_data_preservation():
+    # Ensure all parent model fields are preserved
+    # Test that no data is lost during transformation
+    
+def test_error_handling():
+    # Test error state creation
+    # Test partial processing scenarios
+```
+
+### Integration Tests
+- Test full pipeline data flow
+- Test with real harvester data
+- Test error recovery scenarios
+- Test performance with large datasets
+
+Remember: Data models are the backbone of the 527% ROI promise. Quality, consistency, and reliability are paramount.

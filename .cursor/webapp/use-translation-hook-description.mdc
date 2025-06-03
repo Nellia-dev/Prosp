@@ -1,0 +1,15 @@
+---
+description: 
+globs: webapp/frontend/src/hooks/useTranslation.tsx
+alwaysApply: false
+---
+# useTranslation Hook Description
+
+This file (`src/hooks/useTranslation.tsx`) contains a React hook for handling internationalization (i18n) within the application. It provides a context-based approach to manage the current language and access translation strings.
+
+Key features:
+- `TranslationProvider`: A context provider component that wraps the application (or parts of it) to make translation functionalities available to descendant components.
+- `useTranslation`: A custom hook to access the current language, a function to set the language, and a translation function `t`.
+- The `t` function takes a key (potentially dot-separated for nested translations) and returns the corresponding string for the current language, falling back to the key if the translation is not found.
+
+File reference: (mdc:src/hooks/useTranslation.tsx)

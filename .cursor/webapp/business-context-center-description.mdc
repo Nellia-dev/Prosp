@@ -1,0 +1,17 @@
+---
+description: 
+globs: webapp/frontend/src/components/BusinessContextCenter.tsx
+alwaysApply: false
+---
+# BusinessContextCenter Component Description
+
+This file (`src/components/BusinessContextCenter.tsx`) defines the `BusinessContextCenter` React component. This component provides an interface for users to define and manage the business context that informs the AI agents' lead processing.
+
+Key features:
+- Allows users to input and edit various aspects of their business, such as description, target market, value proposition, and ideal customer.
+- Provides functionality to add and remove pain points the business solves and industry focuses.
+- Includes a save button to persist the configured business context.
+- Uses the `useTranslation` hook for internationalization.
+
+File reference: (mdc:src/components/BusinessContextCenter.tsx)
+Type reference: (mdc:src/types/nellia.ts)

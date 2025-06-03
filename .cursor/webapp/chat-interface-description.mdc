@@ -1,0 +1,19 @@
+---
+description: 
+globs: webapp/frontend/src/components/ChatInterface.tsx
+alwaysApply: false
+---
+# ChatInterface Component Description
+
+This file (`src/components/ChatInterface.tsx`) defines the `ChatInterface` React component. This component provides a chat-like interface for interacting with different AI agents within the Nellia Prospector dashboard.
+
+Key features:
+- Allows users to select an agent to chat with via tabs.
+- Displays message history for each agent.
+- Provides an input field to send messages to the selected agent.
+- Includes a simulated agent response mechanism.
+- Uses the `useTranslation` hook for internationalization.
+- Visually indicates agent status.
+
+File reference: (mdc:src/components/ChatInterface.tsx)
+Type reference: (mdc:src/types/nellia.ts)

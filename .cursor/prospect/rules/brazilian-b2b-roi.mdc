@@ -1,0 +1,199 @@
+---
+description: 
+globs: prospect/**
+alwaysApply: false
+---
+# Brazilian B2B Market & ROI Optimization Rules - Nellia Prospector
+
+## 🇧🇷 Brazilian Business Culture Context
+
+### Communication Patterns (CRITICAL for Persona & Message Agents)
+```python
+BRAZILIAN_BUSINESS_CULTURE = {
+    "relationship_focus": "high",  # Relationships come before business
+    "hierarchy_importance": "high",  # Respect for titles and seniority
+    "formality_level": "medium_to_high",  # Professional but warm
+    "decision_making": "consultative",  # Often involves multiple stakeholders
+    "trust_building": "essential",  # Must establish credibility first
+    "personal_connection": "important"  # Mix personal and professional
+}
+```
+
+### Language Considerations
+- **Portuguese vs English**: Default to Portuguese context, but acknowledge many executives speak English
+- **Formal address**: Use "Senhor/Senhora" initially, transition to first names after rapport
+- **Regional variations**: São Paulo (business-focused), Rio (relationship-focused), regional differences
+- **Technical vs Business language**: Match complexity to persona's role
+
+## 🎯 527% ROI Optimization Strategies
+
+### Core ROI Principles (MANDATORY for ALL agents)
+1. **Quality over Quantity**: Better 10 highly personalized messages than 100 generic ones
+2. **Relevance Scoring**: Only process leads with >0.7 relevance score
+3. **Pain Point Mapping**: Every message must address specific, identified pain points
+4. **Value Proposition Matching**: Connect Nellia's USPs to prospect's actual needs
+5. **Cultural Alignment**: Messages must feel locally relevant, not translated
+
+### ROI Metrics Framework
+```python
+ROI_OPTIMIZATION_TARGETS = {
+    "lead_qualification_accuracy": 0.85,  # 85% of processed leads should be qualified
+    "personalization_score": 0.8,        # 80% personalization elements per message
+    "cultural_relevance": 0.9,           # 90% cultural appropriateness score
+    "pain_point_match": 0.75,            # 75% of identified pain points addressed
+    "response_rate_target": 0.15,        # 15% response rate goal
+    "conversion_rate_target": 0.05       # 5% conversion rate goal
+}
+```
+
+## 🏢 Brazilian B2B Sector Intelligence
+
+### Key Industries & Decision Makers
+```python
+BRAZILIAN_B2B_SECTORS = {
+    "technology": {
+        "decision_makers": ["CTO", "CEO", "Tech Lead", "Innovation Director"],
+        "pain_points": ["digital transformation", "cloud migration", "cybersecurity", "automation"],
+        "communication_style": "technical, data-driven, efficiency-focused",
+        "preferred_channels": ["email", "linkedin", "tech events"],
+        "timing": "avoid carnival, december holidays"
+    },
+    "manufacturing": {
+        "decision_makers": ["Operations Director", "CEO", "Production Manager"],
+        "pain_points": ["Industry 4.0", "supply chain optimization", "cost reduction", "compliance"],
+        "communication_style": "practical, ROI-focused, conservative",
+        "preferred_channels": ["email", "phone", "trade shows"],
+        "timing": "quarterly planning periods (Mar, Jun, Sep, Dec)"
+    },
+    "services": {
+        "decision_makers": ["CEO", "Partner", "Business Development Director"],
+        "pain_points": ["client acquisition", "service delivery optimization", "competitive differentiation"],
+        "communication_style": "relationship-focused, consultative",
+        "preferred_channels": ["linkedin", "networking events", "referrals"],
+        "timing": "avoid vacation periods (Jan, Jul, Dec)"
+    },
+    "healthcare": {
+        "decision_makers": ["Medical Director", "Administrator", "IT Director"],
+        "pain_points": ["regulatory compliance", "patient care optimization", "cost management"],
+        "communication_style": "conservative, evidence-based, formal",
+        "preferred_channels": ["email", "medical conferences", "peer referrals"],
+        "timing": "avoid congress periods, align with budget cycles"
+    }
+}
+```
+
+### Regional Business Characteristics
+```python
+BRAZILIAN_REGIONS = {
+    "sudeste": {  # São Paulo, Rio, Minas Gerais
+        "business_style": "fast-paced, direct, results-oriented",
+        "decision_speed": "medium to fast",
+        "relationship_importance": "medium",
+        "preferred_meeting_times": "9-17h, avoid lunch 12-14h"
+    },
+    "sul": {  # RS, SC, PR
+        "business_style": "methodical, relationship-focused, conservative",
+        "decision_speed": "slower, more deliberate",
+        "relationship_importance": "high",
+        "preferred_meeting_times": "avoid mate breaks, respect punctuality"
+    },
+    "nordeste": {  # BA, PE, CE
+        "business_style": "relationship-first, warm, consultative",
+        "decision_speed": "relationship-dependent",
+        "relationship_importance": "very high",
+        "preferred_meeting_times": "flexible, relationship-building focus"
+    }
+}
+```
+
+## 💼 Nellia's Value Propositions (USE THESE FOR STRATEGY AGENT)
+
+### Core USPs to Match with Pain Points
+```python
+NELLIA_VALUE_PROPS = {
+    "ai_powered_lead_processing": {
+        "addresses": ["manual lead qualification", "sales efficiency", "lead quality"],
+        "roi_claim": "ROI increase",
+        "proof_points": ["automated analysis", "personalized outreach", "higher conversion rates"]
+    },
+    "brazilian_market_expertise": {
+        "addresses": ["cultural misalignment", "local market understanding", "regional differences"],
+        "roi_claim": "local market penetration",
+        "proof_points": ["Portuguese-native team", "LGPD compliance", "regional insights"]
+    },
+    "personalized_outreach_automation": {
+        "addresses": ["generic messaging", "low response rates", "sales team productivity"],
+        "roi_claim": "15x faster lead processing",
+        "proof_points": ["AI-generated personas", "custom messaging", "multi-channel approach"]
+    },
+    "data_driven_optimization": {
+        "addresses": ["guesswork in sales", "poor targeting", "wasted marketing spend"],
+        "roi_claim": "85% lead qualification accuracy",
+        "proof_points": ["analytics dashboard", "A/B testing", "continuous optimization"]
+    }
+}
+```
+
+## 🎯 Agent-Specific ROI Guidelines
+
+### Persona Creation Agent ROI Rules
+- **Decision Maker Identification**: Must identify specific role with >80% confidence
+- **Cultural Context**: Include Brazilian business culture notes for every persona
+- **Pain Point Prioritization**: Rank pain points by business impact and urgency
+- **Communication Preferences**: Match channel preferences to regional and industry norms
+
+### Approach Strategy Agent ROI Rules
+- **USP Mapping**: Connect ≥2 Nellia USPs to identified pain points
+- **Value Quantification**: Include specific ROI claims when relevant
+- **Cultural Timing**: Consider Brazilian business calendar and regional preferences
+- **Multi-touch Strategy**: Plan 3-5 touch sequence, not single message
+
+### Message Crafting Agent ROI Rules
+- **Personalization Elements**: Include ≥3 specific company/persona references
+- **Value Proposition Clarity**: Lead with strongest matching USP
+- **Cultural Tone**: Match formality level to persona and region
+- **Clear CTA**: Single, specific, low-friction call-to-action
+- **Local Relevance**: Reference Brazilian market conditions/trends when relevant
+
+## 📊 Performance Benchmarks
+
+### Minimum Acceptable Standards
+```python
+MIN_ROI_STANDARDS = {
+    "persona_confidence": 0.7,           # 70% confidence in persona accuracy
+    "strategy_relevance": 0.8,           # 80% relevance of strategy to persona
+    "message_personalization": 0.75,     # 75% personalization score
+    "cultural_appropriateness": 0.85,    # 85% cultural fit score
+    "pain_point_addressing": 0.7,        # 70% of pain points addressed
+    "usp_matching": 0.8                  # 80% USP-to-pain-point match quality
+}
+```
+
+### Success Indicators
+- Response rate >15% (industry average: 2-5%)
+- Meeting booking rate >30% of responses
+- Pipeline value >R$50k per qualified lead
+- Sales cycle reduction >25%
+- Client satisfaction score >4.5/5
+
+## 🚨 Critical Success Factors
+
+### ALWAYS Remember:
+1. **Relationship First**: Brazilian business is relationship-driven
+2. **Credibility Proof**: Include social proof, client testimonials, case studies
+3. **Local References**: Mention Brazilian clients, market understanding
+4. **Respect Hierarchy**: Address appropriate decision-making level
+5. **Patience with Process**: Brazilian sales cycles can be longer
+6. **Cultural Sensitivity**: Avoid assumptions about English proficiency
+7. **Regional Awareness**: São Paulo ≠ Salvador in business approach
+
+### NEVER Do:
+- Send generic, translated messages
+- Ignore regional business differences
+- Rush the relationship-building process
+- Use only English without Portuguese option
+- Overlook hierarchy and proper titles
+- Ignore Brazilian holidays and business calendar
+- Assume immediate decision-making authority
+
+Remember: The ROI promise increase depends on cultural alignment and precise targeting. Every interaction must demonstrate deep understanding of Brazilian B2B dynamics.
