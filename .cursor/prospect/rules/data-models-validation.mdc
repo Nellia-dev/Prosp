@@ -1,9 +1,6 @@
 ---
-description: Rules for Pydantic data models, validation, and data flow integrity
-globs: 
-  - "data_models/**/*.py"
-  - "utils/**/*.py"
-  - "**/*validation*.py"
+description: 
+globs: prospect/**
 alwaysApply: false
 ---
 # Data Models & Validation Rules - Nellia Prospector

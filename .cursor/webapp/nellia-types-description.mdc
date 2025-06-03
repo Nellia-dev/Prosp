@@ -1,6 +1,6 @@
 ---
 description: 
-globs: src/types/nellia.ts
+globs: webapp/frontend/src/types/nellia.ts
 alwaysApply: false
 ---
 # Nellia Prospector Types Description

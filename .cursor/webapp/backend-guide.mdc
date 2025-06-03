@@ -1,6 +1,6 @@
 ---
 description: 
-globs: backend/**
+globs: webapp/backend/**
 alwaysApply: false
 ---
 # Nellia Prospector Backend Guide

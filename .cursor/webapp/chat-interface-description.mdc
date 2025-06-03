@@ -1,6 +1,6 @@
 ---
 description: 
-globs: src/components/ChatInterface.tsx
+globs: webapp/frontend/src/components/ChatInterface.tsx
 alwaysApply: false
 ---
 # ChatInterface Component Description

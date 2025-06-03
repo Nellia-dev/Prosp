@@ -1,6 +1,6 @@
 ---
 description: 
-globs: src/components/CRMBoard.tsx
+globs: webapp/frontend/src/components/CRMBoard.tsx
 alwaysApply: false
 ---
 # CRMBoard Component Description

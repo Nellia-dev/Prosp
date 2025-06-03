@@ -1,6 +1,6 @@
 ---
 description: 
-globs: src/components/BusinessContextCenter.tsx
+globs: webapp/frontend/src/components/BusinessContextCenter.tsx
 alwaysApply: false
 ---
 # BusinessContextCenter Component Description

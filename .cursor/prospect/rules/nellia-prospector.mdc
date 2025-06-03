@@ -1,7 +1,7 @@
 ---
-description: Core Nellia Prospector project guidelines and architecture
-globs: 
-alwaysApply: true
+description: 
+globs: prospect/**
+alwaysApply: false
 ---
 # Nellia Prospector - AI-Powered B2B Lead Processing System
 

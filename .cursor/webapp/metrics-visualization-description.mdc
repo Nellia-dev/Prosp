@@ -1,6 +1,6 @@
 ---
 description: 
-globs: src/components/MetricsVisualization.tsx
+globs: webapp/frontend/src/components/MetricsVisualization.tsx
 alwaysApply: false
 ---
 # MetricsVisualization Component Description

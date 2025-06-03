@@ -1,6 +1,6 @@
 ---
 description: 
-globs: src/hooks/useTranslation.tsx
+globs: webapp/frontend/src/hooks/useTranslation.tsx
 alwaysApply: false
 ---
 # useTranslation Hook Description

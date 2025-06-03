@@ -1,6 +1,6 @@
 ---
 description: 
-globs: src/i18n/translations.ts
+globs: webapp/frontend/src/i18n/translations.ts
 alwaysApply: false
 ---
 # Internationalization (i18n) Description

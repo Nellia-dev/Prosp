@@ -1,6 +1,6 @@
 ---
-description: Specialized rules for developing Nellia Prospector agents
-globs: 
+description: 
+globs: prospect/**
 alwaysApply: false
 ---
 # Agent Development Rules - Nellia Prospector

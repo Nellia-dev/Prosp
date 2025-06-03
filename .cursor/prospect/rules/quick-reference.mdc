@@ -1,8 +1,6 @@
 ---
-description: Quick reference for common tasks and patterns
-globs: 
-  - "**/*.py"
-  - "main.py"
+description: 
+globs: prospect/**
 alwaysApply: false
 ---
 # Nellia Prospector - Quick Reference Guide

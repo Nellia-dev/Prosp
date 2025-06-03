@@ -1,949 +1,646 @@
-# Python MCP Server Implementation Guide
+# Nellia Prospector - MCP Server Integration Guide
 
 ## 📋 Overview
 
-This guide provides step-by-step instructions to create a Python MCP (Model Context Protocol) server that interfaces with the Nellia Prospector NestJS backend. The MCP server will handle AI agent operations, lead processing, and business intelligence tasks.
+This guide describes the integration between the Nellia Prospector webapp and the new MCP (Mission Control Panel) Server. The MCP Server has been redesigned as a Flask-based tracking system that monitors the real-time progress and results of leads processed by the Enhanced Nellia Prospector pipeline.
+
+**⚠️ Important Update**: This document replaces the previous Python MCP server guide. The new MCP server is now located at `prospect/mcp-server/` and provides a different architecture focused on tracking and monitoring rather than direct agent execution.
 
 ---
 
-## 🏗️ Project Structure
+## 🏗️ New Architecture Overview
+
+The updated system consists of:
 
 ```
-nellia-mcp-server/
-├── requirements.txt
-├── .env
-├── main.py
-├── config/
-│   ├── __init__.py
-│   └── settings.py
-├── core/
-│   ├── __init__.py
-│   ├── websocket_server.py
-│   └── message_handler.py
-├── agents/
-│   ├── __init__.py
-│   ├── base_agent.py
-│   ├── lead_processor.py
-│   ├── researcher.py
-│   ├── persona_analyzer.py
-│   ├── strategy_generator.py
-│   └── message_creator.py
-├── services/
-│   ├── __init__.py
-│   ├── lead_service.py
-│   ├── business_context_service.py
-│   └── metrics_service.py
-└── utils/
-    ├── __init__.py
-    ├── logger.py
-    └── helpers.py
-```
-
----
-
-## 🚀 Step 1: Project Setup
-
-### 1.1 Create Project Directory
-
-```bash
-mkdir nellia-mcp-server
-cd nellia-mcp-server
-```
-
-### 1.2 Create Python Virtual Environment
-
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-### 1.3 Create requirements.txt
-
-```txt
-# WebSocket and networking
-websockets==12.0
-asyncio-mqtt==0.13.0
-
-# AI and NLP
-openai==1.6.1
-anthropic==0.7.8
-langchain==0.1.0
-langchain-openai==0.0.2
-
-# Data processing
-pandas==2.1.4
-numpy==1.24.3
-pydantic==2.5.2
-
-# Web scraping and research
-aiohttp==3.9.1
-beautifulsoup4==4.12.2
-selenium==4.16.2
-
-# Environment and configuration
-python-dotenv==1.0.0
-pyyaml==6.0.1
-
-# Logging and monitoring
-structlog==23.2.0
-
-# Database (optional for local caching)
-sqlalchemy==2.0.23
-aiosqlite==0.19.0
-
-# Testing
-pytest==7.4.3
-pytest-asyncio==0.21.1
-```
-
-### 1.4 Install Dependencies
-
-```bash
-pip install -r requirements.txt
+┌─────────────────────────────────────────────────────────────────┐
+│                    Updated Integration Architecture              │
+├─────────────────────────────────────────────────────────────────┤
+│  React Frontend (webapp/frontend)                              │
+│  ├── Real-time dashboards                                      │
+│  ├── Lead status monitoring                                    │
+│  ├── Agent progress tracking                                   │
+│  └── Business context management                               │
+├─────────────────────────────────────────────────────────────────┤
+│  NestJS Backend (webapp/backend)                               │
+│  ├── REST API endpoints                                        │
+│  ├── WebSocket communication                                   │
+│  ├── MCP server integration                                    │
+│  └── Database management                                       │
+├─────────────────────────────────────────────────────────────────┤
+│  MCP Server (prospect/mcp-server) - NEW ARCHITECTURE           │
+│  ├── Flask-based tracking server                               │
+│  ├── Real-time progress monitoring                             │
+│  ├── Agent execution recording                                 │
+│  ├── Lead status management                                    │
+│  └── SQLite database for tracking                              │
+├─────────────────────────────────────────────────────────────────┤
+│  Enhanced Lead Processor (prospect)                            │
+│  ├── Multi-agent AI pipeline                                   │
+│  ├── Direct MCP reporting integration                          │
+│  ├── 15-step processing workflow                               │
+│  └── Business intelligence generation                          │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🔧 Step 2: Configuration
+## 🔄 What Changed
 
-### 2.1 Create .env File
+### Previous Architecture (Deprecated)
+- Direct WebSocket MCP server for agent execution
+- Python agents managed via WebSocket messages
+- Real-time agent communication through WebSocket
 
+### New Architecture (Current)
+- **MCP Server**: Flask-based tracking and monitoring system
+- **AI Processing**: Standalone Enhanced Lead Processor with direct MCP reporting
+- **Integration**: HTTP API communication between components
+- **Monitoring**: Real-time progress tracking and status updates
+
+---
+
+## 🚀 Quick Setup Guide
+
+### 1. MCP Server Setup
+
+The MCP server is now located at `prospect/mcp-server/` and provides tracking capabilities:
+
+```bash
+# Navigate to MCP server directory
+cd prospect/mcp-server
+
+# Initialize the database
+python -c "from database import init_db; init_db()"
+
+# Start the MCP server
+python app.py
+```
+
+The MCP server will run on `http://localhost:5001` and provide:
+- Lead processing state tracking
+- Agent execution monitoring
+- Progress reporting APIs
+- Real-time status updates
+
+### 2. Backend Integration
+
+The NestJS backend integrates with the MCP server via HTTP API:
+
+```typescript
+// Example: Check MCP server health
+const mcpHealth = await fetch('http://localhost:5001/api/health');
+
+// Example: Get lead status
+const leadStatus = await fetch(`http://localhost:5001/api/lead/${leadId}/status`);
+
+// Example: Get run status for multiple leads
+const runStatus = await fetch(`http://localhost:5001/api/run/${runId}/status`);
+```
+
+### 3. Enhanced Processor Integration
+
+The Enhanced Lead Processor automatically reports to the MCP server:
+
+```bash
+# Enable MCP reporting in prospect/.env
+ENABLE_MCP_REPORTING=true
+MCP_SERVER_URL=http://127.0.0.1:5001
+
+# Process leads with automatic MCP tracking
+cd prospect
+python enhanced_main.py leads.json -p "Your product/service"
+```
+
+---
+
+## 📊 MCP Server API Reference
+
+### Core Endpoints
+
+#### Start Lead Processing
+```http
+POST /api/lead/start
+Content-Type: application/json
+
+{
+  "lead_id": "unique_lead_identifier",
+  "run_id": "unique_run_identifier", 
+  "url": "http://example.com",
+  "start_time": "2024-01-01T10:00:00.000Z",
+  "current_agent": "LeadIntakeAgent"
+}
+```
+
+#### Record Agent Event
+```http
+POST /api/lead/{lead_id}/event
+Content-Type: application/json
+
+{
+  "agent_name": "TavilyEnrichmentAgent",
+  "status": "SUCCESS",
+  "start_time": "2024-01-01T10:00:00.000Z",
+  "end_time": "2024-01-01T10:00:30.000Z",
+  "processing_time_seconds": 30.5,
+  "output_json": "{\"enriched_data\": \"...\"}",
+  "metrics_json": "{\"llm_calls\": 2, \"tokens_used\": 1500}",
+  "error_message": null
+}
+```
+
+#### Get Lead Status
+```http
+GET /api/lead/{lead_id}/status
+
+Response:
+{
+  "lead_status": {
+    "lead_id": "lead-123",
+    "status": "ACTIVE",
+    "current_agent": "PersonaCreationAgent",
+    "start_time": "2024-01-01T10:00:00.000Z",
+    "last_update_time": "2024-01-01T10:05:00.000Z"
+  },
+  "agent_executions": [
+    {
+      "agent_name": "LeadIntakeAgent",
+      "status": "SUCCESS",
+      "processing_time_seconds": 15.2,
+      "output_json": "{...}",
+      "end_time": "2024-01-01T10:02:00.000Z"
+    }
+  ]
+}
+```
+
+#### Get Run Status
+```http
+GET /api/run/{run_id}/status
+
+Response:
+{
+  "run_id": "run-456",
+  "leads": [
+    {
+      "lead_id": "lead-123",
+      "status": "COMPLETED",
+      "final_package_summary": "{\"roi_potential\": 0.87}"
+    },
+    {
+      "lead_id": "lead-124", 
+      "status": "ACTIVE",
+      "current_agent": "StrategyGenerationAgent"
+    }
+  ]
+}
+```
+
+---
+
+## 🔧 Backend Integration Implementation
+
+### MCP Service Integration
+
+Update your NestJS backend's MCP service to integrate with the new tracking server:
+
+```typescript
+// src/modules/mcp/mcp.service.ts
+import { Injectable, Logger } from '@nestjs/common';
+import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
+
+@Injectable()
+export class McpService {
+  private readonly logger = new Logger(McpService.name);
+  private readonly mcpServerUrl: string;
+
+  constructor(
+    private readonly httpService: HttpService,
+    private readonly configService: ConfigService,
+  ) {
+    this.mcpServerUrl = this.configService.get<string>('MCP_SERVER_URL', 'http://localhost:5001');
+  }
+
+  async startLeadProcessing(leadData: {
+    lead_id: string;
+    run_id: string;
+    url?: string;
+    current_agent?: string;
+  }) {
+    try {
+      const response = await this.httpService.post(
+        `${this.mcpServerUrl}/api/lead/start`,
+        {
+          ...leadData,
+          start_time: new Date().toISOString(),
+        }
+      ).toPromise();
+      
+      return response.data;
+    } catch (error) {
+      this.logger.error('Failed to start lead processing in MCP', error);
+      throw error;
+    }
+  }
+
+  async getLeadStatus(leadId: string) {
+    try {
+      const response = await this.httpService.get(
+        `${this.mcpServerUrl}/api/lead/${leadId}/status`
+      ).toPromise();
+      
+      return response.data;
+    } catch (error) {
+      this.logger.error(`Failed to get lead status for ${leadId}`, error);
+      throw error;
+    }
+  }
+
+  async getRunStatus(runId: string) {
+    try {
+      const response = await this.httpService.get(
+        `${this.mcpServerUrl}/api/run/${runId}/status`
+      ).toPromise();
+      
+      return response.data;
+    } catch (error) {
+      this.logger.error(`Failed to get run status for ${runId}`, error);
+      throw error;
+    }
+  }
+
+  async checkMcpHealth() {
+    try {
+      const response = await this.httpService.get(
+        `${this.mcpServerUrl}/api/health`
+      ).toPromise();
+      
+      return { healthy: true, data: response.data };
+    } catch (error) {
+      this.logger.warn('MCP server health check failed', error);
+      return { healthy: false, error: error.message };
+    }
+  }
+}
+```
+
+### Lead Processing Controller Updates
+
+```typescript
+// src/modules/leads/leads.controller.ts
+@Controller('api/leads')
+export class LeadsController {
+  constructor(
+    private readonly leadsService: LeadsService,
+    private readonly mcpService: McpService,
+  ) {}
+
+  @Post()
+  async createLead(@Body() createLeadDto: CreateLeadDto) {
+    // Create lead in main database
+    const lead = await this.leadsService.create(createLeadDto);
+    
+    // Start tracking in MCP server
+    const runId = uuidv4();
+    await this.mcpService.startLeadProcessing({
+      lead_id: lead.id,
+      run_id: runId,
+      url: lead.website,
+      current_agent: 'LeadIntakeAgent'
+    });
+
+    // Trigger AI processing (via queue or direct call)
+    await this.triggerLeadProcessing(lead, runId);
+
+    return lead;
+  }
+
+  @Get(':id/status')
+  async getLeadStatus(@Param('id') id: string) {
+    // Get status from both main DB and MCP server
+    const [leadData, mcpStatus] = await Promise.all([
+      this.leadsService.findOne(id),
+      this.mcpService.getLeadStatus(id)
+    ]);
+
+    return {
+      lead: leadData,
+      processing_status: mcpStatus
+    };
+  }
+
+  @Get('run/:runId/status')
+  async getRunStatus(@Param('runId') runId: string) {
+    return this.mcpService.getRunStatus(runId);
+  }
+
+  private async triggerLeadProcessing(lead: Lead, runId: string) {
+    // Implementation depends on your processing approach:
+    // Option 1: Queue-based processing
+    // await this.queueService.addLeadProcessingJob(lead, runId);
+    
+    // Option 2: Direct API call to processing service
+    // await this.processingService.processLead(lead, runId);
+    
+    // Option 3: File-based processing
+    // await this.createProcessingFile(lead, runId);
+  }
+}
+```
+
+---
+
+## 🎯 Frontend Integration
+
+### Real-time Status Updates
+
+Update your React components to display real-time processing status:
+
+```typescript
+// components/LeadStatusCard.tsx
+import { useState, useEffect } from 'react';
+
+interface LeadStatusCardProps {
+  leadId: string;
+}
+
+export function LeadStatusCard({ leadId }: LeadStatusCardProps) {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const response = await fetch(`/api/leads/${leadId}/status`);
+        const data = await response.json();
+        setStatus(data.processing_status);
+      } catch (error) {
+        console.error('Failed to fetch lead status:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStatus();
+    
+    // Poll for updates every 5 seconds
+    const interval = setInterval(fetchStatus, 5000);
+    return () => clearInterval(interval);
+  }, [leadId]);
+
+  if (loading) return <div>Loading...</div>;
+
+  return (
+    <div className="lead-status-card">
+      <h3>Lead Processing Status</h3>
+      <div className="status-info">
+        <p><strong>Status:</strong> {status?.lead_status?.status}</p>
+        <p><strong>Current Agent:</strong> {status?.lead_status?.current_agent}</p>
+        <p><strong>Last Update:</strong> {new Date(status?.lead_status?.last_update_time).toLocaleString()}</p>
+      </div>
+      
+      <div className="agent-history">
+        <h4>Agent Execution History</h4>
+        {status?.agent_executions?.map((execution, index) => (
+          <div key={index} className="agent-execution">
+            <span className="agent-name">{execution.agent_name}</span>
+            <span className={`status ${execution.status.toLowerCase()}`}>
+              {execution.status}
+            </span>
+            <span className="duration">
+              {execution.processing_time_seconds}s
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+### Run Status Dashboard
+
+```typescript
+// components/RunStatusDashboard.tsx
+export function RunStatusDashboard({ runId }: { runId: string }) {
+  const [runStatus, setRunStatus] = useState(null);
+
+  useEffect(() => {
+    const fetchRunStatus = async () => {
+      const response = await fetch(`/api/leads/run/${runId}/status`);
+      const data = await response.json();
+      setRunStatus(data);
+    };
+
+    fetchRunStatus();
+    const interval = setInterval(fetchRunStatus, 10000);
+    return () => clearInterval(interval);
+  }, [runId]);
+
+  return (
+    <div className="run-status-dashboard">
+      <h2>Processing Run: {runId}</h2>
+      <div className="leads-grid">
+        {runStatus?.leads?.map(lead => (
+          <div key={lead.lead_id} className={`lead-card ${lead.status.toLowerCase()}`}>
+            <h3>{lead.lead_id}</h3>
+            <p>Status: {lead.status}</p>
+            {lead.current_agent && <p>Current Agent: {lead.current_agent}</p>}
+            {lead.final_package_summary && (
+              <details>
+                <summary>Final Results</summary>
+                <pre>{JSON.stringify(JSON.parse(lead.final_package_summary), null, 2)}</pre>
+              </details>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## 🔧 Configuration
+
+### Environment Variables
+
+Update your environment configurations:
+
+**webapp/backend/.env**:
 ```env
 # MCP Server Configuration
-MCP_HOST=localhost
-MCP_PORT=8000
-MCP_DEBUG=true
+MCP_SERVER_URL=http://localhost:5001
+MCP_SERVER_TIMEOUT=30000
+MCP_HEALTH_CHECK_INTERVAL=60000
 
-# Backend Connection
-BACKEND_HOST=localhost
-BACKEND_PORT=3000
-
-# AI Provider Configuration
-OPENAI_API_KEY=your_openai_api_key_here
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
-
-# Research Tools
-SERP_API_KEY=your_serp_api_key_here
-APOLLO_API_KEY=your_apollo_api_key_here
-
-# Logging
-LOG_LEVEL=INFO
-LOG_FORMAT=json
-
-# Rate Limiting
-MAX_CONCURRENT_TASKS=10
-REQUEST_TIMEOUT=30
+# Processing Configuration
+ENABLE_MCP_INTEGRATION=true
+DEFAULT_RUN_TIMEOUT=300000
 ```
 
-### 2.2 Create config/settings.py
+**prospect/.env**:
+```env
+# MCP Reporting Configuration
+ENABLE_MCP_REPORTING=true
+MCP_SERVER_URL=http://127.0.0.1:5001
 
-```python
-import os
-from typing import Optional
-from pydantic import BaseSettings, Field
-
-class Settings(BaseSettings):
-    # MCP Server
-    mcp_host: str = Field(default="localhost", env="MCP_HOST")
-    mcp_port: int = Field(default=8000, env="MCP_PORT")
-    mcp_debug: bool = Field(default=False, env="MCP_DEBUG")
-    
-    # Backend Connection
-    backend_host: str = Field(default="localhost", env="BACKEND_HOST")
-    backend_port: int = Field(default=3000, env="BACKEND_PORT")
-    
-    # AI Configuration
-    openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
-    anthropic_api_key: Optional[str] = Field(default=None, env="ANTHROPIC_API_KEY")
-    
-    # Research APIs
-    serp_api_key: Optional[str] = Field(default=None, env="SERP_API_KEY")
-    apollo_api_key: Optional[str] = Field(default=None, env="APOLLO_API_KEY")
-    
-    # Performance
-    max_concurrent_tasks: int = Field(default=10, env="MAX_CONCURRENT_TASKS")
-    request_timeout: int = Field(default=30, env="REQUEST_TIMEOUT")
-    
-    # Logging
-    log_level: str = Field(default="INFO", env="LOG_LEVEL")
-    log_format: str = Field(default="json", env="LOG_FORMAT")
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-
-settings = Settings()
+# Processing Configuration
+ENABLE_ENHANCED_PROCESSING=true
+MAX_LEADS_PER_BATCH=100
 ```
 
 ---
 
-## 🎯 Step 3: Core WebSocket Server
+## 🧪 Testing the Integration
 
-### 3.1 Create core/websocket_server.py
-
-```python
-import asyncio
-import json
-import websockets
-import logging
-from typing import Dict, Any, Optional
-from datetime import datetime
-import uuid
-
-from config.settings import settings
-from core.message_handler import MessageHandler
-from utils.logger import get_logger
-
-logger = get_logger(__name__)
-
-class MCPServer:
-    def __init__(self):
-        self.clients: Dict[str, websockets.WebSocketServerProtocol] = {}
-        self.message_handler = MessageHandler()
-        self.running = False
-        
-    async def register_client(self, websocket: websockets.WebSocketServerProtocol, path: str):
-        """Register a new client connection."""
-        client_id = str(uuid.uuid4())
-        self.clients[client_id] = websocket
-        logger.info(f"Client {client_id} connected from {websocket.remote_address}")
-        
-        try:
-            await self.handle_client(websocket, client_id)
-        except websockets.exceptions.ConnectionClosed:
-            logger.info(f"Client {client_id} disconnected")
-        except Exception as e:
-            logger.error(f"Error handling client {client_id}: {e}")
-        finally:
-            if client_id in self.clients:
-                del self.clients[client_id]
-    
-    async def handle_client(self, websocket: websockets.WebSocketServerProtocol, client_id: str):
-        """Handle messages from a client."""
-        async for message in websocket:
-            try:
-                data = json.loads(message)
-                response = await self.message_handler.handle_message(data)
-                await websocket.send(json.dumps(response))
-                
-            except json.JSONDecodeError as e:
-                error_response = {
-                    "id": None,
-                    "type": "error",
-                    "error": "Invalid JSON format",
-                    "message": str(e),
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-                await websocket.send(json.dumps(error_response))
-                
-            except Exception as e:
-                logger.error(f"Error processing message from {client_id}: {e}")
-                error_response = {
-                    "id": data.get("id") if isinstance(data, dict) else None,
-                    "type": "error",
-                    "error": "Internal server error",
-                    "message": str(e),
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-                await websocket.send(json.dumps(error_response))
-    
-    async def broadcast_message(self, message: Dict[str, Any]):
-        """Broadcast a message to all connected clients."""
-        if not self.clients:
-            return
-            
-        message_str = json.dumps(message)
-        disconnected_clients = []
-        
-        for client_id, websocket in self.clients.items():
-            try:
-                await websocket.send(message_str)
-            except websockets.exceptions.ConnectionClosed:
-                disconnected_clients.append(client_id)
-            except Exception as e:
-                logger.error(f"Error broadcasting to client {client_id}: {e}")
-                disconnected_clients.append(client_id)
-        
-        # Clean up disconnected clients
-        for client_id in disconnected_clients:
-            if client_id in self.clients:
-                del self.clients[client_id]
-    
-    async def start_server(self):
-        """Start the MCP WebSocket server."""
-        self.running = True
-        logger.info(f"Starting MCP server on {settings.mcp_host}:{settings.mcp_port}")
-        
-        async with websockets.serve(
-            self.register_client,
-            settings.mcp_host,
-            settings.mcp_port,
-            ping_interval=20,
-            ping_timeout=10
-        ):
-            logger.info("MCP server started successfully")
-            
-            # Keep the server running
-            while self.running:
-                await asyncio.sleep(1)
-    
-    async def stop_server(self):
-        """Stop the MCP server."""
-        self.running = False
-        logger.info("MCP server stopped")
-
-# Global server instance
-mcp_server = MCPServer()
-```
-
-### 3.2 Create core/message_handler.py
-
-```python
-import asyncio
-from typing import Dict, Any, Optional
-from datetime import datetime
-import uuid
-
-from agents.lead_processor import LeadProcessor
-from agents.researcher import Researcher
-from agents.persona_analyzer import PersonaAnalyzer
-from agents.strategy_generator import StrategyGenerator
-from agents.message_creator import MessageCreator
-from services.business_context_service import BusinessContextService
-from services.metrics_service import MetricsService
-from utils.logger import get_logger
-
-logger = get_logger(__name__)
-
-class MessageHandler:
-    def __init__(self):
-        # Initialize agents
-        self.lead_processor = LeadProcessor()
-        self.researcher = Researcher()
-        self.persona_analyzer = PersonaAnalyzer()
-        self.strategy_generator = StrategyGenerator()
-        self.message_creator = MessageCreator()
-        
-        # Initialize services
-        self.business_context_service = BusinessContextService()
-        self.metrics_service = MetricsService()
-        
-        # Message handlers mapping
-        self.handlers = {
-            # Agent Management
-            "agent.start": self._handle_agent_start,
-            "agent.stop": self._handle_agent_stop,
-            "agent.status": self._handle_agent_status,
-            "agent.update_metrics": self._handle_agent_update_metrics,
-            
-            # Lead Processing
-            "lead.process": self._handle_lead_process,
-            "lead.research": self._handle_lead_research,
-            "lead.analyze_persona": self._handle_lead_analyze_persona,
-            "lead.generate_strategy": self._handle_lead_generate_strategy,
-            "lead.create_message": self._handle_lead_create_message,
-            
-            # Business Context
-            "business_context.get": self._handle_business_context_get,
-            "business_context.update": self._handle_business_context_update,
-            
-            # Chat
-            "chat.send_message": self._handle_chat_send_message,
-            
-            # System
-            "system.health": self._handle_system_health,
-            "system.status": self._handle_system_status,
-        }
-    
-    async def handle_message(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Route and handle incoming messages."""
-        message_type = data.get("type")
-        message_id = data.get("id", str(uuid.uuid4()))
-        
-        if message_type not in self.handlers:
-            return {
-                "id": message_id,
-                "type": "error",
-                "error": "Unknown message type",
-                "message": f"No handler for message type: {message_type}",
-                "timestamp": datetime.utcnow().isoformat()
-            }
-        
-        try:
-            handler = self.handlers[message_type]
-            result = await handler(data)
-            
-            return {
-                "id": message_id,
-                "type": f"{message_type}.response",
-                "data": result,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            
-        except Exception as e:
-            logger.error(f"Error handling message {message_type}: {e}")
-            return {
-                "id": message_id,
-                "type": "error",
-                "error": "Handler execution failed",
-                "message": str(e),
-                "timestamp": datetime.utcnow().isoformat()
-            }
-    
-    # Agent Management Handlers
-    async def _handle_agent_start(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        agent_name = data.get("agent_name")
-        # Implementation for starting an agent
-        return {"status": "started", "agent_name": agent_name}
-    
-    async def _handle_agent_stop(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        agent_name = data.get("agent_name")
-        # Implementation for stopping an agent
-        return {"status": "stopped", "agent_name": agent_name}
-    
-    async def _handle_agent_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        agent_name = data.get("agent_name")
-        # Implementation for getting agent status
-        return await self.metrics_service.get_agent_status(agent_name)
-    
-    async def _handle_agent_update_metrics(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        agent_name = data.get("agent_name")
-        metrics = data.get("metrics", {})
-        # Implementation for updating agent metrics
-        return await self.metrics_service.update_agent_metrics(agent_name, metrics)
-    
-    # Lead Processing Handlers
-    async def _handle_lead_process(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        lead_data = data.get("lead_data")
-        stage = data.get("stage", "intake")
-        return await self.lead_processor.process_lead(lead_data, stage)
-    
-    async def _handle_lead_research(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        company_data = data.get("company_data")
-        return await self.researcher.research_company(company_data)
-    
-    async def _handle_lead_analyze_persona(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        lead_data = data.get("lead_data")
-        return await self.persona_analyzer.analyze_persona(lead_data)
-    
-    async def _handle_lead_generate_strategy(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        lead_data = data.get("lead_data")
-        business_context = data.get("business_context")
-        return await self.strategy_generator.generate_strategy(lead_data, business_context)
-    
-    async def _handle_lead_create_message(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        lead_data = data.get("lead_data")
-        strategy = data.get("strategy")
-        return await self.message_creator.create_message(lead_data, strategy)
-    
-    # Business Context Handlers
-    async def _handle_business_context_get(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        return await self.business_context_service.get_context()
-    
-    async def _handle_business_context_update(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        context_data = data.get("context_data")
-        return await self.business_context_service.update_context(context_data)
-    
-    # Chat Handlers
-    async def _handle_chat_send_message(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        agent_name = data.get("agent_name")
-        message = data.get("message")
-        # Implementation for chat message handling
-        return {
-            "agent_name": agent_name,
-            "response": f"Agent {agent_name} received: {message}",
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    
-    # System Handlers
-    async def _handle_system_health(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat(),
-            "uptime": "00:00:00",  # Implement actual uptime tracking
-            "memory_usage": "50%",  # Implement actual memory monitoring
-            "cpu_usage": "25%"      # Implement actual CPU monitoring
-        }
-    
-    async def _handle_system_status(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        return await self.metrics_service.get_system_status()
-```
-
----
-
-## 🤖 Step 4: Agent Implementations
-
-### 4.1 Create agents/base_agent.py
-
-```python
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
-from datetime import datetime
-import asyncio
-
-from utils.logger import get_logger
-
-logger = get_logger(__name__)
-
-class BaseAgent(ABC):
-    def __init__(self, name: str):
-        self.name = name
-        self.status = "idle"
-        self.current_task = None
-        self.metrics = {
-            "tasks_completed": 0,
-            "tasks_failed": 0,
-            "average_processing_time": 0.0,
-            "success_rate": 0.0,
-            "last_activity": None
-        }
-        self.created_at = datetime.utcnow()
-    
-    @abstractmethod
-    async def process(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process incoming data and return results."""
-        pass
-    
-    async def start_task(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Start processing a task."""
-        self.status = "processing"
-        self.current_task = task_data
-        start_time = datetime.utcnow()
-        
-        try:
-            result = await self.process(task_data)
-            
-            # Update metrics on success
-            processing_time = (datetime.utcnow() - start_time).total_seconds()
-            self.metrics["tasks_completed"] += 1
-            self._update_average_processing_time(processing_time)
-            self._update_success_rate()
-            self.metrics["last_activity"] = datetime.utcnow().isoformat()
-            
-            self.status = "idle"
-            self.current_task = None
-            
-            logger.info(f"Agent {self.name} completed task in {processing_time:.2f}s")
-            return result
-            
-        except Exception as e:
-            # Update metrics on failure
-            self.metrics["tasks_failed"] += 1
-            self._update_success_rate()
-            self.metrics["last_activity"] = datetime.utcnow().isoformat()
-            
-            self.status = "error"
-            self.current_task = None
-            
-            logger.error(f"Agent {self.name} failed task: {e}")
-            raise
-    
-    def _update_average_processing_time(self, new_time: float):
-        """Update the average processing time metric."""
-        total_tasks = self.metrics["tasks_completed"]
-        current_avg = self.metrics["average_processing_time"]
-        
-        # Calculate new average
-        self.metrics["average_processing_time"] = (
-            (current_avg * (total_tasks - 1) + new_time) / total_tasks
-        )
-    
-    def _update_success_rate(self):
-        """Update the success rate metric."""
-        total_tasks = self.metrics["tasks_completed"] + self.metrics["tasks_failed"]
-        if total_tasks > 0:
-            self.metrics["success_rate"] = (
-                self.metrics["tasks_completed"] / total_tasks
-            ) * 100
-    
-    def get_status(self) -> Dict[str, Any]:
-        """Get current agent status and metrics."""
-        return {
-            "name": self.name,
-            "status": self.status,
-            "current_task": self.current_task,
-            "metrics": self.metrics,
-            "uptime": (datetime.utcnow() - self.created_at).total_seconds()
-        }
-```
-
-### 4.2 Create agents/lead_processor.py
-
-```python
-from typing import Dict, Any
-import asyncio
-
-from agents.base_agent import BaseAgent
-from utils.logger import get_logger
-
-logger = get_logger(__name__)
-
-class LeadProcessor(BaseAgent):
-    def __init__(self):
-        super().__init__("lead_processor")
-    
-    async def process(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process a lead through the specified stage."""
-        lead_data = data.get("lead_data", {})
-        stage = data.get("stage", "intake")
-        
-        logger.info(f"Processing lead {lead_data.get('company_name')} at stage {stage}")
-        
-        # Simulate processing time
-        await asyncio.sleep(2)
-        
-        if stage == "intake":
-            return await self._process_intake(lead_data)
-        elif stage == "analysis":
-            return await self._process_analysis(lead_data)
-        elif stage == "persona":
-            return await self._process_persona(lead_data)
-        elif stage == "strategy":
-            return await self._process_strategy(lead_data)
-        elif stage == "message":
-            return await self._process_message(lead_data)
-        else:
-            raise ValueError(f"Unknown processing stage: {stage}")
-    
-    async def _process_intake(self, lead_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process lead at intake stage."""
-        # Basic lead validation and scoring
-        company_name = lead_data.get("company_name", "")
-        website = lead_data.get("website", "")
-        
-        # Simulate AI-based initial scoring
-        relevance_score = min(95, len(company_name) * 10 + 50)
-        roi_potential = min(90, len(website) * 8 + 40)
-        
-        return {
-            "stage": "analysis",
-            "relevance_score": relevance_score,
-            "roi_potential": roi_potential,
-            "qualification_tier": "high" if relevance_score > 80 else "medium",
-            "processing_notes": "Initial intake completed, ready for detailed analysis"
-        }
-    
-    async def _process_analysis(self, lead_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process lead at analysis stage."""
-        # Detailed company analysis
-        return {
-            "stage": "persona",
-            "brazilian_market_fit": 85,
-            "sector_analysis": {
-                "primary_sector": "Technology",
-                "market_position": "Growth",
-                "competitive_landscape": "Moderate"
-            },
-            "processing_notes": "Company analysis completed, proceeding to persona identification"
-        }
-    
-    async def _process_persona(self, lead_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process lead at persona stage."""
-        # Identify decision makers and personas
-        return {
-            "stage": "strategy",
-            "likely_contact_role": "CTO",
-            "decision_maker_probability": 0.78,
-            "persona_analysis": {
-                "role": "Chief Technology Officer",
-                "pain_points": ["Technical debt", "Scalability", "Team productivity"],
-                "triggers": ["New technology adoption", "System modernization"]
-            },
-            "processing_notes": "Persona analysis completed, ready for strategy generation"
-        }
-    
-    async def _process_strategy(self, lead_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process lead at strategy stage."""
-        # Generate outreach strategy
-        return {
-            "stage": "message",
-            "outreach_strategy": {
-                "approach": "Technical value proposition",
-                "key_messages": ["Reduce technical debt", "Improve scalability"],
-                "timing": "immediate",
-                "channel": "email"
-            },
-            "processing_notes": "Strategy generated, ready for message creation"
-        }
-    
-    async def _process_message(self, lead_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process lead at message stage."""
-        # Create personalized message
-        company_name = lead_data.get("company_name", "")
-        
-        message = f"""Hi there,
-
-I noticed {company_name} is growing rapidly in the technology sector. 
-
-Based on my research, you might be facing challenges with technical debt and scalability as you expand. Our platform has helped similar companies reduce technical debt by 40% while improving team productivity.
-
-Would you be interested in a brief conversation about how we've helped companies like yours overcome these challenges?
-
-Best regards,
-[Your Name]"""
-        
-        return {
-            "stage": "completed",
-            "generated_message": message,
-            "message_metadata": {
-                "tone": "professional",
-                "length": "medium",
-                "personalization_level": "high"
-            },
-            "processing_notes": "Lead processing completed successfully"
-        }
-
-    async def process_lead(self, lead_data: Dict[str, Any], stage: str) -> Dict[str, Any]:
-        """Public method to process a lead."""
-        return await self.start_task({
-            "lead_data": lead_data,
-            "stage": stage
-        })
-```
-
-### 4.3 Create Additional Agent Files
-
-Create the remaining agent files with similar structure:
-- `agents/researcher.py`
-- `agents/persona_analyzer.py`
-- `agents/strategy_generator.py`
-- `agents/message_creator.py`
-
----
-
-## 🔧 Step 5: Services
-
-### 5.1 Create services/business_context_service.py
-
-```python
-from typing import Dict, Any, Optional
-import json
-from datetime import datetime
-
-from utils.logger import get_logger
-
-logger = get_logger(__name__)
-
-class BusinessContextService:
-    def __init__(self):
-        self.context_data = {}
-        self.last_updated = None
-    
-    async def get_context(self) -> Dict[str, Any]:
-        """Get current business context."""
-        return {
-            "context": self.context_data,
-            "last_updated": self.last_updated
-        }
-    
-    async def update_context(self, context_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Update business context."""
-        self.context_data = context_data
-        self.last_updated = datetime.utcnow().isoformat()
-        
-        logger.info("Business context updated")
-        
-        return {
-            "status": "updated",
-            "timestamp": self.last_updated
-        }
-```
-
----
-
-## 🚀 Step 6: Main Application
-
-### 6.1 Create main.py
-
-```python
-import asyncio
-import signal
-import sys
-from dotenv import load_dotenv
-
-from core.websocket_server import mcp_server
-from utils.logger import setup_logging, get_logger
-
-# Load environment variables
-load_dotenv()
-
-# Setup logging
-setup_logging()
-logger = get_logger(__name__)
-
-async def shutdown_handler(signum, frame):
-    """Handle shutdown signals gracefully."""
-    logger.info(f"Received signal {signum}, shutting down...")
-    await mcp_server.stop_server()
-    sys.exit(0)
-
-async def main():
-    """Main application entry point."""
-    # Setup signal handlers
-    signal.signal(signal.SIGINT, lambda s, f: asyncio.create_task(shutdown_handler(s, f)))
-    signal.signal(signal.SIGTERM, lambda s, f: asyncio.create_task(shutdown_handler(s, f)))
-    
-    try:
-        logger.info("Starting Nellia MCP Server...")
-        await mcp_server.start_server()
-    except KeyboardInterrupt:
-        logger.info("Received keyboard interrupt, shutting down...")
-    except Exception as e:
-        logger.error(f"Fatal error: {e}")
-        sys.exit(1)
-    finally:
-        await mcp_server.stop_server()
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-### 6.2 Create utils/logger.py
-
-```python
-import logging
-import structlog
-from config.settings import settings
-
-def setup_logging():
-    """Setup structured logging."""
-    logging.basicConfig(
-        format="%(message)s",
-        level=getattr(logging, settings.log_level.upper()),
-    )
-    
-    structlog.configure(
-        processors=[
-            structlog.stdlib.filter_by_level,
-            structlog.stdlib.add_logger_name,
-            structlog.stdlib.add_log_level,
-            structlog.stdlib.PositionalArgumentsFormatter(),
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.JSONRenderer() if settings.log_format == "json" else structlog.dev.ConsoleRenderer(),
-        ],
-        context_class=dict,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        wrapper_class=structlog.stdlib.BoundLogger,
-        cache_logger_on_first_use=True,
-    )
-
-def get_logger(name: str):
-    """Get a structured logger instance."""
-    return structlog.get_logger(name)
-```
-
----
-
-## 🧪 Step 7: Testing
-
-### 7.1 Create test_mcp_server.py
-
-```python
-import asyncio
-import websockets
-import json
-from datetime import datetime
-
-async def test_mcp_connection():
-    """Test basic MCP server connection and communication."""
-    uri = "ws://localhost:8000"
-    
-    try:
-        async with websockets.connect(uri) as websocket:
-            print("Connected to MCP server")
-            
-            # Test system health
-            health_check = {
-                "id": "test-1",
-                "type": "system.health",
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            
-            await websocket.send(json.dumps(health_check))
-            response = await websocket.recv()
-            print(f"Health check response: {json.loads(response)}")
-            
-            # Test lead processing
-            lead_test = {
-                "id": "test-2",
-                "type": "lead.process",
-                "lead_data": {
-                    "company_name": "Test Company",
-                    "website": "https://testcompany.com"
-                },
-                "stage": "intake",
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            
-            await websocket.send(json.dumps(lead_test))
-            response = await websocket.recv()
-            print(f"Lead processing response: {json.loads(response)}")
-            
-    except Exception as e:
-        print(f"Connection failed: {e}")
-
-if __name__ == "__main__":
-    asyncio.run(test_mcp_connection())
-```
-
----
-
-## 🚀 Step 8: Running the Server
-
-### 8.1 Start the MCP Server
+### 1. Test MCP Server Health
 
 ```bash
-# Make sure you're in the virtual environment
-source venv/bin/activate
+# Check if MCP server is running
+curl http://localhost:5001/api/health
 
-# Run the server
-python main.py
+# Expected response:
+# {"status": "healthy", "timestamp": "2024-01-01T10:00:00.000Z"}
 ```
 
-### 8.2 Test the Connection
+### 2. Test Lead Processing Flow
 
 ```bash
-# In another terminal
-python test_mcp_server.py
+# 1. Start MCP server
+cd prospect/mcp-server
+python app.py
+
+# 2. Start backend (in another terminal)
+cd webapp/backend
+npm run start:dev
+
+# 3. Process a test lead (in another terminal)
+cd prospect
+echo '[{"url": "https://example.com", "company_name": "Test Company"}]' > test_lead.json
+python enhanced_main.py test_lead.json -p "Test product"
+
+# 4. Check status via API
+curl http://localhost:5001/api/run/[run_id]/status
+```
+
+### 3. Test Frontend Integration
+
+```bash
+# Start frontend
+cd webapp/frontend
+npm run dev
+
+# Navigate to http://localhost:5173
+# Upload leads and monitor processing in real-time
 ```
 
 ---
 
-## 🔧 Step 9: Integration with NestJS Backend
+## 🚨 Troubleshooting
 
-Your NestJS backend is already configured to connect to this MCP server. The WebSocket connection should establish automatically when:
+### Common Issues
 
-1. The MCP server is running on `localhost:8000`
-2. The NestJS backend starts and the MCP service attempts connection
-3. Both services should begin communicating using the message protocol defined
+**MCP Server Connection Failed**
+```bash
+# Check if MCP server is running
+ps aux | grep "python app.py"
 
-### 9.1 Verify Integration
+# Check port availability
+lsof -i :5001
 
-1. Start the MCP server: `python main.py`
-2. Start the NestJS backend: `cd backend && npm run start:dev`
-3. Check logs for successful WebSocket connection
-4. Test API endpoints in the backend that trigger MCP communication
+# Restart MCP server
+cd prospect/mcp-server
+python app.py
+```
+
+**Database Initialization Issues**
+```bash
+# Reinitialize MCP database
+cd prospect/mcp-server
+python -c "import os; os.remove('mcp_server_data.db') if os.path.exists('mcp_server_data.db') else None"
+python -c "from database import init_db; init_db()"
+```
+
+**Backend MCP Integration Issues**
+```bash
+# Check backend MCP service logs
+cd webapp/backend
+npm run start:dev
+# Look for MCP-related error messages
+
+# Test direct MCP communication
+curl -X POST http://localhost:5001/api/lead/start \
+  -H "Content-Type: application/json" \
+  -d '{"lead_id": "test-123", "run_id": "test-run", "url": "https://example.com"}'
+```
 
 ---
 
-## 📚 Next Steps
+## 📈 Performance Monitoring
 
-1. **Implement AI Integration**: Add actual AI providers (OpenAI, Anthropic) to the agents
-2. **Add Research Capabilities**: Implement web scraping and API integrations
-3. **Enhance Error Handling**: Add robust error handling and retry mechanisms
-4. **Add Monitoring**: Implement health checks and performance monitoring
-5. **Scale**: Add support for multiple concurrent processes and load balancing
+### Key Metrics to Track
+
+1. **Lead Processing Times**
+   - Time from start to completion
+   - Individual agent execution times
+   - Queue wait times
+
+2. **System Health**
+   - MCP server uptime
+   - Database connection status
+   - API response times
+
+3. **Processing Success Rates**
+   - Successful vs failed lead processing
+   - Agent-specific success rates
+   - Error patterns and frequencies
+
+### Monitoring Dashboard
+
+The frontend should display:
+- Real-time processing statistics
+- Agent performance metrics
+- System health indicators
+- Historical processing data
 
 ---
 
-## 🚨 Important Notes
+## 🔮 Future Enhancements
 
-- **Environment Variables**: Make sure to set all required API keys in your `.env` file
-- **Dependencies**: Install all Python dependencies before running
-- **Port Configuration**: Ensure port 8000 is available for the MCP server
-- **Logging**: Check logs for connection and processing issues
-- **Testing**: Use the provided test script to verify functionality
+### Planned Improvements
 
-This implementation provides a solid foundation for your Python MCP server that integrates seamlessly with your NestJS backend!
+1. **WebSocket Integration**: Real-time updates without polling
+2. **Enhanced Error Handling**: Automatic retry and recovery mechanisms
+3. **Performance Analytics**: Detailed processing metrics and optimization
+4. **Scalability**: Support for multiple concurrent processing runs
+5. **Integration APIs**: Direct CRM and external system integrations
+
+### Migration Path
+
+For teams currently using the old MCP server architecture:
+
+1. **Phase 1**: Deploy new MCP server alongside existing system
+2. **Phase 2**: Update backend to use new MCP APIs
+3. **Phase 3**: Migrate frontend to new status monitoring
+4. **Phase 4**: Deprecate old WebSocket-based system
+5. **Phase 5**: Full cutover to new architecture
+
+---
+
+## 📞 Support
+
+For integration support:
+
+- **Technical Issues**: Check the troubleshooting section above
+- **Architecture Questions**: Review the component documentation
+- **Performance Issues**: Monitor the metrics dashboard
+- **Feature Requests**: Submit via GitHub issues
+
+---
+
+**Built for seamless integration between modern web technologies and advanced AI processing.**
+
+*This guide ensures smooth operation of the complete Nellia Prospector platform with real-time monitoring and tracking capabilities.*

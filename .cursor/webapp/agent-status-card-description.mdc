@@ -1,6 +1,6 @@
 ---
 description: 
-globs: src/components/AgentStatusCard.tsx
+globs: webapp/frontend/src/components/AgentStatusCard.tsx
 alwaysApply: false
 ---
 # AgentStatusCard Component Description

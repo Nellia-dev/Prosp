@@ -1,6 +1,6 @@
 ---
 description: 
-globs: src/pages/Index.tsx
+globs: webapp/frontend/src/pages/Index.tsx
 alwaysApply: false
 ---
 # Index Page Description

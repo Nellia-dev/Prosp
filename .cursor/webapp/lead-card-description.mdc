@@ -1,6 +1,6 @@
 ---
 description: 
-globs: src/components/LeadCard.tsx
+globs: webapp/frontend/src/components/LeadCard.tsx
 alwaysApply: false
 ---
 # LeadCard Component Description

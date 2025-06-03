@@ -1,12 +1,6 @@
 ---
-description: Brazilian B2B market context and ROI optimization strategies
-globs: 
-  - "agents/persona_creation_agent.py"
-  - "agents/approach_strategy_agent.py"
-  - "agents/message_crafting_agent.py"
-  - "**/*persona*.py"
-  - "**/*strategy*.py"
-  - "**/*message*.py"
+description: 
+globs: prospect/**
 alwaysApply: false
 ---
 # Brazilian B2B Market & ROI Optimization Rules - Nellia Prospector
