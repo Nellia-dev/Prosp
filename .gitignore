@@ -119,7 +119,6 @@ coverage/
 .classpath
 *.sublime-project
 *.sublime-workspace
-.cursor/
 
 # OS generated files
 .DS_Store

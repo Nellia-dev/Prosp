@@ -1,0 +1,19 @@
+---
+description: 
+globs: src/components/LeadCard.tsx
+alwaysApply: false
+---
+# LeadCard Component Description
+
+This file (`src/components/LeadCard.tsx`) defines the `LeadCard` React component. This component is used to display key information and metrics for an individual lead within the Nellia Prospector dashboard, typically used in list or grid views.
+
+Key features:
+- Displays company name, website, qualification tier, and sector.
+- Shows relevance, ROI potential, and Brazilian market fit scores.
+- Includes a progress bar indicating the lead's processing stage.
+- Uses the `useTranslation` hook for internationalization.
+- Visually indicates the qualification tier with a color-coded border.
+- Displays likely contact role and decision maker probability if available.
+
+File reference: (mdc:src/components/LeadCard.tsx)
+Type reference: (mdc:src/types/nellia.ts)

@@ -1,0 +1,16 @@
+---
+description: 
+globs: src/pages/Index.tsx
+alwaysApply: false
+---
+# Index Page Description
+
+This file (`src/pages/Index.tsx`) serves as the main entry point for the Nellia Prospector dashboard. It uses React and various UI components to display agent status, leads, metrics, and provides interfaces for chat and business context. It also includes internationalization features.
+
+Key components and sections:
+- Header with app title and language selection.
+- Tabs for navigating between different views: Dashboard, CRM Board, Agents, Leads, Chat, and Business Context.
+- Displays mock data for agents and leads.
+- Integrates components like `AgentStatusCard`, `LeadCard`, `ChatInterface`, `BusinessContextCenter`, `MetricsVisualization`, and `CRMBoard`.
+
+File reference: (mdc:src/pages/Index.tsx)

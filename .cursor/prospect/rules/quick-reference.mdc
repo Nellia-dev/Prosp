@@ -1,0 +1,180 @@
+---
+description: Quick reference for common tasks and patterns
+globs: 
+  - "**/*.py"
+  - "main.py"
+alwaysApply: false
+---
+# Nellia Prospector - Quick Reference Guide
+
+## 🚀 Quick Start
+
+```bash
+# Run the system
+python main.py harvester_output/example.json -p "Your product/service"
+
+# Debug mode
+python main.py data.json -p "Product" -l DEBUG
+
+# Process limited leads
+python main.py data.json -p "Product" -n 10
+```
+
+## 📁 Key Files to Edit
+
+- **Add new agent**: Create in `agents/` folder
+- **Modify data models**: [data_models/lead_structures.py](mdc:data_models/lead_structures.py)
+- **Update LLM logic**: [core_logic/llm_client.py](mdc:core_logic/llm_client.py)
+- **Change pipeline flow**: [main.py](mdc:main.py)
+- **Port old logic**: Reference [cw.py](mdc:cw.py)
+
+## 🤖 Agent Template
+
+```python
+from agents.base_agent import BaseAgent
+from data_models.lead_structures import InputModel, OutputModel
+
+class YourAgent(BaseAgent[InputModel, OutputModel]):
+    """Your agent description"""
+    
+    def process(self, input_data: InputModel) -> OutputModel:
+        try:
+            # 1. Build prompt
+            prompt = self._build_prompt(input_data)
+            
+            # 2. Call LLM
+            response = self.llm_client.generate(
+                prompt=prompt,
+                temperature=0.7,
+                response_format="json"
+            )
+            
+            # 3. Parse response
+            parsed = self._parse_response(response.content)
+            
+            # 4. Create output
+            return OutputModel(**parsed)
+            
+        except Exception as e:
+            self.logger.error(f"Error: {e}")
+            raise
+```
+
+## 📊 Data Flow
+
+```
+HarvesterOutput → ValidatedLead → AnalyzedLead → LeadWithPersona → LeadWithStrategy → FinalProspectPackage
+```
+
+## 🔧 Common Patterns
+
+### LLM Prompt with JSON Output
+```python
+prompt = f"""Analyze this company and provide a JSON response:
+
+Company: {input_data.company_name}
+Website: {input_data.url}
+Content: {input_data.extracted_text}
+
+Respond with JSON:
+{{
+    "sector": "Industry sector",
+    "services": ["service1", "service2"],
+    "challenges": ["challenge1", "challenge2"],
+    "relevance_score": 0.0-1.0
+}}"""
+```
+
+### Error Handling Pattern
+```python
+try:
+    result = self.process_lead(lead)
+except RateLimitError:
+    time.sleep(5)
+    result = self.process_lead(lead)  # Retry
+except Exception as e:
+    self.logger.error(f"Failed: {e}")
+    result = self.create_error_result(lead)
+```
+
+### Metrics Tracking
+```python
+start_time = time.time()
+tokens_before = self.llm_client.total_tokens
+
+# Do processing...
+
+self.metrics.processing_time = time.time() - start_time
+self.metrics.tokens_used = self.llm_client.total_tokens - tokens_before
+```
+
+## 🌐 Environment Variables
+
+```bash
+GEMINI_API_KEY=xxx          # Required
+OPENAI_API_KEY=xxx          # Optional
+AGENT_TEMPERATURE=0.7       # LLM creativity (0-1)
+AGENT_MAX_TOKENS=8192       # Max response size
+```
+
+## 📝 TODO: Agents to Port from cw.py
+
+1. **Persona Creation** (lines ~200-300 in cw.py)
+   - Input: `AnalyzedLead`
+   - Output: `LeadWithPersona`
+   - Creates decision-maker profile
+
+2. **Approach Strategy** (lines ~300-400 in cw.py)
+   - Input: `LeadWithPersona`
+   - Output: `LeadWithStrategy`
+   - Defines communication approach
+
+3. **Message Crafting** (lines ~400-500 in cw.py)
+   - Input: `LeadWithStrategy`
+   - Output: `FinalProspectPackage`
+   - Creates personalized message
+
+## 🐛 Debugging Tips
+
+```bash
+# Check output JSON for metrics
+cat output_*.json | jq '.agent_metrics'
+
+# Monitor token usage
+cat output_*.json | jq '.agent_metrics[].tokens_used'
+
+# Filter successful leads
+cat output_*.json | jq '.results[] | select(.status == "analyzed")'
+```
+
+## ⚡ Performance Tips
+
+- Batch similar prompts to reduce LLM calls
+- Cache repeated analyses (company sectors, etc.)
+- Use lower temperature (0.3-0.5) for consistent output
+- Implement parallel processing for independent operations
+
+## 🔮 Future: Google A2A Integration
+
+When implementing A2A:
+1. Each agent becomes a separate service
+2. Use [A2A message models](mdc:data_models/lead_structures.py#L169)
+3. Follow [A2A Integration Guide](mdc:docs/A2A_INTEGRATION_GUIDE.md)
+4. Enable distributed scaling
+
+## 🎯 Success Metrics
+
+- Processing time: <3 min/lead (currently ~10s)
+- Relevance score: >0.7 for qualified leads
+- Message personalization: 3+ unique elements
+- Overall goal: 527% ROI
+
+## 💡 Pro Tips
+
+1. **Test with real data**: Use files in `harvester_output/`
+2. **Check legacy logic**: Search in [cw.py](mdc:cw.py) for `TODO` comments
+3. **Use typed responses**: Always define Pydantic models
+4. **Log everything**: Use structured logging with context
+5. **Handle failures gracefully**: Never crash the pipeline
+
+Remember: We're building an AI system that turns raw leads into personalized, high-converting outreach opportunities!

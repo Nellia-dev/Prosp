@@ -1,0 +1,21 @@
+---
+description: 
+globs: src/components/CRMBoard.tsx
+alwaysApply: false
+---
+# CRMBoard Component Description
+
+This file (`src/components/CRMBoard.tsx`) defines the `CRMBoard` React component. This component implements a Kanban-style board for visualizing and managing leads as they progress through different processing stages.
+
+Key features:
+- Displays leads grouped by their processing stage (Intake, Analysis, Persona, Strategy, Message, Completed).
+- Allows drag-and-drop functionality to move leads between stages.
+- Includes filtering options based on search term, sector, qualification tier, and score range.
+- Shows summary statistics for each processing stage (count, average ROI potential, high potential leads).
+- Uses the `useTranslation` hook for internationalization.
+- Integrates `CompactLeadCard` for displaying leads in the columns and `LeadDetailsModal` for viewing/editing lead details.
+
+File reference: (mdc:src/components/CRMBoard.tsx)
+File reference: (mdc:src/components/CompactLeadCard.tsx)
+File reference: (mdc:src/components/LeadDetailsModal.tsx)
+Type reference: (mdc:src/types/nellia.ts)

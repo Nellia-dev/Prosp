@@ -1,0 +1,18 @@
+---
+description: 
+globs: src/types/nellia.ts
+alwaysApply: false
+---
+# Nellia Prospector Types Description
+
+This file (`src/types/nellia.ts`) defines the core TypeScript interfaces and types used throughout the Nellia Prospector application. These types structure the data for agents, leads, business context, chat messages, and processing progress.
+
+Key types defined:
+- `AgentMetrics`: Describes the performance metrics of an agent.
+- `AgentStatus`: Defines the structure for an agent's status, including ID, name, current status, metrics, and task.
+- `LeadData`: Defines the structure for a lead's data, including company details, scores, qualification tier, sector, persona information, pain points, triggers, and processing stage.
+- `BusinessContext`: Defines the structure for the business context configuration.
+- `ChatMessage`: Defines the structure for messages within the chat interface.
+- `ProcessingProgress`: Describes the progress of lead processing.
+
+File reference: (mdc:src/types/nellia.ts)

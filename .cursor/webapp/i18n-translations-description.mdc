@@ -1,0 +1,16 @@
+---
+description: 
+globs: src/i18n/translations.ts
+alwaysApply: false
+---
+# Internationalization (i18n) Description
+
+This file (`src/i18n/translations.ts`) is central to the application's internationalization strategy. it exports the `translations` object, which holds all the translatable strings organized by language codes (e.g., `pt`, `en`, `es`), and the `Language` type, which represents the valid language keys.
+
+Key features:
+- Contains nested objects where keys represent translation keys used throughout the application and values are the translated strings.
+- Defines the `Language` type as a union of the available language keys in the `translations` object.
+- Used by the `useTranslation` hook (`src/hooks/useTranslation.tsx`) to provide translated strings based on the currently selected language.
+
+File reference: (mdc:src/i18n/translations.ts)
+File reference: (mdc:src/hooks/useTranslation.tsx)

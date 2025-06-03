@@ -1,0 +1,18 @@
+---
+description: 
+globs: src/components/AgentStatusCard.tsx
+alwaysApply: false
+---
+# AgentStatusCard Component Description
+
+This file (`src/components/AgentStatusCard.tsx`) defines the `AgentStatusCard` React component. This component is used to display the status and key metrics of an individual AI agent within the Nellia Prospector dashboard.
+
+Key features:
+- Displays the agent's name, current status, and ongoing task.
+- Shows metrics such as processing time, success rate, queue depth, and throughput.
+- Includes a progress bar for LLM token usage.
+- Uses the `useTranslation` hook for internationalization of agent names and status.
+- Visually indicates the agent's status with a color-coded border and a status badge.
+
+File reference: (mdc:src/components/AgentStatusCard.tsx)
+Type reference: (mdc:src/types/nellia.ts)

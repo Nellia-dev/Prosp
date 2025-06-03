@@ -1,0 +1,18 @@
+---
+description: 
+globs: src/components/MetricsVisualization.tsx
+alwaysApply: false
+---
+# MetricsVisualization Component Description
+
+This file (`src/components/MetricsVisualization.tsx`) defines the `MetricsVisualization` React component. This component is responsible for displaying graphical representations of key performance metrics for the Nellia Prospector system and its agents.
+
+Key features:
+- Displays an overview of key metrics like average ROI, leads processed, average processing time, and success rate.
+- Includes a line chart to visualize performance data over time (throughput and processing time).
+- Includes a bar chart to visualize individual agent performance (success and errors).
+- Uses the `recharts` library for charting.
+- Uses the `useTranslation` hook for internationalization.
+
+File reference: (mdc:src/components/MetricsVisualization.tsx)
+Type reference: (mdc:src/types/nellia.ts)

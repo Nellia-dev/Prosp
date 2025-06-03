@@ -1,0 +1,68 @@
+---
+description: 
+globs: backend/**
+alwaysApply: false
+---
+# Nellia Prospector Backend Guide
+
+This document provides an overview of the NestJS backend for the Nellia Prospector project, connecting the React frontend with the Python MCP agent system.
+
+## Project Structure
+The backend follows a standard NestJS project structure. Key directories include:
+
+- `src/`: Contains all application source code.
+- `src/config/`: Configuration files for database, Redis, etc. (e.g., [backend/src/config/database.config.ts](mdc:backend/src/config/database.config.ts), [backend/src/config/redis.config.ts](mdc:backend/src/config/redis.config.ts))
+- `src/database/entities/`: TypeORM entities mapping to database tables. (e.g., [backend/src/database/entities/agent.entity.ts](mdc:backend/src/database/entities/agent.entity.ts), [backend/src/database/entities/lead.entity.ts](mdc:backend/src/database/entities/lead.entity.ts))
+- `src/modules/`: Feature modules encapsulating controllers, services, etc. (e.g., [backend/src/modules/agents/agents.module.ts](mdc:backend/src/modules/agents/agents.module.ts), [backend/src/modules/mcp/mcp.module.ts](mdc:backend/src/modules/mcp/mcp.module.ts))
+- `src/shared/types/`: Shared TypeScript interfaces and types. (e.g., [backend/src/shared/types/nellia.types.ts](mdc:backend/src/shared/types/nellia.types.ts))
+
+## Core Components
+
+- **NestJS Framework**: The application is built using NestJS.
+- **TypeORM**: Used for database interactions with PostgreSQL ([backend/src/config/database.config.ts](mdc:backend/src/config/database.config.ts)).
+- **Bull/Redis**: Used for queue management ([backend/src/config/redis.config.ts](mdc:backend/src/config/redis.config.ts)).
+- **WebSocket**: Used for communication with the Python MCP agent system ([backend/src/modules/mcp/mcp.service.ts](mdc:backend/src/modules/mcp/mcp.service.ts)).
+- **Swagger**: API documentation is set up and available at `/api/docs` ([backend/src/main.ts](mdc:backend/src/main.ts)).
+
+## Key Files
+
+- [backend/src/main.ts](mdc:backend/src/main.ts): Application entry point and global setup (CORS, validation, Swagger).
+- [backend/src/app.module.ts](mdc:backend/src/app.module.ts): Root module, importing and configuring core modules and integrations.
+- [backend/package.json](mdc:backend/package.json): Project dependencies and scripts.
+- [backend/tsconfig.json](mdc:backend/tsconfig.json): TypeScript configuration.
+- [backend/nest-cli.json](mdc:backend/nest-cli.json): NestJS CLI configuration.
+
+## Development
+
+Refer to the [backend-todo.md](mdc:backend-todo.md) for the development roadmap, tasks, and critical path to MVP.
+
+**Important Dependencies:**
+- PostgreSQL database instance
+- Redis server instance
+- Python MCP server instance
+- `.env` file with required configurations
+
+**Common Commands:**
+
+```bash
+# Install dependencies
+cd backend && npm install
+
+# Start development server
+npm run start:dev
+
+# Run tests
+npm run test
+
+# Database migrations
+npm run migration:run
+```
+
+## Important Considerations
+
+- **MCP Communication**: The `McpService` handles WebSocket communication with the Python agent system. Ensure the MCP server is running and accessible.
+- **Database Migrations**: Schema changes should be managed with TypeORM migrations.
+- **Environment Variables**: Configuration is heavily reliant on environment variables (see `.env.local` or `.env`).
+- **Error Handling**: Implement robust error handling, especially for external service interactions (MCP, DB).
+
+This guide provides a quick reference to the backend project. For detailed tasks and progress, consult the [backend-todo.md](mdc:backend-todo.md).
