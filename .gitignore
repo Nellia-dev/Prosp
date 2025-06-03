@@ -1,4 +1,237 @@
+# Environment Variables
+*.env
+*.env.local
+*.env.development.local
+*.env.test.local
+*.env.production.local
+prospect/.env
+webapp/backend/.env
+webapp/frontend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+htmlcov/
+.nyc_output
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Virtual Environments
 .env
-harvester_output
 .venv
-.cursor
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+prospect/.venv
+prospect/venv/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+webapp/backend/node_modules/
+webapp/frontend/node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+build/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+.tmp/
+.temp/
+*.tgz
+*.tar.gz
+webapp/frontend/dist/
+webapp/frontend/build/
+webapp/backend/dist/
+webapp/backend/build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pnpm-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+.nyc_output/
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+.classpath
+*.sublime-project
+*.sublime-workspace
+.cursor/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.tmp
+*.temp
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Docker
+.dockerignore
+*.dockerfile
+docker-compose.override.yml
+.docker/
+
+# Testing
+.coverage
+.pytest_cache/
+.tox/
+junit.xml
+test-results/
+coverage/
+*.cover
+.hypothesis/
+.coverage.*
+
+# Application specific
+harvester_output/
+leads.json
+*.json.backup
+*.csv.backup
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Local development
+.local/
+local/
+
+# Redis dump file
+dump.rdb
+
+# Application logs
+app.log
+error.log
+debug.log
+
+# Configuration overrides
+config.local.json
+config.override.json
+
+# Sensitive data
+secrets.json
+credentials.json
+service-account-key.json
+
+# Lock files (uncomment if you want to ignore them)
+# package-lock.json
+# yarn.lock
+# poetry.lock
