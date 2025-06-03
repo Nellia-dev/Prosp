@@ -18,34 +18,52 @@ from data_models.lead_structures import (
     ComprehensiveProspectPackage,
     ContactInformation,
     ExternalIntelligence,
-    PainPointAnalysis,
+    PainPointAnalysis, # Expects DetailedPainPointSchema
     LeadQualification,
-    CompetitorIntelligence,
-    PurchaseTriggers,
+    CompetitorIntelligence, # Expects CompetitorDetailSchema
+    PurchaseTriggers, # Expects IdentifiedTriggerSchema
     EnhancedStrategy,
-    ValueProposition,
-    ObjectionFramework,
-    ToTStrategyOption,
-    ToTStrategyEvaluation,
+    ValueProposition, # Redefined to match CustomValuePropModelSchema
+    ObjectionFramework, # Expects ObjectionResponseModelSchema
     EnhancedPersonalizedMessage,
     PersonalizedMessage,
-    InternalBriefing,
-    CommunicationChannel
+    InternalBriefing, # Redefined to use InternalBriefingSectionSchema
+    CommunicationChannel,
+    # --- Schemas from lead_structures.py that map to Agent Outputs ---
+    DetailedPainPointSchema,
+    CompetitorDetailSchema,
+    IdentifiedTriggerSchema,
+    ToTStrategyOptionModel, # Was ToTStrategyOption in lead_structures, but agent uses ToTStrategyOptionModel
+    EvaluatedStrategyModel,
+    ActionPlanStepModel,
+    ToTActionPlanSynthesisModel,
+    ContactStepDetailSchema, # Renamed from ContactStepDetail in agent for clarity
+    DetailedApproachPlanModel, # Was DetailedApproachPlanOutput in agent, using Model for consistency
+    ObjectionResponseModelSchema, # Was ObjectionResponseModel in agent
+    InternalBriefingSectionSchema, # Was InternalBriefingSection in agent
 )
 from agents.base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
 
+# New Agent Imports
+from .tavily_enrichment_agent import TavilyEnrichmentAgent, TavilyEnrichmentInput, TavilyEnrichmentOutput
+from .contact_extraction_agent import ContactExtractionAgent, ContactExtractionInput, ContactExtractionOutput
+from .pain_point_deepening_agent import PainPointDeepeningAgent, PainPointDeepeningInput, PainPointDeepeningOutput # Output has DetailedPainPoint
+from .lead_qualification_agent import LeadQualificationAgent, LeadQualificationInput, LeadQualificationOutput
+from .competitor_identification_agent import CompetitorIdentificationAgent, CompetitorIdentificationInput, CompetitorIdentificationOutput # Output has CompetitorDetail
+from .strategic_question_generation_agent import StrategicQuestionGenerationAgent, StrategicQuestionGenerationInput, StrategicQuestionGenerationOutput
+from .buying_trigger_identification_agent import BuyingTriggerIdentificationAgent, BuyingTriggerIdentificationInput, BuyingTriggerIdentificationOutput # Output has IdentifiedTrigger
+from .tot_strategy_generation_agent import ToTStrategyGenerationAgent, ToTStrategyGenerationInput, ToTStrategyGenerationOutput # Output has ToTStrategyOptionModel
+from .tot_strategy_evaluation_agent import ToTStrategyEvaluationAgent, ToTStrategyEvaluationInput, ToTStrategyEvaluationOutput # Output has EvaluatedStrategyModel
+from .tot_action_plan_synthesis_agent import ToTActionPlanSynthesisAgent, ToTActionPlanSynthesisInput, ToTActionPlanSynthesisOutput # Output is ToTActionPlanSynthesisModel (structure)
+from .detailed_approach_plan_agent import DetailedApproachPlanAgent, DetailedApproachPlanInput, DetailedApproachPlanOutput # Output is DetailedApproachPlanModel (structure)
+from .objection_handling_agent import ObjectionHandlingAgent, ObjectionHandlingInput, ObjectionHandlingOutput # Output has ObjectionResponseModel
+from .value_proposition_customization_agent import ValuePropositionCustomizationAgent, ValuePropositionCustomizationInput, ValuePropositionCustomizationOutput # Output has CustomValuePropModel
+from .b2b_personalized_message_agent import B2BPersonalizedMessageAgent, B2BPersonalizedMessageInput, B2BPersonalizedMessageOutput, ContactDetailsInput as B2BContactDetailsInput
+from .internal_briefing_summary_agent import InternalBriefingSummaryAgent, InternalBriefingSummaryInput, InternalBriefingSummaryOutput # Output has InternalBriefingSection
+
+
 class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage]):
-    """
-    Enhanced lead processor that incorporates all advanced features:
-    - Tavily API enrichment
-    - Contact extraction
-    - Deep pain point analysis
-    - Tree-of-Thought strategy generation
-    - Competitive intelligence
-    - Purchase trigger identification
-    """
-    
     def __init__(
         self,
         llm_client: LLMClientBase,
@@ -56,95 +74,129 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
     ):
         super().__init__(llm_client, temperature)
         self.agent_name = "EnhancedLeadProcessor"
-        self.logger = logger  # Initialize logger from loguru import
+        self.logger = logger
         
         self.product_service_context = product_service_context
         self.competitors_list = competitors_list
         self.tavily_api_key = tavily_api_key or os.getenv("TAVILY_API_KEY")
+
+        self.tavily_enrichment_agent = TavilyEnrichmentAgent(llm_client=self.llm_client, tavily_api_key=self.tavily_api_key)
+        self.contact_extraction_agent = ContactExtractionAgent(llm_client=self.llm_client)
+        self.pain_point_deepening_agent = PainPointDeepeningAgent(llm_client=self.llm_client)
+        self.lead_qualification_agent = LeadQualificationAgent(llm_client=self.llm_client)
+        self.competitor_identification_agent = CompetitorIdentificationAgent(llm_client=self.llm_client)
+        self.strategic_question_generation_agent = StrategicQuestionGenerationAgent(llm_client=self.llm_client)
+        self.buying_trigger_identification_agent = BuyingTriggerIdentificationAgent(llm_client=self.llm_client)
+        self.tot_strategy_generation_agent = ToTStrategyGenerationAgent(llm_client=self.llm_client)
+        self.tot_strategy_evaluation_agent = ToTStrategyEvaluationAgent(llm_client=self.llm_client)
+        self.tot_action_plan_synthesis_agent = ToTActionPlanSynthesisAgent(llm_client=self.llm_client)
+        self.detailed_approach_plan_agent = DetailedApproachPlanAgent(llm_client=self.llm_client)
+        self.objection_handling_agent = ObjectionHandlingAgent(llm_client=self.llm_client)
+        self.value_proposition_customization_agent = ValuePropositionCustomizationAgent(llm_client=self.llm_client)
+        self.b2b_personalized_message_agent = B2BPersonalizedMessageAgent(llm_client=self.llm_client)
+        self.internal_briefing_summary_agent = InternalBriefingSummaryAgent(llm_client=self.llm_client)
         
-        # Processing configuration
-        self.max_text_length = 15000
-        self.tavily_max_results = 2
-        self.tavily_max_queries = 3
-        
+    def _construct_persona_profile_string(self, analysis_obj: LeadAnalysis, company_name: str) -> str:
+        """Helper to create a descriptive persona string from analysis."""
+        persona_parts = [
+            analysis_obj.ideal_customer_profile or "",
+            f"Cargo Estimado na {company_name}: {analysis_obj.company_culture_values.get('decision_maker_role_estimate', 'N/A') if isinstance(analysis_obj.company_culture_values, dict) else (analysis_obj.company_culture_values or 'N/A')}",
+            f"Tamanho da Empresa {company_name}: {analysis_obj.company_size_estimate or 'N/A'}"
+        ]
+        persona_profile_str = ". ".join(filter(None, persona_parts))
+        return persona_profile_str if persona_profile_str else f"Perfil da persona para {company_name} não detalhado suficientemente na análise inicial."
+
+    def _construct_lead_analysis_string(self, analysis_obj: LeadAnalysis, external_intel: Optional[ExternalIntelligence]) -> str:
+        """Helper to create a lead analysis string."""
+        return (
+            f"Setor da Empresa: {analysis_obj.company_sector}\n"
+            f"Principais Serviços: {', '.join(analysis_obj.main_services)}\n"
+            f"Descrição da Empresa: {analysis_obj.company_description}\n"
+            f"Desafios Potenciais Identificados: {', '.join(analysis_obj.potential_challenges)}\n"
+            f"Tamanho Estimado: {analysis_obj.company_size_estimate}\n"
+            f"Cultura da Empresa: {analysis_obj.company_culture_values}\n"
+            f"Diagnóstico Geral: {analysis_obj.general_diagnosis}\n"
+            f"Inteligência Externa: {external_intel.tavily_enrichment if external_intel and external_intel.tavily_enrichment else 'N/A'}"
+        )
+
     def process(self, analyzed_lead: AnalyzedLead) -> ComprehensiveProspectPackage:
-        """
-        Process analyzed lead through enhanced intelligence pipeline
-        """
         start_time = time.time()
         url = str(analyzed_lead.validated_lead.site_data.url)
         company_name = self._extract_company_name(analyzed_lead)
-        
         self.logger.info(f"Enhanced processing for: {url}")
-        
+
+        # Prepare common inputs
+        analysis_obj = analyzed_lead.analysis
+        persona_profile_str = self._construct_persona_profile_string(analysis_obj, company_name)
+
         try:
-            # Step 1: Gather external intelligence
-            self.logger.info("Step 1: Gathering external intelligence")
             external_intel = self._gather_external_intelligence(company_name, analyzed_lead)
-            
-            # Step 2: Extract contact information
-            self.logger.info("Step 2: Extracting contact information")
             contact_info = self._extract_contact_information(analyzed_lead)
             
-            # Step 3: Deep pain point analysis
-            self.logger.info("Step 3: Analyzing pain points")
-            pain_analysis = self._analyze_pain_points(analyzed_lead, external_intel)
+            lead_analysis_str_for_agents = self._construct_lead_analysis_string(analysis_obj, external_intel)
             
-            # Step 4: Lead qualification
-            self.logger.info("Step 4: Qualifying lead")
-            qualification = self._qualify_lead(analyzed_lead, pain_analysis)
+            pain_analysis_output = self._analyze_pain_points(lead_analysis_str_for_agents, persona_profile_str, company_name)
             
-            # Step 5: Competitor intelligence
-            self.logger.info("Step 5: Gathering competitor intelligence")
-            competitor_intel = self._analyze_competitors(analyzed_lead)
+            # Use the structured pain_analysis_output for deepened_pain_points_str
+            deepened_pain_points_for_agents = json.dumps(pain_analysis_output.model_dump(), ensure_ascii=False) if pain_analysis_output and not pain_analysis_output.error_message else "Análise de dores não disponível ou com erro."
+
+            qualification_output = self._qualify_lead(lead_analysis_str_for_agents, persona_profile_str, deepened_pain_points_for_agents)
+            competitor_intel_output = self._analyze_competitors(analyzed_lead)
+            purchase_triggers_output = self._identify_purchase_triggers(analyzed_lead, external_intel)
             
-            # Step 6: Purchase triggers
-            self.logger.info("Step 6: Identifying purchase triggers")
-            purchase_triggers = self._identify_purchase_triggers(analyzed_lead, external_intel)
+            value_props_list = self._create_value_propositions(
+                lead_analysis_str_for_agents, 
+                persona_profile_str, 
+                deepened_pain_points_for_agents, 
+                purchase_triggers_output, # Pass the object
+                company_name
+            )
+            strategic_questions_list = self._generate_strategic_questions(lead_analysis_str_for_agents, persona_profile_str, deepened_pain_points_for_agents)
+
+            current_lead_summary_for_tot = (
+                f"Empresa: {company_name} ({url})\nSetor: {analysis_obj.company_sector}\n"
+                f"Serviços Principais: {', '.join(analysis_obj.main_services)}\n"
+                f"Persona (Estimada): {persona_profile_str}\n"
+                f"Dores Primárias (Resumo): {pain_analysis_output.primary_pain_category if pain_analysis_output else 'N/A'}\n"
+                f"Qualificação: {qualification_output.qualification_tier if qualification_output else 'N/A'}\n"
+                f"Produto/Serviço Nosso: {self.product_service_context}"
+            )
             
-            # Step 7: Custom value propositions
-            self.logger.info("Step 7: Creating custom value propositions")
-            value_props = self._create_value_propositions(analyzed_lead, pain_analysis)
+            tot_generation_output = self._generate_tot_strategies(current_lead_summary_for_tot)
+            tot_evaluation_output = self._evaluate_tot_strategies(tot_generation_output, current_lead_summary_for_tot)
+            tot_synthesis_output = self._synthesize_tot_action_plan(tot_evaluation_output, tot_generation_output, current_lead_summary_for_tot)
             
-            # Step 8: Strategic questions
-            self.logger.info("Step 8: Generating strategic questions")
-            strategic_questions = self._generate_strategic_questions(analyzed_lead, pain_analysis)
-            
-            # Step 9: Objection handling
-            self.logger.info("Step 9: Preparing objection handling")
-            objection_handling = self._prepare_objection_handling(analyzed_lead, competitor_intel)
-            
-            # Step 10: Tree-of-Thought strategy
-            self.logger.info("Step 10: Tree-of-Thought strategy analysis")
-            tot_strategy = self._generate_tot_strategy(analyzed_lead, value_props, pain_analysis)
-            
-            # Create enhanced strategy
+            detailed_approach_plan_output = self._develop_detailed_approach_plan(
+                lead_analysis_str_for_agents, persona_profile_str, deepened_pain_points_for_agents, tot_synthesis_output, str(url)
+            )
+
+            objection_handling_output = self._prepare_objection_handling(
+                persona_profile_str, 
+                company_name,
+                detailed_approach_plan_output.model_dump_json(indent=2) if detailed_approach_plan_output and not detailed_approach_plan_output.error_message else "Plano detalhado não disponível"
+            )
+
             enhanced_strategy = EnhancedStrategy(
                 external_intelligence=external_intel,
                 contact_information=contact_info,
-                pain_point_analysis=pain_analysis,
-                competitor_intelligence=competitor_intel,
-                purchase_triggers=purchase_triggers,
-                lead_qualification=qualification,
-                tot_strategy_evaluation=tot_strategy,
-                value_propositions=value_props,
-                objection_framework=objection_handling,
-                strategic_questions=strategic_questions
+                pain_point_analysis=pain_analysis_output,
+                competitor_intelligence=competitor_intel_output,
+                purchase_triggers=purchase_triggers_output,
+                lead_qualification=qualification_output,
+                tot_generated_strategies=tot_generation_output.proposed_strategies if tot_generation_output else None,
+                tot_evaluated_strategies=tot_evaluation_output.evaluated_strategies if tot_evaluation_output else None,
+                tot_synthesized_action_plan=tot_synthesis_output if tot_synthesis_output else None,
+                detailed_approach_plan=detailed_approach_plan_output if detailed_approach_plan_output else None,
+                value_propositions=value_props_list,
+                objection_framework=objection_handling_output,
+                strategic_questions=strategic_questions_list
             )
             
-            # Step 11: Create personalized message
-            self.logger.info("Step 11: Creating personalized message")
-            personalized_message = self._create_personalized_message(analyzed_lead, enhanced_strategy)
-            
-            # Step 12: Internal briefing
-            self.logger.info("Step 12: Creating internal briefing")
+            personalized_message = self._create_personalized_message(analyzed_lead, enhanced_strategy, contact_info, persona_profile_str)
             internal_briefing = self._create_internal_briefing(analyzed_lead, enhanced_strategy)
             
-            # Calculate processing metadata
             total_time = time.time() - start_time
-            
-            # Create final package
-            final_package = ComprehensiveProspectPackage(
+            return ComprehensiveProspectPackage(
                 analyzed_lead=analyzed_lead,
                 enhanced_strategy=enhanced_strategy,
                 enhanced_personalized_message=personalized_message,
@@ -152,578 +204,366 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 confidence_score=self._calculate_confidence_score(enhanced_strategy),
                 roi_potential_score=self._calculate_roi_potential(enhanced_strategy),
                 brazilian_market_fit=self._calculate_brazilian_fit(analyzed_lead),
-                processing_metadata={
-                    "total_processing_time": total_time,
-                    "processing_mode": "enhanced",
-                    "tavily_enabled": bool(self.tavily_api_key),
-                    "company_name": company_name
-                }
+                processing_metadata={"total_processing_time": total_time, "processing_mode": "enhanced", "tavily_enabled": bool(self.tavily_api_key), "company_name": company_name}
             )
-            
-            self.logger.info(f"Enhanced processing completed for {company_name} in {total_time:.2f}s")
-            return final_package
-            
         except Exception as e:
-            self.logger.error(f"Enhanced processing failed for {url}: {e}")
+            self.logger.error(f"Enhanced processing failed for {url}: {e}\n{traceback.format_exc()}")
             raise
-    
+
     def _gather_external_intelligence(self, company_name: str, analyzed_lead: AnalyzedLead) -> ExternalIntelligence:
-        """Gather external intelligence using Tavily API"""
-        
-        if not self.tavily_api_key:
-            return ExternalIntelligence(
-                tavily_enrichment="Tavily API key not configured",
-                sources_used=["None - API key missing"]
-            )
-        
-        # Check if enrichment is needed
         text_content = analyzed_lead.validated_lead.site_data.extracted_text_content or ""
-        needs_enrichment = (
-            len(text_content) < 700 or
-            "FALHA NA EXTRAÇÃO" in text_content or
-            not text_content.strip()
-        )
-        
-        if not needs_enrichment:
-            return ExternalIntelligence(
-                tavily_enrichment="Enrichment not needed - sufficient original data",
-                sources_used=["Original site content"]
-            )
-        
+        enrichment_input = TavilyEnrichmentInput(company_name=company_name, initial_extracted_text=text_content)
         try:
-            # Generate search queries
-            queries = [
-                f"{company_name} recent news Brazil",
-                f"{company_name} funding investment",
-                f"{company_name} expansion hiring"
-            ][:self.tavily_max_queries]
-            
-            all_results = []
-            sources = []
-            
-            for query in queries:
-                results = self._search_tavily(query)
-                all_results.extend(results)
-                sources.extend([r.get('url', 'Unknown') for r in results])
-                time.sleep(0.5)  # Rate limiting
-            
-            if not all_results:
-                return ExternalIntelligence(
-                    tavily_enrichment="No results found from Tavily search",
-                    sources_used=["Tavily API - no results"]
-                )
-            
-            # Summarize findings with LLM
-            enrichment_summary = self._summarize_tavily_results(company_name, all_results)
-            
+            output: TavilyEnrichmentOutput = self.tavily_enrichment_agent.execute(enrichment_input)
             return ExternalIntelligence(
-                tavily_enrichment=enrichment_summary,
-                market_research=f"External research for {company_name}",
-                news_analysis=f"Recent developments for {company_name}",
-                sources_used=list(set(sources)),
-                enrichment_confidence=0.8 if all_results else 0.2
+                tavily_enrichment=output.enriched_data,
+                market_research=f"Insights from Tavily enrichment for {company_name}.",
+                news_analysis=f"News from Tavily enrichment for {company_name}.",
+                sources_used=["Tavily API"] if output.tavily_api_called else [],
+                enrichment_confidence=0.8 if output.tavily_api_called and output.enriched_data else 0.3,
+                error_message=output.error_message
             )
-            
         except Exception as e:
-            self.logger.warning(f"Tavily enrichment failed: {e}")
-            return ExternalIntelligence(
-                tavily_enrichment=f"Enrichment failed: {str(e)}",
-                sources_used=["Error"]
-            )
-    
-    def _search_tavily(self, query: str) -> List[Dict[str, Any]]:
-        """Search using Tavily API"""
-        try:
-            response = requests.post(
-                "https://api.tavily.com/search",
-                json={
-                    "api_key": self.tavily_api_key,
-                    "query": query,
-                    "search_depth": "basic",
-                    "include_answer": False,
-                    "max_results": self.tavily_max_results
-                },
-                timeout=20
-            )
-            response.raise_for_status()
-            return response.json().get("results", [])
-        except Exception as e:
-            self.logger.warning(f"Tavily search failed for '{query}': {e}")
-            return []
-    
-    def _summarize_tavily_results(self, company_name: str, results: List[Dict[str, Any]]) -> str:
-        """Summarize Tavily results using LLM"""
-        
-        content_parts = []
-        for result in results:
-            content = f"Source: {result.get('url', 'N/A')}\n"
-            content += f"Title: {result.get('title', 'N/A')}\n"
-            content += f"Content: {self._truncate_text(result.get('content', 'N/A'), 800)}\n"
-            content_parts.append(content)
-        
-        combined_content = "\n\n---\n\n".join(content_parts)
-        
-        prompt = f"""Você é um Analista de Inteligência de Mercado.
+            self.logger.error(f"Exception in _gather_external_intelligence: {e}")
+            return ExternalIntelligence(error_message=str(e))
 
-Resuma os insights mais relevantes sobre "{company_name}" das seguintes fontes externas:
-
-{self._truncate_text(combined_content, self.max_text_length - 1000)}
-
-Foque em:
-1. Notícias ou desenvolvimentos recentes
-2. Financiamento, crescimento ou sinais de expansão
-3. Atividade de contratação ou mudanças organizacionais
-4. Iniciativas estratégicas ou desafios
-
-Forneça um resumo conciso em português, destacando 2-3 insights-chave que seriam relevantes para abordagem de vendas B2B.
-Se os dados não forem relevantes ou insuficientes, declare "Dados externos não forneceram insights adicionais significativos."
-"""
-        
-        response = self.llm_client.generate(prompt)
-        return response.content if response.content else "Failed to summarize external intelligence"
-    
     def _extract_contact_information(self, analyzed_lead: AnalyzedLead) -> ContactInformation:
-        """Extract contact information from site content"""
-        
-        text_content = analyzed_lead.validated_lead.cleaned_text_content or ""
+        text_content = analyzed_lead.validated_lead.cleaned_text_content or analyzed_lead.validated_lead.site_data.extracted_text_content or ""
         company_name = self._extract_company_name(analyzed_lead)
-        
-        prompt = f"""Você é um Especialista em Extração de Informações de Contato.
-
-Analise o seguinte conteúdo do site para "{company_name}" e extraia informações de contato:
-
-Conteúdo do texto (primeiros {self.max_text_length} chars):
-{self._truncate_text(text_content, self.max_text_length)}
-
-Extraia e retorne APENAS um objeto JSON válido com:
-{{
-    "emails_found": ["email1@domain.com", "email2@domain.com"],
-    "instagram_profiles": ["https://instagram.com/profile"],
-    "linkedin_profiles": ["https://linkedin.com/company/profile"],
-    "phone_numbers": ["+55 11 99999-9999"],
-    "tavily_search_suggestions": ["termo de busca 1", "termo de busca 2"],
-    "extraction_confidence": 0.0-1.0
-}}
-
-Priorize emails comerciais (contato@, vendas@, comercial@) sobre pessoais.
-Retorne arrays vazios se nenhum contato for encontrado.
-"""
-        
+        extraction_input = ContactExtractionInput(extracted_text=text_content, company_name=company_name, product_service_offered=self.product_service_context)
         try:
-            response = self.llm_client.generate(prompt)
-            contact_data = self._parse_response(response.content)
-            
+            output: ContactExtractionOutput = self.contact_extraction_agent.execute(extraction_input)
             return ContactInformation(
-                emails_found=contact_data.get("emails_found", []),
-                instagram_profiles=contact_data.get("instagram_profiles", []),
-                linkedin_profiles=contact_data.get("linkedin_profiles", []),
-                phone_numbers=contact_data.get("phone_numbers", []),
-                tavily_search_suggestions=contact_data.get("tavily_search_suggestions", [f"Search for '{company_name} contato'"]),
-                extraction_confidence=float(contact_data.get("extraction_confidence", 0.3))
+                emails_found=output.emails_found,
+                instagram_profiles=output.instagram_profiles_found,
+                tavily_search_suggestions=[output.tavily_search_suggestion] if output.tavily_search_suggestion else [],
+                extraction_confidence=0.75 if output.emails_found or output.instagram_profiles_found else 0.25,
+                error_message=output.error_message
             )
-            
         except Exception as e:
-            self.logger.warning(f"Contact extraction failed: {e}")
-            return ContactInformation(
-                tavily_search_suggestions=[f"Manual search recommended for '{company_name}' contacts"],
-                extraction_confidence=0.0
-            )
-    
-    def _analyze_pain_points(self, analyzed_lead: AnalyzedLead, external_intel: ExternalIntelligence) -> PainPointAnalysis:
-        """Deep analysis of company pain points"""
-        
-        analysis = analyzed_lead.analysis
-        company_name = self._extract_company_name(analyzed_lead)
-        
-        prompt = f"""Você é um Especialista em Análise de Pontos de Dor para vendas B2B.
+            self.logger.error(f"Exception in _extract_contact_information: {e}")
+            return ContactInformation(error_message=str(e))
 
-Analise as seguintes informações da empresa para identificar pontos de dor detalhados:
-
-Empresa: {company_name}
-Setor: {analysis.company_sector}
-Serviços: {', '.join(analysis.main_services)}
-Desafios Atuais: {', '.join(analysis.potential_challenges)}
-Inteligência Externa: {external_intel.tavily_enrichment}
-Nosso Produto/Serviço: {self.product_service_context}
-
-Para cada ponto de dor, forneça análise detalhada. Retorne JSON válido:
-{{
-    "primary_pain_category": "Categoria principal dos pontos de dor",
-    "detailed_pain_points": [
-        {{
-            "pain_description": "Descrição específica da dor",
-            "business_impact": "Como isso impacta operações/receita",
-            "solution_alignment": "Como nossa solução aborda essa dor"
-        }}
-    ],
-    "urgency_level": "low|medium|high|critical",
-    "investigative_questions": ["Pergunta para confirmar essa dor", "Outra pergunta"],
-    "potential_solutions_alignment": {{
-        "pain1": "como nossa solução se alinha",
-        "pain2": "outro alinhamento"
-    }}
-}}
-
-Identifique 3-5 pontos de dor específicos que nossa solução possa abordar.
-"""
-        
-        try:
-            response = self.llm_client.generate(prompt)
-            pain_data = self._parse_response(response.content)
-            
-            return PainPointAnalysis(
-                primary_pain_category=pain_data.get("primary_pain_category", "Otimização de Processos"),
-                detailed_pain_points=pain_data.get("detailed_pain_points", []),
-                business_impact_assessment=f"Impact analysis for {company_name}",
-                urgency_level=pain_data.get("urgency_level", "medium"),
-                investigative_questions=pain_data.get("investigative_questions", []),
-                potential_solutions_alignment=pain_data.get("potential_solutions_alignment", {})
-            )
-            
-        except Exception as e:
-            self.logger.warning(f"Pain point analysis failed: {e}")
-            return PainPointAnalysis(
-                primary_pain_category="Desafios Comerciais Genéricos",
-                detailed_pain_points=[],
-                business_impact_assessment="Standard business impact",
-                urgency_level="medium"
-            )
-    
-    def _qualify_lead(self, analyzed_lead: AnalyzedLead, pain_analysis: PainPointAnalysis) -> LeadQualification:
-        """Qualify the lead based on all available information"""
-        
-        analysis = analyzed_lead.analysis
-        
-        # Calculate qualification score based on multiple factors
-        relevance_weight = analysis.relevance_score * 0.4
-        pain_weight = len(pain_analysis.detailed_pain_points) * 0.1
-        urgency_weight = {"low": 0.1, "medium": 0.2, "high": 0.3, "critical": 0.4}.get(pain_analysis.urgency_level, 0.2)
-        
-        qualification_score = min(relevance_weight + pain_weight + urgency_weight, 1.0)
-        
-        # Determine tier based on score
-        if qualification_score >= 0.8:
-            tier = "High Potential"
-        elif qualification_score >= 0.6:
-            tier = "Medium Potential"
-        elif qualification_score >= 0.4:
-            tier = "Low Potential"
-        else:
-            tier = "Not Qualified"
-        
-        return LeadQualification(
-            qualification_tier=tier,
-            qualification_score=qualification_score,
-            qualification_reasoning=[
-                f"Relevance score: {analysis.relevance_score}",
-                f"Pain points identified: {len(pain_analysis.detailed_pain_points)}",
-                f"Urgency level: {pain_analysis.urgency_level}"
-            ],
-            fit_score=analysis.relevance_score,
-            readiness_score=urgency_weight * 2.5,  # Convert to 0-1 scale
-            authority_score=0.5,  # Default, would need more analysis
-            budget_likelihood="unknown"
+    def _analyze_pain_points(self, lead_analysis_str: str, persona_profile_str: str, company_name: str) -> PainPointDeepeningOutput: # Changed return type
+        pain_input = PainPointDeepeningInput(
+            lead_analysis=lead_analysis_str,
+            persona_profile=persona_profile_str,
+            product_service_offered=self.product_service_context,
+            company_name=company_name
         )
-    
-    def _analyze_competitors(self, analyzed_lead: AnalyzedLead) -> CompetitorIntelligence:
-        """Analyze competitor mentions and alternative solutions"""
-        
-        text_content = analyzed_lead.validated_lead.cleaned_text_content or ""
-        
-        prompt = f"""Você é um Analista de Inteligência Competitiva.
-
-Analise o conteúdo do site em busca de menções de concorrentes ou soluções alternativas:
-
-Nossa Solução: {self.product_service_context}
-Concorrentes Conhecidos: {self.competitors_list or "Não especificado"}
-
-Conteúdo do Site:
-{self._truncate_text(text_content, self.max_text_length)}
-
-Retorne JSON válido:
-{{
-    "mentioned_competitors": ["concorrente1", "concorrente2"],
-    "current_solutions": ["solução1", "solução2"],
-    "competitive_advantages": ["nossa vantagem 1", "nossa vantagem 2"],
-    "market_positioning": "posição no mercado",
-    "switching_barriers": ["barreira1", "barreira2"],
-    "competitive_threats": ["ameaça1", "ameaça2"]
-}}
-
-Procure nomes diretos de concorrentes, parceiros tecnológicos ou soluções incumbentes.
-"""
-        
         try:
-            response = self.llm_client.generate(prompt)
-            comp_data = self._parse_response(response.content)
-            
-            return CompetitorIntelligence(
-                mentioned_competitors=comp_data.get("mentioned_competitors", []),
-                current_solutions=comp_data.get("current_solutions", []),
-                competitive_advantages=comp_data.get("competitive_advantages", []),
-                market_positioning=comp_data.get("market_positioning"),
-                switching_barriers=comp_data.get("switching_barriers", []),
-                competitive_threats=comp_data.get("competitive_threats", [])
-            )
-            
+            output: PainPointDeepeningOutput = self.pain_point_deepening_agent.execute(pain_input)
+            if output.error_message:
+                self.logger.warning(f"PainPointDeepeningAgent returned an error: {output.error_message}")
+            return output # Return the agent's Pydantic output directly
         except Exception as e:
-            self.logger.warning(f"Competitor analysis failed: {e}")
-            return CompetitorIntelligence()
-    
-    def _identify_purchase_triggers(self, analyzed_lead: AnalyzedLead, external_intel: ExternalIntelligence) -> PurchaseTriggers:
-        """Identify purchase trigger events"""
-        
-        analysis = analyzed_lead.analysis
-        
-        prompt = f"""Você é um Especialista em Análise de Gatilhos de Compra.
+            self.logger.error(f"Exception in _analyze_pain_points: {e}")
+            return PainPointDeepeningOutput(error_message=str(e))
 
-Identifique eventos que poderiam desencadear decisões de compra:
-
-Atividades Recentes: {', '.join(analysis.recent_activities)}
-Inteligência Externa: {external_intel.tavily_enrichment}
-Nossa Solução: {self.product_service_context}
-
-Retorne JSON válido:
-{{
-    "recent_events": ["evento1", "evento2"],
-    "market_signals": ["sinal1", "sinal2"],
-    "timing_indicators": ["indicador1", "indicador2"],
-    "growth_signals": ["crescimento1", "crescimento2"],
-    "urgency_drivers": ["urgência1", "urgência2"],
-    "budget_cycle_insights": "insights sobre ciclo orçamentário"
-}}
-
-Procure financiamento, expansão, contratações, mudanças tecnológicas, necessidades de compliance.
-"""
-        
+    def _qualify_lead(self, lead_analysis_str: str, persona_profile_str: str, deepened_pain_points_str: str) -> LeadQualificationOutput: # Changed return type
+        qualification_input = LeadQualificationInput(
+            lead_analysis=lead_analysis_str,
+            persona_profile=persona_profile_str,
+            deepened_pain_points=deepened_pain_points_str,
+            product_service_offered=self.product_service_context
+        )
         try:
-            response = self.llm_client.generate(prompt)
-            trigger_data = self._parse_response(response.content)
-            
-            return PurchaseTriggers(
-                recent_events=trigger_data.get("recent_events", []),
-                market_signals=trigger_data.get("market_signals", []),
-                timing_indicators=trigger_data.get("timing_indicators", []),
-                growth_signals=trigger_data.get("growth_signals", []),
-                urgency_drivers=trigger_data.get("urgency_drivers", []),
-                budget_cycle_insights=trigger_data.get("budget_cycle_insights")
-            )
-            
+            output: LeadQualificationOutput = self.lead_qualification_agent.execute(qualification_input)
+            if output.error_message:
+                self.logger.warning(f"LeadQualificationAgent returned an error: {output.error_message}")
+            return output # Return the agent's Pydantic output directly
         except Exception as e:
-            self.logger.warning(f"Purchase trigger analysis failed: {e}")
-            return PurchaseTriggers()
-    
-    def _create_value_propositions(self, analyzed_lead: AnalyzedLead, pain_analysis: PainPointAnalysis) -> List[ValueProposition]:
-        """Create custom value propositions"""
-        
-        company_name = self._extract_company_name(analyzed_lead)
-        
-        prompt = f"""Você é um Especialista em Proposições de Valor Customizadas.
+            self.logger.error(f"Exception in _qualify_lead: {e}")
+            return LeadQualificationOutput(error_message=str(e))
 
-Crie proposições de valor específicas para {company_name}:
-
-Pontos de Dor Identificados: {pain_analysis.detailed_pain_points}
-Nossa Solução: {self.product_service_context}
-Categoria Principal de Dor: {pain_analysis.primary_pain_category}
-
-Crie 2-3 proposições de valor customizadas. Retorne JSON válido:
-{{
-    "value_propositions": [
-        {{
-            "proposition_text": "Declaração da proposição de valor",
-            "target_pain_points": ["dor1", "dor2"],
-            "quantified_benefits": ["benefício mensurável 1", "benefício mensurável 2"],
-            "proof_points": ["prova 1", "prova 2"],
-            "differentiation_factors": ["diferencial 1", "diferencial 2"]
-        }}
-    ]
-}}
-"""
-        
+    def _analyze_competitors(self, analyzed_lead: AnalyzedLead) -> CompetitorIdentificationOutput: # Changed return type
+        text_content = analyzed_lead.validated_lead.site_data.extracted_text_content or ""
+        lead_product_service = ", ".join(analyzed_lead.analysis.main_services) if analyzed_lead.analysis.main_services else \
+                               (analyzed_lead.analysis.company_description or "Serviços da empresa analisada")
+        competitor_input = CompetitorIdentificationInput(
+            initial_extracted_text=text_content,
+            product_service_offered=lead_product_service,
+            known_competitors_list_str=self.competitors_list
+        )
         try:
-            response = self.llm_client.generate(prompt)
-            value_data = self._parse_response(response.content)
-            
-            value_props = []
-            for prop_data in value_data.get("value_propositions", []):
-                value_props.append(ValueProposition(
-                    proposition_text=prop_data.get("proposition_text", ""),
-                    target_pain_points=prop_data.get("target_pain_points", []),
-                    quantified_benefits=prop_data.get("quantified_benefits", []),
-                    proof_points=prop_data.get("proof_points", []),
-                    differentiation_factors=prop_data.get("differentiation_factors", [])
-                ))
-            
-            return value_props
-            
+            output: CompetitorIdentificationOutput = self.competitor_identification_agent.execute(competitor_input)
+            if output.error_message:
+                 self.logger.warning(f"CompetitorIdentificationAgent returned an error: {output.error_message}")
+            return output
         except Exception as e:
-            self.logger.warning(f"Value proposition creation failed: {e}")
-            return [ValueProposition(
-                proposition_text=f"Solução customizada para {company_name}",
-                target_pain_points=[pain_analysis.primary_pain_category],
-                quantified_benefits=["Aumento de eficiência"],
-                proof_points=["Experiência comprovada"],
-                differentiation_factors=["Foco no mercado brasileiro"]
-            )]
-    
-    def _generate_strategic_questions(self, analyzed_lead: AnalyzedLead, pain_analysis: PainPointAnalysis) -> List[str]:
-        """Generate strategic discovery questions"""
-        
-        base_questions = [
-            f"Como vocês lidam atualmente com {pain_analysis.primary_pain_category.lower()}?",
-            "Qual é o principal desafio que vocês enfrentam nesta área?",
-            "Que impacto isso tem nos resultados da empresa?"
-        ]
-        
-        # Add pain-specific questions
-        for pain_point in pain_analysis.detailed_pain_points[:2]:
-            if isinstance(pain_point, dict) and "pain_description" in pain_point:
-                base_questions.append(f"Vocês já tentaram resolver {pain_point['pain_description'].lower()}?")
-        
-        return base_questions[:5]  # Limit to 5 questions
-    
-    def _prepare_objection_handling(self, analyzed_lead: AnalyzedLead, competitor_intel: CompetitorIntelligence) -> ObjectionFramework:
-        """Prepare objection handling strategies"""
-        
-        common_objections = {
-            "Custo muito alto": "Vamos analisar o ROI específico para sua situação",
-            "Já temos uma solução": "Entendo. Como está funcionando a solução atual?",
-            "Não é prioridade agora": "Compreendo. Quando seria um bom momento para revisitar isso?",
-            "Preciso conversar com a equipe": "Perfeito. Que informações posso fornecer para facilitar essa conversa?"
+            self.logger.error(f"Exception in _analyze_competitors: {e}")
+            return CompetitorIdentificationOutput(error_message=str(e))
+
+    def _identify_purchase_triggers(self, analyzed_lead: AnalyzedLead, external_intel: Optional[ExternalIntelligence]) -> BuyingTriggerIdentificationOutput: # Changed return type
+        lead_data_dict = {
+            "company_name": self._extract_company_name(analyzed_lead), "url": str(analyzed_lead.validated_lead.site_data.url),
+            "description": analyzed_lead.analysis.company_description, "sector": analyzed_lead.analysis.company_sector,
+            "main_services": analyzed_lead.analysis.main_services, "recent_activities_from_analysis": analyzed_lead.analysis.recent_activities,
+            "extracted_text_summary": self._truncate_text(analyzed_lead.validated_lead.site_data.extracted_text_content or "", 500)
         }
-        
-        return ObjectionFramework(
-            common_objections=common_objections,
-            objection_categories=["Orçamento", "Timing", "Autoridade", "Necessidade"],
-            response_templates=common_objections,
-            escalation_strategies=[
-                "Agendar call com tomadores de decisão",
-                "Fornecer case studies relevantes",
-                "Propor piloto ou POC"
-            ]
+        try:
+            lead_data_str = json.dumps(lead_data_dict, ensure_ascii=False)
+        except Exception as e_json:
+            self.logger.warning(f"Could not serialize lead_data for BuyingTriggerIdentificationAgent: {e_json}")
+            lead_data_str = "{'error': 'Could not serialize lead data'}"
+        enriched_data_str = external_intel.tavily_enrichment if external_intel and external_intel.tavily_enrichment else "Nenhuma informação de enriquecimento disponível."
+        trigger_input = BuyingTriggerIdentificationInput(
+            lead_data_str=lead_data_str, enriched_data=enriched_data_str, product_service_offered=self.product_service_context
         )
+        try:
+            output: BuyingTriggerIdentificationOutput = self.buying_trigger_identification_agent.execute(trigger_input)
+            if output.error_message:
+                self.logger.warning(f"BuyingTriggerIdentificationAgent returned an error: {output.error_message}")
+            return output
+        except Exception as e:
+            self.logger.error(f"Exception in _identify_purchase_triggers: {e}")
+            return BuyingTriggerIdentificationOutput(error_message=str(e))
+
+    def _create_value_propositions(self, lead_analysis_str: str, persona_profile_str: str, deepened_pain_points_str: str, purchase_triggers_output: Optional[BuyingTriggerIdentificationOutput], company_name: str) -> ValuePropositionCustomizationOutput: # Changed return type
+        buying_triggers_report_str = json.dumps([t.model_dump() for t in purchase_triggers_output.identified_triggers]) if purchase_triggers_output and purchase_triggers_output.identified_triggers else "Relatório de gatilhos não disponível ou com erro."
+        value_prop_input = ValuePropositionCustomizationInput(
+            lead_analysis=lead_analysis_str, persona_profile=persona_profile_str,
+            deepened_pain_points=deepened_pain_points_str, buying_triggers_report=buying_triggers_report_str,
+            product_service_offered=self.product_service_context, company_name=company_name
+        )
+        try:
+            output: ValuePropositionCustomizationOutput = self.value_proposition_customization_agent.execute(value_prop_input)
+            if output.error_message:
+                self.logger.warning(f"ValuePropositionCustomizationAgent returned an error: {output.error_message}")
+            return output
+        except Exception as e:
+            self.logger.error(f"Exception in _create_value_propositions: {e}")
+            return ValuePropositionCustomizationOutput(error_message=str(e))
+
+    def _generate_strategic_questions(self, lead_analysis_str: str, persona_profile_str: str, deepened_pain_points_str: str) -> StrategicQuestionGenerationOutput: # Changed return type
+        sq_input = StrategicQuestionGenerationInput(
+            lead_analysis=lead_analysis_str, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_str
+        )
+        try:
+            output: StrategicQuestionGenerationOutput = self.strategic_question_generation_agent.execute(sq_input)
+            if output.error_message:
+                self.logger.warning(f"StrategicQuestionGenerationAgent returned an error: {output.error_message}")
+            return output
+        except Exception as e:
+            self.logger.error(f"Exception in _generate_strategic_questions: {e}")
+            return StrategicQuestionGenerationOutput(error_message=str(e))
+
+    def _prepare_objection_handling(self, persona_profile_str: str, company_name: str, detailed_approach_plan_text: str) -> ObjectionHandlingOutput: # Changed signature & return type
+        objection_input = ObjectionHandlingInput(
+            detailed_approach_plan_text=detailed_approach_plan_text or "Plano de abordagem não disponível.",
+            persona_profile=persona_profile_str, product_service_offered=self.product_service_context, company_name=company_name
+        )
+        try:
+            output: ObjectionHandlingOutput = self.objection_handling_agent.execute(objection_input)
+            if output.error_message:
+                self.logger.warning(f"ObjectionHandlingAgent returned an error: {output.error_message}")
+            return output
+        except Exception as e:
+            self.logger.error(f"Exception in _prepare_objection_handling: {e}")
+            return ObjectionHandlingOutput(error_message=str(e))
     
-    def _generate_tot_strategy(self, analyzed_lead: AnalyzedLead, value_props: List[ValueProposition], pain_analysis: PainPointAnalysis) -> ToTStrategyEvaluation:
-        """Generate Tree-of-Thought strategy"""
+    def _generate_tot_strategies(self, current_lead_summary: str) -> ToTStrategyGenerationOutput:
+        self.logger.info("ToT Sub-step 1: Generating strategy options")
+        generation_input = ToTStrategyGenerationInput(current_lead_summary=current_lead_summary, product_service_offered=self.product_service_context)
+        try:
+            output: ToTStrategyGenerationOutput = self.tot_strategy_generation_agent.execute(generation_input)
+            if output.error_message:
+                self.logger.warning(f"ToTStrategyGenerationAgent failed: {output.error_message}")
+            return output
+        except Exception as e:
+            self.logger.error(f"Exception in ToT strategy generation: {e}")
+            return ToTStrategyGenerationOutput(error_message=f"Exceção ao gerar estratégias: {str(e)}")
+
+    def _evaluate_tot_strategies(self, generated_strategies_output: Optional[ToTStrategyGenerationOutput], current_lead_summary: str) -> ToTStrategyEvaluationOutput:
+        self.logger.info("ToT Sub-step 2: Evaluating strategy options")
+        proposed_strategies_text_input = "Nenhuma estratégia proposta foi gerada."
+        if generated_strategies_output and generated_strategies_output.proposed_strategies:
+            proposed_strategies_text_input = ""
+            for i, strat in enumerate(generated_strategies_output.proposed_strategies):
+                proposed_strategies_text_input += f"Estratégia {i+1}: {strat.strategy_name}\n  Ângulo/Gancho: {strat.angle_or_hook}\n  Tom: {strat.tone_of_voice}\n  Canais: {', '.join(strat.primary_channels)}\n  Pontos Chave: {'; '.join(strat.key_points_or_arguments)}\n  Pergunta de Abertura: {strat.opening_question}\n\n"
+        elif generated_strategies_output and generated_strategies_output.error_message:
+             proposed_strategies_text_input = f"Erro na geração de estratégias: {generated_strategies_output.error_message}"
         
+        evaluation_input = ToTStrategyEvaluationInput(proposed_strategies_text=proposed_strategies_text_input, current_lead_summary=current_lead_summary)
+        try:
+            output: ToTStrategyEvaluationOutput = self.tot_strategy_evaluation_agent.execute(evaluation_input)
+            if output.error_message:
+                self.logger.warning(f"ToTStrategyEvaluationAgent failed: {output.error_message}")
+            return output
+        except Exception as e:
+            self.logger.error(f"Exception in ToT strategy evaluation: {e}")
+            return ToTStrategyEvaluationOutput(error_message=f"Exceção ao avaliar estratégias: {str(e)}")
+
+    def _synthesize_tot_action_plan(self, evaluated_strategies_output: Optional[ToTStrategyEvaluationOutput], generated_strategies_output: Optional[ToTStrategyGenerationOutput], current_lead_summary: str) -> ToTActionPlanSynthesisOutput:
+        self.logger.info("ToT Sub-step 3: Synthesizing final action plan")
+        evaluated_strategies_text_input = "Nenhuma estratégia avaliada."
+        if evaluated_strategies_output and evaluated_strategies_output.evaluated_strategies:
+            evaluated_strategies_text_input = ""
+            for i, strat_eval in enumerate(evaluated_strategies_output.evaluated_strategies):
+                evaluated_strategies_text_input += f"Avaliação da Estratégia: {strat_eval.strategy_name}\n  Adequação: {strat_eval.suitability_assessment}\n  Pontos Fortes: {'; '.join(strat_eval.strengths)}\n  Fraquezas/Riscos: {'; '.join(strat_eval.weaknesses_or_risks)}\n  Melhorias: {'; '.join(strat_eval.suggested_improvements)}\n  Confiança: {strat_eval.confidence_score} - {strat_eval.confidence_justification}\n\n"
+        elif evaluated_strategies_output and evaluated_strategies_output.error_message:
+            evaluated_strategies_text_input = f"Erro na avaliação de estratégias: {evaluated_strategies_output.error_message}"
+            
+        proposed_strategies_text_input = "Nenhuma estratégia original proposta."
+        if generated_strategies_output and generated_strategies_output.proposed_strategies:
+            proposed_strategies_text_input = ""
+            for i, strat in enumerate(generated_strategies_output.proposed_strategies):
+                proposed_strategies_text_input += f"Estratégia Original {i+1}: {strat.strategy_name}\n  Detalhes: {strat.angle_or_hook}\n\n"
+        
+        synthesis_input = ToTActionPlanSynthesisInput(
+            evaluated_strategies_text=evaluated_strategies_text_input,
+            proposed_strategies_text=proposed_strategies_text_input,
+            current_lead_summary=current_lead_summary
+        )
+        try:
+            output: ToTActionPlanSynthesisOutput = self.tot_action_plan_synthesis_agent.execute(synthesis_input)
+            if output.error_message:
+                self.logger.warning(f"ToTActionPlanSynthesisAgent failed: {output.error_message}")
+            return output
+        except Exception as e:
+            self.logger.error(f"Exception in ToT action plan synthesis: {e}")
+            return ToTActionPlanSynthesisOutput(error_message=f"Exceção ao sintetizar plano de ação: {str(e)}")
+
+    def _develop_detailed_approach_plan(self, lead_analysis_str: str, persona_profile_str: str, deepened_pain_points_str: str, tot_action_plan: Optional[ToTActionPlanSynthesisOutput], lead_url:str) -> DetailedApproachPlanOutput: # Changed return type
+        self.logger.info("Developing detailed approach plan...")
+        final_action_plan_summary_for_detailed_plan = "Plano de Ação Sintetizado:\n"
+        if tot_action_plan and not tot_action_plan.error_message:
+            final_action_plan_summary_for_detailed_plan += f"- Estratégia Recomendada: {tot_action_plan.recommended_strategy_name}\n"
+            final_action_plan_summary_for_detailed_plan += f"- Gancho Principal: {tot_action_plan.primary_angle_hook}\n"
+            final_action_plan_summary_for_detailed_plan += f"- Tom de Voz: {tot_action_plan.tone_of_voice}\n"
+            for step in tot_action_plan.action_sequence:
+                final_action_plan_summary_for_detailed_plan += f"  - Passo {step.step_number} ({step.channel}): {step.action_description} (CTA: {step.cta or 'N/A'})\n"
+        elif tot_action_plan and tot_action_plan.error_message:
+            final_action_plan_summary_for_detailed_plan = f"Erro no plano de ação sintetizado: {tot_action_plan.error_message}"
+        else:
+            final_action_plan_summary_for_detailed_plan = "Plano de ação sintetizado não disponível."
+
+        plan_input = DetailedApproachPlanInput(
+            lead_analysis=lead_analysis_str, persona_profile=persona_profile_str,
+            deepened_pain_points=deepened_pain_points_str, final_action_plan_text=final_action_plan_summary_for_detailed_plan,
+            product_service_offered=self.product_service_context, lead_url=lead_url
+        )
+        try:
+            output: DetailedApproachPlanOutput = self.detailed_approach_plan_agent.execute(plan_input)
+            if output.error_message:
+                self.logger.warning(f"DetailedApproachPlanAgent failed: {output.error_message}")
+            return output
+        except Exception as e:
+            self.logger.error(f"Exception in detailed approach plan development: {e}")
+            return DetailedApproachPlanOutput(error_message=str(e))
+
+    # Removed old _generate_tot_strategy method as it's replaced by the three new ones.
+    
+    def _create_personalized_message(self, analyzed_lead: AnalyzedLead, enhanced_strategy: EnhancedStrategy, contact_info: Optional[ContactInformation], persona_profile_str: str) -> EnhancedPersonalizedMessage:
         company_name = self._extract_company_name(analyzed_lead)
         
-        # Create strategy options
-        strategy_options = [
-            ToTStrategyOption(
-                strategy_name="Abordagem Consultiva",
-                strategy_rationale="Foco em entender desafios específicos",
-                primary_channel="email",
-                key_hook="Insights sobre otimização para empresas do setor",
-                success_probability="Alto - 70%",
-                pros=["Baixa pressão", "Constrói relacionamento"],
-                cons=["Processo mais longo", "Pode não criar urgência"]
-            ),
-            ToTStrategyOption(
-                strategy_name="Demonstração de Valor",
-                strategy_rationale="Mostrar benefícios específicos rapidamente",
-                primary_channel="linkedin",
-                key_hook="Case study relevante do setor",
-                success_probability="Médio - 50%",
-                pros=["Demonstra valor rapidamente", "Diferenciação clara"],
-                cons=["Pode parecer muito vendedor", "Requer preparação"]
+        final_action_plan_summary = "Plano de Ação Chave:\n"
+        if enhanced_strategy.tot_synthesized_action_plan and not enhanced_strategy.tot_synthesized_action_plan.error_message:
+            plan = enhanced_strategy.tot_synthesized_action_plan
+            final_action_plan_summary += f"- Estratégia: {plan.recommended_strategy_name}\n"
+            final_action_plan_summary += f"- Gancho: {plan.primary_angle_hook}\n"
+            final_action_plan_summary += f"- Pergunta Abertura: {plan.main_opening_question}\n"
+        elif enhanced_strategy.tot_synthesized_action_plan and enhanced_strategy.tot_synthesized_action_plan.error_message:
+            final_action_plan_summary = f"Erro no plano de ação: {enhanced_strategy.tot_synthesized_action_plan.error_message}"
+        else: # Fallback if tot_synthesized_action_plan is None
+            final_action_plan_summary = "Plano de ação não disponível."
+            
+        value_props_str_list = []
+        if enhanced_strategy.value_propositions:
+            for i, vp in enumerate(enhanced_strategy.value_propositions):
+                if not vp.error_message:
+                    value_props_str_list.append(f"Proposta {i+1} ({vp.title}): {vp.key_benefit}. Conexão: {vp.connection_to_pain_or_trigger}. Diferencial: {vp.differentiation_factor}. Chamada: {vp.call_to_value}")
+        value_props_text = "\n".join(value_props_str_list) if value_props_str_list else "Propostas de valor não disponíveis."
+
+        b2b_contact_details = B2BContactDetailsInput(
+            emails_found=contact_info.emails_found if contact_info else [],
+            instagram_profiles_found=contact_info.instagram_profiles if contact_info else []
+        )
+
+        message_input = B2BPersonalizedMessageInput(
+            final_action_plan_text=final_action_plan_summary,
+            customized_value_propositions_text=value_props_text,
+            contact_details=b2b_contact_details,
+            product_service_offered=self.product_service_context,
+            lead_url=str(analyzed_lead.validated_lead.site_data.url),
+            company_name=company_name,
+            persona_fictional_name=persona_profile_str # Using the constructed persona string
+        )
+        try:
+            msg_output: B2BPersonalizedMessageOutput = self.b2b_personalized_message_agent.execute(message_input)
+            if msg_output.error_message and not (msg_output.crafted_message_body and msg_output.crafted_message_body != "Não foi possível gerar a mensagem."):
+                self.logger.warning(f"B2BPersonalizedMessageAgent failed: {msg_output.error_message}")
+                primary_msg = PersonalizedMessage(channel=CommunicationChannel.EMAIL, message_body=f"Erro: {msg_output.error_message}", call_to_action="N/A", error_message=msg_output.error_message)
+                return EnhancedPersonalizedMessage(primary_message=primary_msg, error_message=msg_output.error_message)
+
+            channel = CommunicationChannel.EMAIL
+            if msg_output.crafted_message_channel and msg_output.crafted_message_channel != "N/A": # Check for "N/A"
+                try:
+                    channel = CommunicationChannel(msg_output.crafted_message_channel.lower())
+                except ValueError:
+                    self.logger.warning(f"Invalid channel '{msg_output.crafted_message_channel}' from B2B agent. Defaulting to EMAIL.")
+            
+            primary_message = PersonalizedMessage(
+                channel=channel, subject_line=msg_output.crafted_message_subject, message_body=msg_output.crafted_message_body,
+                call_to_action="Verificar corpo da mensagem para CTA.", 
+                error_message=msg_output.error_message if (msg_output.error_message and msg_output.error_message not in msg_output.crafted_message_body) else None
             )
-        ]
-        
-        # Select best strategy based on pain urgency
-        if pain_analysis.urgency_level in ["high", "critical"]:
-            selected = strategy_options[1]  # Demonstration approach for urgent needs
-        else:
-            selected = strategy_options[0]  # Consultative for others
-        
-        return ToTStrategyEvaluation(
-            strategy_options=strategy_options,
-            selected_strategy=selected,
-            evaluation_criteria=["Urgência da dor", "Complexidade da venda", "Canal preferido"],
-            decision_rationale=f"Selecionado baseado no nível de urgência: {pain_analysis.urgency_level}",
-            contingency_plan="Se abordagem principal falhar, tentar a alternativa após 1 semana"
-        )
-    
-    def _create_personalized_message(self, analyzed_lead: AnalyzedLead, enhanced_strategy: EnhancedStrategy) -> EnhancedPersonalizedMessage:
-        """Create personalized outreach message"""
-        
-        company_name = self._extract_company_name(analyzed_lead)
-        selected_strategy = enhanced_strategy.tot_strategy_evaluation.selected_strategy
-        
-        # Determine channel
-        channel_map = {
-            "email": CommunicationChannel.EMAIL,
-            "linkedin": CommunicationChannel.LINKEDIN,
-            "whatsapp": CommunicationChannel.WHATSAPP,
-            "phone": CommunicationChannel.PHONE
-        }
-        channel = channel_map.get(selected_strategy.primary_channel, CommunicationChannel.EMAIL)
-        
-        # Create primary message
-        if channel == CommunicationChannel.EMAIL:
-            subject = f"Insights para {company_name} - {enhanced_strategy.pain_point_analysis.primary_pain_category}"
-            body = f"""Olá,
+            return EnhancedPersonalizedMessage(primary_message=primary_message, error_message=primary_message.error_message)
+        except Exception as e:
+            self.logger.error(f"Exception in _create_personalized_message: {e}")
+            primary_msg = PersonalizedMessage(channel=CommunicationChannel.EMAIL, message_body=f"Exceção: {str(e)}", call_to_action="N/A", error_message=str(e))
+            return EnhancedPersonalizedMessage(primary_message=primary_msg, error_message=str(e))
 
-{selected_strategy.key_hook}
-
-Notei que {company_name} atua no setor de {analyzed_lead.analysis.company_sector}. Temos ajudado empresas similares com {enhanced_strategy.pain_point_analysis.primary_pain_category.lower()}.
-
-Gostaria de compartilhar algumas estratégias que podem ser relevantes para vocês.
-
-Teria 15 minutos para uma conversa rápida esta semana?
-
-Atenciosamente,
-[Seu nome]"""
-        else:
-            subject = None
-            body = f"Olá! Vi o trabalho de {company_name} e fiquei impressionado. Temos insights que podem ajudar com {enhanced_strategy.pain_point_analysis.primary_pain_category.lower()}. Podemos conversar?"
-        
-        # Identify personalization elements
-        personalization_elements = [
-            f"Nome da empresa: {company_name}",
-            f"Setor específico: {analyzed_lead.analysis.company_sector}",
-            f"Dor identificada: {enhanced_strategy.pain_point_analysis.primary_pain_category}"
-        ]
-        
-        primary_message = PersonalizedMessage(
-            channel=channel,
-            subject_line=subject,
-            message_body=body,
-            call_to_action="Agendar conversa de 15 minutos",
-            personalization_elements=personalization_elements
-        )
-        
-        return EnhancedPersonalizedMessage(
-            primary_message=primary_message,
-            alternative_messages=[],  # Could add A/B variants here
-            personalization_score=0.8,
-            cultural_appropriateness_score=0.9,  # Brazilian Portuguese, formal tone
-            estimated_response_rate=0.15,
-            message_variants_rationale="Mensagem focada em value-add e baixa pressão"
-        )
-    
     def _create_internal_briefing(self, analyzed_lead: AnalyzedLead, enhanced_strategy: EnhancedStrategy) -> InternalBriefing:
-        """Create internal sales briefing"""
-        
         company_name = self._extract_company_name(analyzed_lead)
-        
-        return InternalBriefing(
-            executive_summary=f"{company_name} - {enhanced_strategy.lead_qualification.qualification_tier}: {enhanced_strategy.pain_point_analysis.primary_pain_category} com urgência {enhanced_strategy.pain_point_analysis.urgency_level}",
-            key_talking_points=[
-                f"Empresa do setor {analyzed_lead.analysis.company_sector}",
-                f"Principal dor: {enhanced_strategy.pain_point_analysis.primary_pain_category}",
-                f"Estratégia: {enhanced_strategy.tot_strategy_evaluation.selected_strategy.strategy_name}"
-            ],
-            critical_objections=enhanced_strategy.objection_framework.common_objections,
-            success_metrics=["Agendamento de reunião", "Identificação de decisor", "Qualificação de orçamento"],
-            next_steps=[
-                "Enviar mensagem inicial",
-                "Follow-up em 3 dias se não houver resposta",
-                "Preparar materiais de apoio"
-            ],
-            decision_maker_profile=f"Provavelmente {analyzed_lead.analysis.company_size_estimate or 'Pequena a Média'} empresa, decisor técnico/comercial",
-            urgency_level=enhanced_strategy.pain_point_analysis.urgency_level
-        )
+        analysis_obj = analyzed_lead.analysis
+
+        all_lead_data = {
+            "company_name": company_name, "lead_url": str(analyzed_lead.validated_lead.site_data.url),
+            "product_service_offered_by_us": self.product_service_context,
+            "initial_site_extracted_text_summary": self._truncate_text(analyzed_lead.validated_lead.site_data.extracted_text_content or "", 300),
+            "lead_analysis_summary": {
+                "company_sector": analysis_obj.company_sector, "main_services": analysis_obj.main_services,
+                "company_description": self._truncate_text(analysis_obj.company_description or "", 300),
+                "ideal_customer_profile_estimate": self._construct_persona_profile_string(analysis_obj, company_name),
+                "potential_challenges": analysis_obj.potential_challenges, "general_diagnosis": analysis_obj.general_diagnosis
+            },
+            "external_intelligence_summary": self._truncate_text(enhanced_strategy.external_intelligence.tavily_enrichment if enhanced_strategy.external_intelligence else "N/A", 300),
+            "contact_information_summary": enhanced_strategy.contact_information.model_dump() if enhanced_strategy.contact_information else {},
+            "pain_point_analysis_summary": enhanced_strategy.pain_point_analysis.model_dump() if enhanced_strategy.pain_point_analysis and not enhanced_strategy.pain_point_analysis.error_message else {"error": enhanced_strategy.pain_point_analysis.error_message if enhanced_strategy.pain_point_analysis else "N/A"},
+            "lead_qualification_summary": enhanced_strategy.lead_qualification.model_dump() if enhanced_strategy.lead_qualification and not enhanced_strategy.lead_qualification.error_message else {"error": enhanced_strategy.lead_qualification.error_message if enhanced_strategy.lead_qualification else "N/A"},
+            "competitor_intelligence_summary": enhanced_strategy.competitor_intelligence.model_dump() if enhanced_strategy.competitor_intelligence and not enhanced_strategy.competitor_intelligence.error_message else {"error": enhanced_strategy.competitor_intelligence.error_message if enhanced_strategy.competitor_intelligence else "N/A"},
+            "purchase_triggers_summary": enhanced_strategy.purchase_triggers.model_dump() if enhanced_strategy.purchase_triggers and not enhanced_strategy.purchase_triggers.error_message else {"error": enhanced_strategy.purchase_triggers.error_message if enhanced_strategy.purchase_triggers else "N/A"},
+            "customized_value_propositions_summary": [vp.model_dump() for vp in enhanced_strategy.value_propositions] if enhanced_strategy.value_propositions else [],
+            "strategic_questions_generated": enhanced_strategy.strategic_questions if enhanced_strategy.strategic_questions else [],
+            "objection_handling_summary": enhanced_strategy.objection_framework.model_dump() if enhanced_strategy.objection_framework and not enhanced_strategy.objection_framework.error_message else {"error": enhanced_strategy.objection_framework.error_message if enhanced_strategy.objection_framework else "N/A"},
+            "tot_synthesized_action_plan_summary": enhanced_strategy.tot_synthesized_action_plan.model_dump() if enhanced_strategy.tot_synthesized_action_plan and not enhanced_strategy.tot_synthesized_action_plan.error_message else {"error": enhanced_strategy.tot_synthesized_action_plan.error_message if enhanced_strategy.tot_synthesized_action_plan else "N/A"},
+            "detailed_approach_plan_summary": enhanced_strategy.detailed_approach_plan.model_dump() if enhanced_strategy.detailed_approach_plan and not enhanced_strategy.detailed_approach_plan.error_message else {"error": enhanced_strategy.detailed_approach_plan.error_message if enhanced_strategy.detailed_approach_plan else "N/A"},
+        }
+        briefing_input = InternalBriefingSummaryInput(all_lead_data=all_lead_data)
+        try:
+            output: InternalBriefingSummaryOutput = self.internal_briefing_summary_agent.execute(briefing_input)
+            if output.error_message:
+                self.logger.warning(f"InternalBriefingSummaryAgent returned an error: {output.error_message}")
+                return InternalBriefing(executive_summary=f"Falha ao gerar briefing: {output.error_message}", error_message=output.error_message)
+            
+            # Map InternalBriefingSummaryOutput (agent's Pydantic) to InternalBriefing (lead_structures Pydantic)
+            return InternalBriefing(
+                executive_summary=output.executive_summary,
+                lead_overview=InternalBriefingSectionSchema(**output.lead_overview.model_dump()) if output.lead_overview else None,
+                persona_profile_summary=InternalBriefingSectionSchema(**output.persona_profile_summary.model_dump()) if output.persona_profile_summary else None,
+                pain_points_and_needs=InternalBriefingSectionSchema(**output.pain_points_and_needs.model_dump()) if output.pain_points_and_needs else None,
+                buying_triggers_opportunity=InternalBriefingSectionSchema(**output.buying_triggers_opportunity.model_dump()) if output.buying_triggers_opportunity else None,
+                lead_qualification_summary=InternalBriefingSectionSchema(**output.lead_qualification_summary.model_dump()) if output.lead_qualification_summary else None,
+                approach_strategy_summary=InternalBriefingSectionSchema(**output.approach_strategy_summary.model_dump()) if output.approach_strategy_summary else None,
+                custom_value_proposition_summary=InternalBriefingSectionSchema(**output.custom_value_proposition_summary.model_dump()) if output.custom_value_proposition_summary else None,
+                potential_objections_summary=InternalBriefingSectionSchema(**output.potential_objections_summary.model_dump()) if output.potential_objections_summary else None,
+                recommended_next_step=output.recommended_next_step,
+                error_message=output.error_message
+            )
+        except Exception as e:
+            self.logger.error(f"Exception in _create_internal_briefing: {e}")
+            return InternalBriefing(executive_summary=f"Exceção ao gerar briefing: {str(e)}", error_message=str(e))
     
     # Helper methods
     
@@ -744,86 +584,105 @@ Atenciosamente,
         domain = domain.replace('www.', '')
         return domain.split('.')[0].title()
     
-    def _truncate_text(self, text: str, max_length: int = None) -> str:
+    def _truncate_text(self, text: Optional[str], max_length: int = 15000) -> str: # Default max_length
         """Truncate text to maximum length"""
         if not text:
             return ""
-        max_len = max_length or self.max_text_length
-        return text[:max_len] if len(text) > max_len else text
+        # max_len = max_length or self.max_text_length # self.max_text_length no longer exists
+        return text[:max_length] if len(text) > max_length else text
     
     def _calculate_confidence_score(self, enhanced_strategy: EnhancedStrategy) -> float:
         """Calculate overall confidence score"""
-        
-        # Base relevance score
         base_score = 0.3
+        qual_score = 0.0
+        if enhanced_strategy.lead_qualification:
+            if enhanced_strategy.lead_qualification.confidence_score is not None:
+                qual_score = enhanced_strategy.lead_qualification.confidence_score * 0.2
+            elif hasattr(enhanced_strategy.lead_qualification, 'qualification_score') and enhanced_strategy.lead_qualification.qualification_score is not None: # Legacy field
+                 qual_score = enhanced_strategy.lead_qualification.qualification_score * 0.2
+            else: qual_score = 0.05
         
-        # Add qualification score
-        qual_score = enhanced_strategy.lead_qualification.qualification_score * 0.2
+        pain_score = 0.0
+        if enhanced_strategy.pain_point_analysis and enhanced_strategy.pain_point_analysis.detailed_pain_points:
+            pain_score = len(enhanced_strategy.pain_point_analysis.detailed_pain_points) * 0.05 
+            pain_score = min(pain_score, 0.15) 
         
-        # Add pain analysis score
-        pain_score = len(enhanced_strategy.pain_point_analysis.detailed_pain_points) * 0.1
+        contact_score = 0.0
+        if enhanced_strategy.contact_information and hasattr(enhanced_strategy.contact_information, 'extraction_confidence'):
+            contact_score = enhanced_strategy.contact_information.extraction_confidence * 0.1
         
-        # Add contact availability
-        contact_score = enhanced_strategy.contact_information.extraction_confidence * 0.1
+        intel_score = 0.0
+        if enhanced_strategy.external_intelligence and hasattr(enhanced_strategy.external_intelligence, 'enrichment_confidence'):
+            intel_score = 0.1 if enhanced_strategy.external_intelligence.enrichment_confidence > 0.5 else 0.05
         
-        # Add external intelligence
-        intel_score = 0.1 if enhanced_strategy.external_intelligence.enrichment_confidence > 0.5 else 0.05
-        
-        # Add strategy completeness
-        strategy_score = 0.15 if enhanced_strategy.tot_strategy_evaluation else 0.05
+        strategy_score = 0.15 if enhanced_strategy.tot_synthesized_action_plan and not enhanced_strategy.tot_synthesized_action_plan.error_message else 0.05
         
         total_score = base_score + qual_score + pain_score + contact_score + intel_score + strategy_score
         return min(total_score, 1.0)
     
     def _calculate_roi_potential(self, enhanced_strategy: EnhancedStrategy) -> float:
         """Calculate ROI potential score"""
+        qual_weight = 0.0
+        if enhanced_strategy.lead_qualification:
+            if enhanced_strategy.lead_qualification.confidence_score is not None:
+                qual_weight = enhanced_strategy.lead_qualification.confidence_score * 0.4
+            elif hasattr(enhanced_strategy.lead_qualification, 'qualification_score') and enhanced_strategy.lead_qualification.qualification_score is not None:
+                 qual_weight = enhanced_strategy.lead_qualification.qualification_score * 0.4
+            
+        urgency_weight = 0.0
+        if enhanced_strategy.pain_point_analysis and enhanced_strategy.pain_point_analysis.urgency_level:
+            urgency_map = {"low": 0.1, "medium": 0.2, "high": 0.3, "critical": 0.4}
+            urgency_weight = urgency_map.get(enhanced_strategy.pain_point_analysis.urgency_level.lower(), 0.1) * 0.25
         
-        # Base on qualification and pain urgency
-        qual_weight = enhanced_strategy.lead_qualification.qualification_score * 0.4
-        
-        urgency_weights = {"low": 0.1, "medium": 0.2, "high": 0.3, "critical": 0.4}
-        urgency_weight = urgency_weights.get(enhanced_strategy.pain_point_analysis.urgency_level, 0.2)
-        
-        # Add value proposition strength
-        value_weight = len(enhanced_strategy.value_propositions) * 0.1
-        
-        # Add purchase triggers
-        trigger_weight = len(enhanced_strategy.purchase_triggers.recent_events) * 0.05
-        
+        value_weight = 0.0
+        if enhanced_strategy.value_propositions:
+            valid_vps = [vp for vp in enhanced_strategy.value_propositions if not vp.error_message]
+            value_weight = len(valid_vps) * 0.1 
+            value_weight = min(value_weight, 0.25)
+
+        trigger_weight = 0.0
+        if enhanced_strategy.purchase_triggers and enhanced_strategy.purchase_triggers.identified_triggers:
+            trigger_weight = len(enhanced_strategy.purchase_triggers.identified_triggers) * 0.05
+            trigger_weight = min(trigger_weight, 0.1)
+            
         return min(qual_weight + urgency_weight + value_weight + trigger_weight, 1.0)
     
     def _calculate_brazilian_fit(self, analyzed_lead: AnalyzedLead) -> float:
-        """Calculate Brazilian market cultural fit"""
-        
-        # Base score for Portuguese content
         base_score = 0.7
-        
-        # Check for Brazilian indicators
         text_content = analyzed_lead.validated_lead.cleaned_text_content or ""
-        brazilian_indicators = ["brasil", "brazilian", "são paulo", "rio de janeiro", "bh", "cnpj"]
+        if not text_content: 
+            text_content = analyzed_lead.validated_lead.site_data.extracted_text_content or ""
+            
+        brazilian_indicators = ["brasil", "brazilian", "são paulo", "rio de janeiro", "bh", "cnpj", ".br"]
         
         indicator_count = sum(1 for indicator in brazilian_indicators if indicator in text_content.lower())
+        if ".br" in str(analyzed_lead.validated_lead.site_data.url).lower():
+            indicator_count +=1
+            
         indicator_bonus = min(indicator_count * 0.1, 0.3)
-        
         return min(base_score + indicator_bonus, 1.0)
     
     def _build_prompt(self, input_data: AnalyzedLead) -> str:
-        """Build LLM prompt (required by BaseAgent)"""
-        return f"Processing lead for {self._extract_company_name(input_data)}"
+        return f"Enhanced processing task for lead: {self._extract_company_name(input_data)}"
     
     def _parse_response(self, response: str) -> dict:
-        """Parse LLM response to dict (required by BaseAgent)"""
+        # This method might not be directly used if all LLM calls are delegated to sub-agents
+        # that use their own BaseAgent.parse_llm_json_response.
+        # However, keeping it for potential direct calls or as a utility.
         try:
-            # Remove any markdown formatting
             if "```json" in response:
                 response = response.split("```json")[1].split("```")[0]
-            elif "```" in response:
+            elif "```" in response: # Handle cases where ``` is present without json specifier
                 response = response.split("```")[1].split("```")[0]
-            
             return json.loads(response.strip())
         except json.JSONDecodeError as e:
-            self.logger.warning(f"Failed to parse JSON response: {e}")
-            return {"error": "Failed to parse response"}
-        except Exception as e:
-            self.logger.warning(f"Unexpected error parsing response: {e}")
-            return {"error": str(e)}
+            self.logger.warning(f"EnhancedLeadProcessor._parse_response: JSONDecodeError - {e}. Response: {response[:200]}")
+            return {"error": "Failed to parse JSON response", "raw_response": response}
+        except Exception as e: # Catch broader errors during parsing
+            self.logger.warning(f"EnhancedLeadProcessor._parse_response: Unexpected error - {e}. Response: {response[:200]}")
+            return {"error": str(e), "raw_response": response}
+
+# Ensure data_models from lead_structures are correctly referenced for Pydantic types
+from data_models.lead_structures import DetailedPainPointSchema, CompetitorDetailSchema, IdentifiedTriggerSchema, \
+    ToTStrategyOptionModel, EvaluatedStrategyModel, ActionPlanStepModel, ToTActionPlanSynthesisModel, \
+    ContactStepDetailSchema, DetailedApproachPlanModel, ObjectionResponseModelSchema, InternalBriefingSectionSchema
