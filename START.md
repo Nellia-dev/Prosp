@@ -92,6 +92,34 @@ python enhanced_main.py <harvester_file_path> --product "Your Product/Service De
     python enhanced_main.py path/to/your/leads.json --product "Plataforma de marketing digital B2B" --mode hybrid --competitors "CompetitorX,CompetitorY" --output custom_results.json
     ```
 
+## 4.5. Running the MCP (Mission Control Panel) Server (Optional)
+
+The MCP Server is a Flask application that allows you to track the progress and results of leads being processed by `enhanced_main.py`.
+
+**1. Initialize MCP Database (One-Time Setup):**
+Before running the MCP server for the first time, you need to initialize its database:
+```bash
+python init_mcp_db.py
+```
+*(Ensure your current directory is the project root when running this, so `init_mcp_db.py` is found and `mcp_server` is importable by it).*
+
+**2. Start the MCP Server:**
+To start the MCP server, run the following command from the project root:
+```bash
+python mcp_server/app.py
+```
+The server will typically start on `http://127.0.0.1:5001`. Check the console output for the exact URL.
+
+**3. Enable Reporting from `enhanced_main.py`:**
+For `enhanced_main.py` to send data to the MCP server, set the following environment variables (e.g., in your `.env` file or directly in your shell):
+```env
+ENABLE_MCP_REPORTING="true"
+MCP_SERVER_URL="http://127.0.0.1:5001" # Ensure this matches where your MCP server is running
+```
+
+**Order of Operations:**
+The MCP server should be running *before* you execute `enhanced_main.py` with `ENABLE_MCP_REPORTING="true"`.
+
 ## 5. Input File Format
 
 The application expects an input JSON file (referred to as `harvester_file_path`) that conforms to the `HarvesterOutput` Pydantic model defined in `data_models/lead_structures.py`.

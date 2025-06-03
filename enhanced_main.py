@@ -80,11 +80,17 @@ class EnhancedNelliaProspector:
         self.console = Console()
         
         self.llm_client = LLMClientFactory.create_from_env()
-        self._initialize_agents(tavily_api_key)
+        self.tavily_api_key = tavily_api_key # Store for initialization
+
+        # MCP config for EnhancedNelliaProspector to pass to EnhancedLeadProcessor
+        self.MCP_SERVER_URL = MCP_SERVER_URL
+        self.ENABLE_MCP_REPORTING = ENABLE_MCP_REPORTING
+
+        self._initialize_agents() # tavily_api_key will be taken from self.tavily_api_key
         
         self.rate_limit_delay = 1.0
 
-    def _initialize_agents(self, tavily_api_key: Optional[str]):
+    def _initialize_agents(self): # Removed tavily_api_key from params
         self.lead_intake_agent = LeadIntakeAgent(llm_client=self.llm_client)
         self.lead_analysis_agent = LeadAnalysisAgent(
             llm_client=self.llm_client,
@@ -95,11 +101,13 @@ class EnhancedNelliaProspector:
                 llm_client=self.llm_client,
                 product_service_context=self.product_service_context,
                 competitors_list=self.competitors_list,
-                tavily_api_key=tavily_api_key
+                tavily_api_key=self.tavily_api_key, # Use stored key
+                mcp_server_url=self.MCP_SERVER_URL, # Pass MCP config
+                enable_mcp_reporting=self.ENABLE_MCP_REPORTING # Pass MCP config
             )
 
     def _report_lead_start_to_mcp(self, lead_id: str, run_id: str, url: str, initial_agent: str = "LeadIntakeAgent"):
-        if not ENABLE_MCP_REPORTING:
+        if not self.ENABLE_MCP_REPORTING: # Use instance variable
             return
         payload = {
             "lead_id": lead_id,
@@ -111,7 +119,7 @@ class EnhancedNelliaProspector:
             "last_update_time": datetime.utcnow().isoformat()
         }
         try:
-            endpoint_url = f"{MCP_SERVER_URL}/api/lead/start"
+            endpoint_url = f"{self.MCP_SERVER_URL}/api/lead/start" # Use instance variable
             response = requests.post(endpoint_url, json=payload, timeout=5)
             response.raise_for_status()
             logger.info(f"Successfully reported lead start to MCP for lead_id: {lead_id} (Run ID: {run_id})")
@@ -120,7 +128,7 @@ class EnhancedNelliaProspector:
         except Exception as e_un:
             logger.error(f"Unexpected error reporting lead start to MCP for lead_id: {lead_id}. Error: {e_un}")
 
-    def process_leads(
+    async def process_leads( # Made async
         self, 
         harvester_data: HarvesterOutput, 
         limit: Optional[int] = None
@@ -136,15 +144,16 @@ class EnhancedNelliaProspector:
             f"🚀 Enhanced Nellia Prospector (Run ID: {run_id})\n"
             f"Mode: {self.processing_mode.value.upper()}\n"
             f"Leads to process: {len(leads_to_process)}\n"
-            f"MCP Reporting: {'ENABLED' if ENABLE_MCP_REPORTING else 'DISABLED'}\n"
+            f"MCP Reporting: {'ENABLED' if self.ENABLE_MCP_REPORTING else 'DISABLED'}\n" # Use instance variable
             f"Product/Service: {self.product_service_context[:100]}{'...' if len(self.product_service_context) > 100 else ''}",
             title="Processing Configuration",
             border_style="green"
         ))
         
         if self.processing_mode == ProcessingMode.HYBRID:
-            standard_results_obj = self._standard_processing(leads_to_process, run_id, is_hybrid_component=True, overall_start_time=start_time_run_processing)
-            enhanced_results_obj = self._enhanced_processing(leads_to_process, run_id, is_hybrid_component=True, overall_start_time=start_time_run_processing)
+            # Assuming standard_processing can also be async if needed, or run synchronously
+            standard_results_obj = await self._standard_processing(leads_to_process, run_id, is_hybrid_component=True, overall_start_time=start_time_run_processing)
+            enhanced_results_obj = await self._enhanced_processing(leads_to_process, run_id, is_hybrid_component=True, overall_start_time=start_time_run_processing)
 
             all_results = []
             for r_std in standard_results_obj.results:
@@ -170,11 +179,11 @@ class EnhancedNelliaProspector:
                 metrics=hybrid_metrics
             )
         elif self.processing_mode == ProcessingMode.ENHANCED:
-            return self._enhanced_processing(leads_to_process, run_id, overall_start_time=start_time_run_processing)
+            return await self._enhanced_processing(leads_to_process, run_id, overall_start_time=start_time_run_processing) # await
         else:
-            return self._standard_processing(leads_to_process, run_id, overall_start_time=start_time_run_processing)
+            return await self._standard_processing(leads_to_process, run_id, overall_start_time=start_time_run_processing) # await
 
-    def _standard_processing(self, leads_to_process: List[SiteData], run_id: str, is_hybrid_component: bool = False, overall_start_time: Optional[float] = None) -> ProcessingResults:
+    async def _standard_processing(self, leads_to_process: List[SiteData], run_id: str, is_hybrid_component: bool = False, overall_start_time: Optional[float] = None) -> ProcessingResults: # Made async
         results = []
         successful = 0
         failed = 0
@@ -188,11 +197,11 @@ class EnhancedNelliaProspector:
 
                 progress.update(task, description=f"[blue]Std Proc: {str(site_data.url)[:50]}...")
                 try:
-                    validated_lead = self.lead_intake_agent.execute(site_data)
+                    validated_lead = await self.lead_intake_agent.execute(site_data) # await
                     if not validated_lead.is_valid:
                         failed += 1; progress.advance(task); continue
                     
-                    analyzed_lead = self.lead_analysis_agent.execute(validated_lead)
+                    analyzed_lead = await self.lead_analysis_agent.execute(validated_lead) # await
                     if analyzed_lead.analysis.relevance_score < 0.3:
                         failed += 1; progress.advance(task); continue
                     
@@ -221,7 +230,7 @@ class EnhancedNelliaProspector:
                      "total_tokens_used": self.llm_client.get_usage_stats()["total_tokens"]}
         )
 
-    def _enhanced_processing(self, leads_to_process: List[SiteData], run_id: str, is_hybrid_component: bool = False, overall_start_time: Optional[float] = None) -> ProcessingResults:
+    async def _enhanced_processing(self, leads_to_process: List[SiteData], run_id: str, is_hybrid_component: bool = False, overall_start_time: Optional[float] = None) -> ProcessingResults: # Made async
         results = []
         successful = 0
         failed = 0
@@ -235,16 +244,15 @@ class EnhancedNelliaProspector:
 
                 progress.update(task, description=f"[green]Enh Proc: {str(site_data.url)[:50]}...")
                 try:
-                    validated_lead = self.lead_intake_agent.execute(site_data)
+                    validated_lead = await self.lead_intake_agent.execute(site_data) # await
                     if not validated_lead.is_valid:
                         failed += 1; progress.advance(task); continue
                     
-                    analyzed_lead = self.lead_analysis_agent.execute(validated_lead)
+                    analyzed_lead = await self.lead_analysis_agent.execute(validated_lead) # await
                     if analyzed_lead.analysis.relevance_score < 0.1:
                         failed += 1; progress.advance(task); continue
                     
-                    # EnhancedLeadProcessor.process signature does not take lead_id, run_id in this workaround
-                    comprehensive_package = self.enhanced_processor.execute(analyzed_lead)
+                    comprehensive_package = await self.enhanced_processor.process(analyzed_lead, lead_id=lead_id, run_id=run_id) # await and pass ids
                     
                     result = {
                         "lead_id": lead_id, "run_id": run_id,
@@ -294,9 +302,9 @@ class EnhancedNelliaProspector:
                     logger.error(f"Enhanced processing failed for {site_data.url} (Lead ID: {lead_id}): {e}\n{traceback.format_exc()}")
                     failed += 1
                 progress.advance(task)
-                if not is_hybrid_component: time.sleep(self.rate_limit_delay)
+                if not is_hybrid_component: await asyncio.sleep(self.rate_limit_delay) # await asyncio.sleep
 
-        current_run_time = time.time() - run_start_time
+        current_run_time = time.time() - processing_start_time # Use processing_start_time as run_start_time is not defined here
         return ProcessingResults(
             mode=ProcessingMode.ENHANCED, total_leads=len(leads_to_process),
             successful_leads=successful, failed_leads=failed,
@@ -456,14 +464,17 @@ def main():
     
     logger.remove()
     logger.add(sys.stderr, level=args.log_level.upper())
-    
-    try:
+
+    # Required for async main
+    import asyncio
+
+    async def async_main(): # Wrap main logic in async function
         harvester_data = load_harvester_data(args.harvester_file)
         processor = EnhancedNelliaProspector(
             product_service_context=args.product, competitors_list=args.competitors,
             processing_mode=ProcessingMode(args.mode), tavily_api_key=os.getenv("TAVILY_API_KEY")
         )
-        results = processor.process_leads(harvester_data, args.limit)
+        results = await processor.process_leads(harvester_data, args.limit) # await
         processor.generate_report(results)
         if args.output: output_file = args.output
         else:
@@ -485,8 +496,12 @@ def main():
                 f"✨ Ready for high-converting outreach!",
                 title="Enhanced Processing Complete", border_style="gold1"
             ))
+
+    try:
+        asyncio.run(async_main()) # Run the async main function
     except KeyboardInterrupt: logger.info("Processing interrupted by user"); sys.exit(1)
     except Exception as e: logger.error(f"Processing failed: {e}\n{traceback.format_exc()}"); sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    # main() # Original synchronous call commented out
+    pass # Main execution is now handled by asyncio.run(async_main())

@@ -8,11 +8,12 @@ import traceback # For logging detailed errors
 from . import database
 from . import models
 from .data_models import (
-    LeadProcessingStateCreate, LeadProcessingState as LeadProcessingStatePydantic, # Alias to avoid name clash
-    AgentEventPayload, AgentExecutionRecordCreate, AgentExecutionRecord as AgentExecutionRecordPydantic, # Alias
+    LeadProcessingStateCreate, LeadProcessingState as LeadProcessingStatePydantic,
+    AgentEventPayload, AgentExecutionRecordCreate, AgentExecutionRecord as AgentExecutionRecordPydantic,
     LeadProcessingStatusEnum, AgentExecutionStatusEnum
 )
 from pydantic import ValidationError
+from sqlalchemy.orm import Session # Added for type hinting
 
 app = Flask(__name__)
 
@@ -141,6 +142,53 @@ def record_agent_event(lead_id: str):
     except Exception as e:
         db.rollback()
         app.logger.error(f"Error in /api/lead/{lead_id}/event: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/api/lead/<string:lead_id>/status', methods=['GET'])
+def get_lead_status(lead_id: str):
+    db: Session = next(database.get_db())
+    try:
+        lead_state_orm = db.query(models.LeadProcessingStateOrm).filter(models.LeadProcessingStateOrm.lead_id == lead_id).first()
+
+        if not lead_state_orm:
+            return jsonify({"error": "Lead not found"}), 404
+
+        agent_executions_orm = db.query(models.AgentExecutionRecordOrm).filter(models.AgentExecutionRecordOrm.lead_id == lead_id).order_by(models.AgentExecutionRecordOrm.start_time).all()
+
+        lead_state_pydantic = LeadProcessingStatePydantic.from_orm(lead_state_orm)
+        agent_executions_pydantic = [AgentExecutionRecordPydantic.from_orm(rec) for rec in agent_executions_orm]
+
+        return jsonify({
+            "lead_status": lead_state_pydantic.model_dump(mode='json'), # mode='json' for enums as strings
+            "agent_executions": [rec.model_dump(mode='json') for rec in agent_executions_pydantic]
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Error in /api/lead/{lead_id}/status: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/api/run/<string:run_id>/status', methods=['GET'])
+def get_run_status(run_id: str):
+    db: Session = next(database.get_db())
+    try:
+        lead_states_orm = db.query(models.LeadProcessingStateOrm).filter(models.LeadProcessingStateOrm.run_id == run_id).order_by(models.LeadProcessingStateOrm.start_time).all()
+
+        if not lead_states_orm:
+            return jsonify({"message": "No leads found for this run_id", "run_id": run_id, "leads": []}), 200 # Or 404 if preferred
+
+        leads_pydantic = [LeadProcessingStatePydantic.from_orm(state).model_dump(mode='json') for state in lead_states_orm]
+
+        return jsonify({
+            "run_id": run_id,
+            "leads": leads_pydantic
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Error in /api/run/{run_id}/status: {e}\n{traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
     finally:
         db.close()
