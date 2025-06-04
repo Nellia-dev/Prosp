@@ -16,8 +16,9 @@ import { McpModule } from './modules/mcp/mcp.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { AuthModule } from './modules/auth/auth.module';
-// TODO: Add these modules when implemented:
-// import { AuthModule } from './modules/auth/auth.module';
+import { DatabaseModule } from './database/database.module';
+import { HealthModule } from './modules/health/health.module';
+import { QueueModule } from './modules/queue/queue.module';
 
 @Module({
   imports: [
@@ -57,6 +58,9 @@ import { AuthModule } from './modules/auth/auth.module';
     ChatModule,
     MetricsModule,
     AuthModule,
+    DatabaseModule,
+    HealthModule,
+    QueueModule,
   ],
   controllers: [],
   providers: [],

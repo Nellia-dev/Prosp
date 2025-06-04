@@ -4,10 +4,10 @@ import datetime
 import json # For final_package_summary and metrics_json, output_json
 import traceback # For logging detailed errors
 
-# Assuming .database and .models are in the same directory (mcp_server)
-from . import database
-from . import models
-from .data_models import (
+# Import database and models from the same directory
+import database
+import models
+from data_models import (
     LeadProcessingStateCreate, LeadProcessingState as LeadProcessingStatePydantic,
     AgentEventPayload, AgentExecutionRecordCreate, AgentExecutionRecord as AgentExecutionRecordPydantic,
     LeadProcessingStatusEnum, AgentExecutionStatusEnum
@@ -189,6 +189,63 @@ def get_run_status(run_id: str):
 
     except Exception as e:
         app.logger.error(f"Error in /api/run/{run_id}/status: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for monitoring."""
+    try:
+        # Test database connection
+        db: Session = next(database.get_db())
+        db.execute("SELECT 1")
+        db.close()
+        database_status = "connected"
+    except Exception as e:
+        database_status = f"error: {str(e)}"
+    
+    return jsonify({
+        "status": "healthy" if database_status == "connected" else "unhealthy",
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "database": database_status,
+        "version": "1.0.0",
+        "service": "mcp-server"
+    })
+
+@app.route('/metrics', methods=['GET'])
+def get_metrics():
+    """Get system metrics for monitoring."""
+    db: Session = next(database.get_db())
+    try:
+        total_leads = db.query(models.LeadProcessingStateOrm).count()
+        active_leads = db.query(models.LeadProcessingStateOrm).filter(
+            models.LeadProcessingStateOrm.status == LeadProcessingStatusEnum.ACTIVE
+        ).count()
+        completed_leads = db.query(models.LeadProcessingStateOrm).filter(
+            models.LeadProcessingStateOrm.status == LeadProcessingStatusEnum.COMPLETED
+        ).count()
+        failed_leads = db.query(models.LeadProcessingStateOrm).filter(
+            models.LeadProcessingStateOrm.status == LeadProcessingStatusEnum.FAILED
+        ).count()
+        
+        # Get recent activity (last 24 hours)
+        recent_cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=24)
+        recent_leads = db.query(models.LeadProcessingStateOrm).filter(
+            models.LeadProcessingStateOrm.start_time >= recent_cutoff
+        ).count()
+        
+        return jsonify({
+            "total_leads": total_leads,
+            "active_leads": active_leads,
+            "completed_leads": completed_leads,
+            "failed_leads": failed_leads,
+            "recent_leads_24h": recent_leads,
+            "success_rate": round((completed_leads / max(total_leads, 1)) * 100, 2),
+            "timestamp": datetime.datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting metrics: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         db.close()

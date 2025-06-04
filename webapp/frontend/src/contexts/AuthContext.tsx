@@ -6,10 +6,10 @@ import {
   LoginRequest, 
   RegisterRequest, 
   User,
-  LoginResponse 
+  LoginResponse,
+  mapApiRoleToUserRole 
 } from '../types/auth';
-import { apiClient } from '../services/api';
-import { authApi } from '../services/api';
+import { apiClient, authApi } from '../services/api';
 
 // Auth Actions
 type AuthAction =
@@ -150,11 +150,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const { access_token, refresh_token, user, expires_in } = loginResponse;
     
     // Calculate expiry date (convert seconds to days for cookie expiry)
-    const expiryDays = expires_in / (24 * 60 * 60);
+    // Default to 24 hours if expires_in is not provided
+    const expiryDays = expires_in ? expires_in / (24 * 60 * 60) : 1;
     
     // Store in cookies
     Cookies.set(TOKEN_KEY, access_token, { expires: expiryDays, secure: true, sameSite: 'strict' });
-    Cookies.set(REFRESH_TOKEN_KEY, refresh_token, { expires: expiryDays * 2, secure: true, sameSite: 'strict' }); // Refresh token lives longer
+    if (refresh_token) {
+      Cookies.set(REFRESH_TOKEN_KEY, refresh_token, { expires: expiryDays * 2, secure: true, sameSite: 'strict' });
+    }
     Cookies.set(USER_KEY, JSON.stringify(user), { expires: expiryDays, secure: true, sameSite: 'strict' });
     
     // Set token in API client
@@ -174,8 +177,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     dispatch({ type: 'LOGIN_START' });
     
     try {
-      const response = await apiClient.post<LoginResponse>('/auth/login', credentials);
-      const loginData = response.data;
+      const apiResponse = await authApi.login(credentials);
+      
+      // Map API response to auth types
+      const loginData: LoginResponse = {
+        access_token: apiResponse.access_token,
+        refresh_token: undefined, // API doesn't provide refresh token yet
+        expires_in: undefined, // API doesn't provide expires_in yet
+        user: {
+          id: apiResponse.user.id,
+          email: apiResponse.user.email,
+          name: undefined, // API doesn't provide name yet
+          role: mapApiRoleToUserRole(apiResponse.user.role),
+          createdAt: apiResponse.user.createdAt,
+          updatedAt: apiResponse.user.updatedAt
+        }
+      };
       
       // Store auth data
       storeAuthData(loginData);
@@ -204,8 +221,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     dispatch({ type: 'LOGIN_START' });
     
     try {
-      const response = await apiClient.post<LoginResponse>('/auth/register', userData);
-      const loginData = response.data;
+      const apiResponse = await authApi.register(userData);
+      
+      // Map API response to auth types
+      const loginData: LoginResponse = {
+        access_token: apiResponse.access_token,
+        refresh_token: undefined, // API doesn't provide refresh token yet
+        expires_in: undefined, // API doesn't provide expires_in yet
+        user: {
+          id: apiResponse.user.id,
+          email: apiResponse.user.email,
+          name: userData.name, // Use the name from registration
+          role: mapApiRoleToUserRole(apiResponse.user.role),
+          createdAt: apiResponse.user.createdAt,
+          updatedAt: apiResponse.user.updatedAt
+        }
+      };
       
       // Store auth data
       storeAuthData(loginData);

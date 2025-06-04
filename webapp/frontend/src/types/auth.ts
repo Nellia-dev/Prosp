@@ -1,7 +1,7 @@
 export interface User {
   id: string;
   email: string;
-  name: string;
+  name?: string;
   role: UserRole;
   createdAt: string;
   updatedAt: string;
@@ -12,6 +12,18 @@ export enum UserRole {
   USER = 'user',
   VIEWER = 'viewer'
 }
+
+// Map API roles to UserRole enum
+export const mapApiRoleToUserRole = (apiRole: 'admin' | 'user'): UserRole => {
+  switch (apiRole) {
+    case 'admin':
+      return UserRole.ADMIN;
+    case 'user':
+      return UserRole.USER;
+    default:
+      return UserRole.USER;
+  }
+};
 
 export interface LoginRequest {
   email: string;
@@ -26,9 +38,9 @@ export interface RegisterRequest {
 
 export interface LoginResponse {
   access_token: string;
-  refresh_token: string;
+  refresh_token?: string;
   user: User;
-  expires_in: number;
+  expires_in?: number;
 }
 
 export interface RefreshTokenResponse {

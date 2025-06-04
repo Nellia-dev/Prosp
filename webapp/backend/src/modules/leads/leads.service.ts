@@ -85,7 +85,7 @@ export class LeadsService {
   async create(createLeadDto: CreateLeadDto): Promise<Lead> {
     const lead = this.leadRepository.create({
       ...createLeadDto,
-      processing_stage: 'intake' as ProcessingStage,
+      processing_stage: 'lead_qualification' as ProcessingStage,
     });
 
     const savedLead = await this.leadRepository.save(lead);
@@ -131,7 +131,7 @@ export class LeadsService {
   }
 
   async getLeadsByStage(): Promise<{ [key: string]: Lead[] }> {
-    const stages: ProcessingStage[] = ['intake', 'analysis', 'persona', 'strategy', 'message', 'completed'];
+    const stages: ProcessingStage[] = ['lead_qualification', 'analyzing_refining', 'possibly_qualified', 'prospecting', 'revisando', 'primeiras_mensagens', 'negociando', 'desqualificado', 'reuniao_agendada'];
     const result: { [key: string]: Lead[] } = {};
 
     for (const stage of stages) {
@@ -148,7 +148,7 @@ export class LeadsService {
     const totalLeads = await this.leadRepository.count();
     
     const stageStats = await Promise.all(
-      (['intake', 'analysis', 'persona', 'strategy', 'message', 'completed'] as ProcessingStage[]).map(async (stage) => {
+      (['lead_qualification', 'analyzing_refining', 'possibly_qualified', 'prospecting', 'revisando', 'primeiras_mensagens', 'negociando', 'desqualificado', 'reuniao_agendada'] as ProcessingStage[]).map(async (stage) => {
         const count = await this.leadRepository.count({ 
           where: { processing_stage: stage } 
         });
@@ -209,7 +209,7 @@ export class LeadsService {
     const leads = createLeadDtos.map(dto => 
       this.leadRepository.create({
         ...dto,
-        processing_stage: 'intake' as ProcessingStage,
+        processing_stage: 'lead_qualification' as ProcessingStage,
       })
     );
 

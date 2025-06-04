@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { TranslationProvider, useTranslation } from '../hooks/useTranslation';
 import { useAgents, useLeads, useDashboardMetrics } from '../hooks/api';
+import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,7 @@ import { ChatInterface } from '../components/ChatInterface';
 import { BusinessContextCenter } from '../components/BusinessContextCenter';
 import { MetricsVisualization } from '../components/MetricsVisualization';
 import { CRMBoard } from '../components/CRMBoard';
+import { ConnectionStatus } from '../components/ConnectionStatus';
 
 import { AgentStatus, LeadData } from '../types/nellia';
 import { Language } from '../i18n/translations';
@@ -206,6 +208,9 @@ const DashboardContent = () => {
   const { t, language, setLanguage } = useTranslation();
   const [activeTab, setActiveTab] = useState('dashboard');
 
+  // Initialize real-time updates
+  useRealTimeUpdates();
+
   // API calls
   const { data: agentsData = [], isLoading: agentsLoading, error: agentsError } = useAgents();
   const { data: leadsResponse, isLoading: leadsLoading, error: leadsError } = useLeads();
@@ -255,6 +260,9 @@ const DashboardContent = () => {
             </div>
             
             <div className="flex items-center space-x-4">
+              {/* Connection Status */}
+              <ConnectionStatus showText={false} className="mr-2" />
+              
               <Select value={language} onValueChange={(value: Language) => setLanguage(value)}>
                 <SelectTrigger className="w-32 bg-slate-800 border-slate-700 text-white">
                   <Globe className="w-4 h-4 mr-2" />
@@ -267,9 +275,9 @@ const DashboardContent = () => {
                 </SelectContent>
               </Select>
               
-              {/* <Badge variant="outline" className="bg-green-600/20 text-green-400 border-green-600">
-                527% ROI Average
-              </Badge> */}
+              <Badge variant="outline" className="bg-green-600/20 text-green-400 border-green-600">
+                Real-time Active
+              </Badge>
             </div>
           </div>
         </div>

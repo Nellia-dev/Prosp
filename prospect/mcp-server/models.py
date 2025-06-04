@@ -3,9 +3,9 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func # For server-side default timestamps if needed, though Pydantic handles client-side
 import datetime # For default values
 
-from .database import Base
+from database import Base
 # Import Pydantic enums to be reused by SQLAlchemy's Enum type
-from .data_models import LeadProcessingStatusEnum, AgentExecutionStatusEnum
+from data_models import LeadProcessingStatusEnum, AgentExecutionStatusEnum
 
 class LeadProcessingStateOrm(Base):
     __tablename__ = "leads_processing_state"
