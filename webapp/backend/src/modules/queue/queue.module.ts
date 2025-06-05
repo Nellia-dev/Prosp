@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
 import { BullModule } from '@nestjs/bull';
 import { LeadProcessingProcessor } from './processors/lead-processing.processor';
 import { MetricsCollectionProcessor } from './processors/metrics-collection.processor';
@@ -55,6 +56,7 @@ import { WebSocketModule } from '../websocket/websocket.module';
     MetricsModule,
     McpModule,
     WebSocketModule,
+    HttpModule, // Add HttpModule here
   ],
   providers: [
     LeadProcessingProcessor,

@@ -10,11 +10,17 @@ from typing import Dict, Any, List, Optional
 import database
 import models
 # Import from local MCP schemas file
-from .mcp_schemas import (
-    LeadProcessingStateCreate, LeadProcessingState as LeadProcessingStatePydantic,
-    AgentEventPayload, AgentExecutionRecordCreate, AgentExecutionRecord as AgentExecutionRecordPydantic,
-    LeadProcessingStatusEnum, AgentExecutionStatusEnum
-)
+import mcp_schemas
+
+# Define aliases for convenience, similar to how data_bridge.py might handle it
+LeadProcessingStateCreate = mcp_schemas.LeadProcessingStateCreate
+LeadProcessingStatePydantic = mcp_schemas.LeadProcessingState
+AgentEventPayload = mcp_schemas.AgentEventPayload
+AgentExecutionRecordCreate = mcp_schemas.AgentExecutionRecordCreate # Retaining in case it's used elsewhere or planned
+AgentExecutionRecordPydantic = mcp_schemas.AgentExecutionRecord
+LeadProcessingStatusEnum = mcp_schemas.LeadProcessingStatusEnum
+AgentExecutionStatusEnum = mcp_schemas.AgentExecutionStatusEnum
+
 from pydantic import ValidationError
 from sqlalchemy.orm import Session # Added for type hinting
 

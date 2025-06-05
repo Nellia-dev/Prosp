@@ -1,6 +1,9 @@
 import { Processor, Process } from '@nestjs/bull';
 import { Logger, Injectable, Inject, forwardRef } from '@nestjs/common';
 import { Job } from 'bull';
+import { HttpService } from '@nestjs/axios';
+import { AxiosError } from 'axios';
+import { firstValueFrom } from 'rxjs';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ProcessingStage } from '@/shared/enums/nellia.enums';
@@ -22,6 +25,8 @@ export interface LeadProcessingJobData {
 export class LeadProcessingProcessor {
   private readonly logger = new Logger(LeadProcessingProcessor.name);
 
+  private readonly mcpServerBaseUrl = process.env.MCP_SERVER_URL || 'http://localhost:5001';
+
   constructor(
     @InjectRepository(Lead)
     private readonly leadRepository: Repository<Lead>,
@@ -29,6 +34,7 @@ export class LeadProcessingProcessor {
     private readonly agentRepository: Repository<Agent>,
     @Inject(forwardRef(() => WebSocketService))
     private readonly webSocketService: WebSocketService,
+    private readonly httpService: HttpService,
   ) {}
 
   @Process('processLead')
@@ -69,24 +75,66 @@ export class LeadProcessingProcessor {
 
       await job.progress(25);
 
-      // Simulate processing time based on stage complexity
-      const processingTime = this.getProcessingTimeForStage(stage);
-      await this.simulateProcessing(job, processingTime);
+      // Call MCP Server to process the lead
+      const mcpPayload = {
+        url: lead.website,
+        // Add any other necessary data from the 'lead' object that 'convert_site_data_to_validated_lead' might use
+        // For now, assuming 'url' is the primary requirement.
+        // Potentially pass lead data that might be used for 'extracted_text_content' or 'google_search_data' if available
+      };
+      
+      this.logger.log(`Calling MCP server for lead ${leadId} at ${this.mcpServerBaseUrl}/api/lead/${leadId}/process/enhanced`);
+
+      let mcpResponse;
+      try {
+        const response = await firstValueFrom(
+          this.httpService.post(
+            `${this.mcpServerBaseUrl}/api/lead/${leadId}/process/enhanced`,
+            mcpPayload,
+            { timeout: 180000 } // 3 minutes timeout
+          )
+        );
+        mcpResponse = response.data;
+        this.logger.log(`MCP server response for lead ${leadId}: ${JSON.stringify(mcpResponse)}`);
+      } catch (error) {
+        const axiosError = error as AxiosError;
+        this.logger.error(`Error calling MCP server for lead ${leadId}: ${axiosError.message}`, axiosError.stack);
+        if (axiosError.response) {
+          this.logger.error(`MCP Server Error Response: ${JSON.stringify(axiosError.response.data)}`);
+        }
+        // Update agent status to error
+        agent.status = AgentStatus.ERROR;
+        agent.currentTask = `Error calling MCP: ${axiosError.message}`;
+        await this.agentRepository.save(agent);
+        this.webSocketService.broadcastAgentStatusUpdate({
+          id: agent.id,
+          name: agent.name,
+          status: agent.status,
+          current_task: agent.currentTask,
+          last_updated: new Date().toISOString(),
+        });
+        throw new Error(`MCP server call failed: ${axiosError.message}`);
+      }
 
       await job.progress(75);
 
-      // Update lead with processing results
+      // Update lead with processing results from MCP
       const previousStage = lead.processing_stage;
-      lead.processing_stage = this.mapStageToEnum(stage);
-      lead.updated_at = new Date();
-
-      // Simulate some improvements to lead data
-      if (stage === 'analyzing_refining') {
-        lead.relevance_score = Math.min(lead.relevance_score + 0.1, 1.0);
-      } else if (stage === 'possibly_qualified') {
-        lead.roi_potential_score = Math.min(lead.roi_potential_score + 0.15, 1.0);
+      if (mcpResponse && mcpResponse.success && mcpResponse.storage_result && mcpResponse.storage_result.summary_metrics) {
+        const metrics = mcpResponse.storage_result.summary_metrics;
+        lead.relevance_score = metrics.relevance_score !== undefined ? metrics.relevance_score : lead.relevance_score;
+        lead.roi_potential_score = metrics.roi_potential_score !== undefined ? metrics.roi_potential_score : lead.roi_potential_score;
+        lead.qualification_tier = metrics.qualification_tier !== undefined ? metrics.qualification_tier : lead.qualification_tier;
+        // Assuming MCP processing implies a certain stage, e.g., PROSPECTING
+        lead.processing_stage = ProcessingStage.PROSPECTING; 
+      } else {
+        // If MCP response is not as expected or failed, mark stage as error or keep previous
+        this.logger.warn(`MCP processing for lead ${leadId} did not return expected metrics or failed. Check MCP logs.`);
+        // Potentially set to an error stage or re-queue
+        lead.processing_stage = ProcessingStage.REVISANDO; // Or some other appropriate stage
       }
-
+      
+      lead.updated_at = new Date();
       await this.leadRepository.save(lead);
 
       // Broadcast lead update
@@ -119,8 +167,16 @@ export class LeadProcessingProcessor {
       // Update agent status back to active
       agent.status = AgentStatus.ACTIVE;
       agent.currentTask = null;
-      agent.throughput = agent.throughput + 1;
-      agent.llmTokenUsage = agent.llmTokenUsage + Math.floor(Math.random() * 1000) + 500;
+      agent.throughput = (agent.throughput || 0) + 1;
+      
+      // Update LLM token usage from MCP response if available
+      if (mcpResponse && mcpResponse.success && mcpResponse.processing_result && mcpResponse.processing_result.result && mcpResponse.processing_result.result.processing_metadata) {
+        const metadata = mcpResponse.processing_result.result.processing_metadata;
+        agent.llmTokenUsage = (agent.llmTokenUsage || 0) + (metadata.total_tokens_used || 0);
+      } else {
+        // Fallback if token usage not in MCP response
+        agent.llmTokenUsage = (agent.llmTokenUsage || 0) + Math.floor(Math.random() * 1000) + 500;
+      }
       
       // Sync computed fields to metrics
       agent.syncFieldsToMetrics();
@@ -176,57 +232,118 @@ export class LeadProcessingProcessor {
     const { leadIds, agentId } = job.data;
     
     this.logger.log(`Batch processing ${leadIds.length} leads with agent ${agentId}`);
+    const agent = await this.agentRepository.findOne({ where: { id: agentId } });
+    if (!agent) {
+      this.logger.error(`Agent with ID ${agentId} not found for batch processing.`);
+      throw new Error(`Agent with ID ${agentId} not found`);
+    }
 
     const results = [];
     const totalLeads = leadIds.length;
 
-    for (let i = 0; i < leadIds.length; i++) {
+    for (let i = 0; i < totalLeads; i++) {
       const leadId = leadIds[i];
-      const progress = Math.floor(((i + 1) / totalLeads) * 100);
+      const jobProgress = Math.floor(((i + 1) / totalLeads) * 100);
       
       try {
-        // Broadcast processing progress
         this.webSocketService.broadcastProcessingProgress({
           lead_id: leadId,
           current_agent: agentId,
-          progress_percentage: progress,
-          estimated_completion: new Date(Date.now() + (totalLeads - i) * 30000).toISOString(),
-          current_step: `Processing lead ${i + 1} of ${totalLeads}`,
+          progress_percentage: jobProgress,
+          estimated_completion: new Date(Date.now() + (totalLeads - (i + 1)) * 60000).toISOString(), // Estimate 1 min per lead
+          current_step: `Processing lead ${i + 1} of ${totalLeads} via MCP: ${leadId}`,
         });
 
-        // Process individual lead (simplified for batch)
         const lead = await this.leadRepository.findOne({ where: { id: leadId } });
-        if (lead) {
-          lead.processing_stage = ProcessingStage.ANALYZING_REFINING;
-          lead.updated_at = new Date();
-          await this.leadRepository.save(lead);
-
-          this.webSocketService.broadcastLeadUpdate({
-            id: lead.id,
-            company_name: lead.company_name,
-            website: lead.website,
-            processing_stage: lead.processing_stage,
-            qualification_tier: lead.qualification_tier,
-            relevance_score: lead.relevance_score,
-            roi_potential_score: lead.roi_potential_score,
-            updated_at: lead.updated_at.toISOString(),
-          });
-
-          results.push({ leadId, status: 'completed' });
+        if (!lead) {
+          this.logger.warn(`Lead ${leadId} not found in batch. Skipping.`);
+          results.push({ leadId, status: 'skipped', error: 'Lead not found' });
+          continue;
         }
 
-        await job.progress(progress);
+        // Update agent status for current lead
+        agent.currentTask = `Batch Processing: Lead ${lead.company_name}`;
+        await this.agentRepository.save(agent);
+        this.webSocketService.broadcastAgentStatusUpdate({
+            id: agent.id, name: agent.name, status: AgentStatus.PROCESSING, 
+            current_task: agent.currentTask, last_updated: new Date().toISOString()
+        });
         
-        // Small delay between leads
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        const mcpPayload = { url: lead.website };
+        this.logger.log(`Calling MCP server for batch lead ${leadId} at ${this.mcpServerBaseUrl}/api/lead/${leadId}/process/enhanced`);
+        
+        let mcpResponseData;
+        try {
+            const mcpResponse = await firstValueFrom(
+              this.httpService.post(
+                `${this.mcpServerBaseUrl}/api/lead/${leadId}/process/enhanced`,
+                mcpPayload,
+                { timeout: 180000 } // 3 minutes timeout
+              )
+            );
+            mcpResponseData = mcpResponse.data;
+            this.logger.log(`MCP server response for batch lead ${leadId}: ${JSON.stringify(mcpResponseData)}`);
+
+            if (mcpResponseData && mcpResponseData.success && mcpResponseData.storage_result && mcpResponseData.storage_result.summary_metrics) {
+                const metrics = mcpResponseData.storage_result.summary_metrics;
+                lead.relevance_score = metrics.relevance_score !== undefined ? metrics.relevance_score : lead.relevance_score;
+                lead.roi_potential_score = metrics.roi_potential_score !== undefined ? metrics.roi_potential_score : lead.roi_potential_score;
+                lead.qualification_tier = metrics.qualification_tier !== undefined ? metrics.qualification_tier : lead.qualification_tier;
+                lead.processing_stage = ProcessingStage.PROSPECTING;
+            } else {
+                this.logger.warn(`MCP processing for batch lead ${leadId} did not return expected metrics or failed.`);
+                lead.processing_stage = ProcessingStage.REVISANDO;
+            }
+            lead.updated_at = new Date();
+            await this.leadRepository.save(lead);
+
+            this.webSocketService.broadcastLeadUpdate({
+                id: lead.id, company_name: lead.company_name, website: lead.website,
+                processing_stage: lead.processing_stage, qualification_tier: lead.qualification_tier,
+                relevance_score: lead.relevance_score, roi_potential_score: lead.roi_potential_score,
+                updated_at: lead.updated_at.toISOString(),
+            });
+            results.push({ leadId, status: 'completed' });
+
+            // Update agent LLM tokens from MCP if available
+            if (mcpResponseData && mcpResponseData.success && mcpResponseData.processing_result && mcpResponseData.processing_result.result && mcpResponseData.processing_result.result.processing_metadata) {
+                const metadata = mcpResponseData.processing_result.result.processing_metadata;
+                agent.llmTokenUsage = (agent.llmTokenUsage || 0) + (metadata.total_tokens_used || 0);
+            }
+
+        } catch (mcpError) {
+            const axiosError = mcpError as AxiosError;
+            this.logger.error(`Error calling MCP server for batch lead ${leadId}: ${axiosError.message}`, axiosError.stack);
+            if (axiosError.response) {
+                this.logger.error(`MCP Server Error Response for batch lead ${leadId}: ${JSON.stringify(axiosError.response.data)}`);
+            }
+            results.push({ leadId, status: 'failed', error: `MCP call failed: ${axiosError.message}` });
+            // Optionally update lead status to an error state here
+        }
+        
+        await job.progress(jobProgress);
+        // Small delay between leads if needed, but MCP calls themselves will take time
+        // await new Promise(resolve => setTimeout(resolve, 500));
 
       } catch (error) {
-        this.logger.error(`Failed to process lead ${leadId} in batch:`, error);
+        this.logger.error(`Failed to process lead ${leadId} in batch: ${error.message}`, error.stack);
         results.push({ leadId, status: 'failed', error: error.message });
       }
     }
 
-    this.logger.log(`Batch processing completed. Processed ${results.length} leads`);
+    // Reset agent status after batch
+    agent.status = AgentStatus.ACTIVE;
+    agent.currentTask = null;
+    agent.throughput = (agent.throughput || 0) + leadIds.length; // Increment by number of leads attempted
+    agent.syncFieldsToMetrics();
+    await this.agentRepository.save(agent);
+    this.webSocketService.broadcastAgentStatusUpdate({
+        id: agent.id, name: agent.name, status: agent.status, 
+        current_task: agent.currentTask, throughput: agent.throughput, 
+        llm_token_usage: agent.llmTokenUsage, last_updated: new Date().toISOString()
+    });
+
+    this.logger.log(`Batch processing completed. Processed ${results.filter(r => r.status === 'completed').length} of ${totalLeads} leads successfully.`);
     return results;
   }
 
@@ -246,29 +363,7 @@ export class LeadProcessingProcessor {
     return stageMap[stage] || ProcessingStage.LEAD_QUALIFICATION;
   }
 
-  private getProcessingTimeForStage(stage: string): number {
-    const stageTimes = {
-      'lead_qualification': 3000,
-      'analyzing_refining': 5000,
-      'possibly_qualified': 4000,
-      'prospecting': 6000,
-      'revisando': 3000,
-      'primeiras_mensagens': 4000,
-      'negociando': 7000,
-      'reuniao_agendada': 2000,
-    };
-
-    return stageTimes[stage] || 4000;
-  }
-
-  private async simulateProcessing(job: Job, totalTime: number): Promise<void> {
-    const steps = 10;
-    const stepTime = totalTime / steps;
-
-    for (let i = 0; i < steps; i++) {
-      await new Promise(resolve => setTimeout(resolve, stepTime));
-      const progress = 25 + Math.floor((i / steps) * 50); // Progress from 25% to 75%
-      await job.progress(progress);
-    }
-  }
+  // getProcessingTimeForStage and simulateProcessing are no longer needed as we call the actual MCP server.
+  // private getProcessingTimeForStage(stage: string): number { ... }
+  // private async simulateProcessing(job: Job, totalTime: number): Promise<void> { ... }
 }
