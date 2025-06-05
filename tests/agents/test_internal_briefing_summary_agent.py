@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch, AsyncMock
 import json
 
 from agents.internal_briefing_summary_agent import (
@@ -7,17 +7,20 @@ from agents.internal_briefing_summary_agent import (
     InternalBriefingSummaryOutput, InternalBriefingSection
 )
 from core_logic.llm_client import LLMClientBase, LLMResponse
+from mcp_server.data_models import AgentExecutionStatusEnum
 
-class TestInternalBriefingSummaryAgent(unittest.TestCase):
+class TestInternalBriefingSummaryAgent(unittest.IsolatedAsyncioTestCase): # Changed to IsolatedAsyncioTestCase
 
     def setUp(self):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
-        self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
+        self.mock_llm_client.generate_llm_response = AsyncMock() # Mock async method
+        self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0, "llm_calls": 0, "llm_usage": []}
         self.mock_llm_client.update_usage_stats = MagicMock()
 
         self.agent = InternalBriefingSummaryAgent(llm_client=self.mock_llm_client)
 
-    def test_process_success_generates_briefing(self):
+    @patch('agents.base_agent.BaseAgent._report_event_to_mcp')
+    async def test_process_success_generates_briefing(self, mock_report_event: MagicMock): # Made async
         mock_json_output_dict = {
             "executive_summary": "Lead TechGlobal: Alto potencial para Solução Z. Foco em otimizar P&D.",
             "lead_overview": {
@@ -56,17 +59,16 @@ class TestInternalBriefingSummaryAgent(unittest.TestCase):
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
 
-        self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=300, input_tokens=150, output_tokens=150)
+        self.mock_llm_client.generate_llm_response.return_value = mock_json_output_str
 
         test_input_data = {
             "company_name": "TechGlobal", "lead_url": "techglobal.com",
             "product_service_offered_by_us": "Solução Z",
             "lead_analysis_summary": {"company_sector": "IA", "main_services": ["P&D em IA"]},
-            # ... (other summarized data points as expected by the agent's prompt formatting)
         }
         test_input = InternalBriefingSummaryInput(all_lead_data=test_input_data)
 
-        result = self.agent.execute(test_input)
+        result = await self.agent.execute(test_input, lead_id="test_lead_01", run_id="test_run_01")
 
         self.assertIsInstance(result, InternalBriefingSummaryOutput)
         self.assertIsNone(result.error_message)
@@ -75,22 +77,36 @@ class TestInternalBriefingSummaryAgent(unittest.TestCase):
         self.assertIn("Dr. Ana K.", result.persona_profile_summary.content)
         self.assertEqual(result.recommended_next_step, "Enviar email personalizado para Dr. Ana K. com case de P&D.")
 
-        self.mock_llm_client.generate.assert_called_once()
-        called_prompt = self.mock_llm_client.generate.call_args[0][0]
+        self.mock_llm_client.generate_llm_response.assert_called_once()
+        called_prompt = self.mock_llm_client.generate_llm_response.call_args[0][0]
         self.assertIn("Responda APENAS com um objeto JSON", called_prompt)
-        self.assertIn("executive_summary", called_prompt) # Check a key field from the JSON structure
+        self.assertIn("executive_summary", called_prompt)
 
-    def test_process_llm_returns_malformed_json(self):
+        mock_report_event.assert_called_once()
+        args, _ = mock_report_event.call_args
+        self.assertEqual(args[0], "test_lead_01")
+        self.assertEqual(args[1], self.agent.name)
+        self.assertEqual(args[2], AgentExecutionStatusEnum.SUCCESS)
+        self.assertIsInstance(args[5], InternalBriefingSummaryOutput)
+        self.assertEqual(args[5].executive_summary, "Lead TechGlobal: Alto potencial para Solução Z. Foco em otimizar P&D.")
+
+
+    @patch('agents.base_agent.BaseAgent._report_event_to_mcp')
+    async def test_process_llm_returns_malformed_json(self, mock_report_event: MagicMock): # Made async
         malformed_json_str = '{ "executive_summary": "Briefing quebrado..." '
-        self.mock_llm_client.generate.return_value = LLMResponse(content=malformed_json_str, provider_name="mock", model_name="mock_model", total_tokens=10, input_tokens=5, output_tokens=5)
+        self.mock_llm_client.generate_llm_response.return_value = malformed_json_str
 
         test_input = InternalBriefingSummaryInput(all_lead_data={"company_name": "Test"})
-        result = self.agent.execute(test_input)
+        result = await self.agent.execute(test_input, lead_id="test_lead_02", run_id="test_run_02")
 
         self.assertIsInstance(result, InternalBriefingSummaryOutput)
         self.assertIsNotNone(result.error_message)
         self.assertIn("Failed to parse LLM response as JSON", result.error_message)
-        self.assertEqual(result.executive_summary, "Não especificado") # Default value
+
+        mock_report_event.assert_called_once()
+        args, _ = mock_report_event.call_args
+        self.assertEqual(args[0], "test_lead_02")
+        self.assertEqual(args[2], AgentExecutionStatusEnum.FAILED)
 
 if __name__ == '__main__':
     unittest.main()

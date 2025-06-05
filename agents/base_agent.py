@@ -3,36 +3,43 @@ Base agent class that provides common functionality for all agents in the pipeli
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, TypeVar, Generic, List, get_args # Added List, get_args
+from typing import Any, Dict, Optional, TypeVar, Generic, List, get_args
 from datetime import datetime
 from loguru import logger
-from pydantic import BaseModel, ValidationError, Field # Added Field
+from pydantic import BaseModel, ValidationError, Field
 import traceback
 import json
-import os # Added for MCP config
-import requests # Added for MCP reporting
+import os
+import requests
 
-from core_logic.llm_client import LLMClientBase, LLMClientFactory, LLMProvider, LLMResponse # Added LLMResponse
+# MCP Server Imports
+from mcp_server.data_models import AgentEventPayload, AgentExecutionStatusEnum
+
+from core_logic.llm_client import LLMClientBase, LLMClientFactory, LLMProvider, LLMResponse
 
 
 # Type variables for input and output types
 TInput = TypeVar('TInput', bound=BaseModel)
 TOutput = TypeVar('TOutput', bound=BaseModel)
 
+# MCP Configuration (Module Level)
+MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://127.0.0.1:5001")
+ENABLE_MCP_REPORTING = os.getenv("ENABLE_MCP_REPORTING", "false").lower() == "true"
+
 
 class AgentMetrics(BaseModel):
     """Metrics for agent performance tracking"""
-    agent_name: str # Added agent_name for clarity in metrics object
-    start_time: Optional[datetime] = None # Made optional, set at start of execute
+    agent_name: str
+    start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     processing_time_seconds: Optional[float] = None
     success: bool = False
     error_message: Optional[str] = None
-    llm_calls: int = 0 # Added
-    input_tokens: int = 0 # Added
-    output_tokens: int = 0 # Added
-    total_tokens: int = 0 # Added
-    llm_usage: List[Dict[str, Any]] = Field(default_factory=list) # Store individual call usage, changed from Optional[Dict]
+    llm_calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    llm_usage: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class BaseAgent(ABC, Generic[TInput, TOutput]):
@@ -78,13 +85,15 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
 
 
         # Initialize metrics object for a single execution context
-        self.metrics = AgentMetrics(agent_name=self.name) # metrics is now a single object, not a list
+        self.metrics = AgentMetrics(agent_name=self.name)
         
-        # MCP Server Reporting Configuration
-        self.mcp_server_url = os.getenv("MCP_SERVER_URL", "http://127.0.0.1:5001")
-        self.enable_mcp_reporting = os.getenv("ENABLE_MCP_REPORTING", "false").lower() == "true"
+        # MCP Server Reporting Configuration from module level constants
+        self.mcp_server_url = MCP_SERVER_URL
+        self.enable_mcp_reporting = ENABLE_MCP_REPORTING
         
         logger.info(f"Initialized agent: {self.name}")
+        if self.enable_mcp_reporting:
+            logger.info(f"MCP Reporting enabled for {self.name}, server: {self.mcp_server_url}")
     
     @abstractmethod
     def process(self, input_data: TInput) -> TOutput:
@@ -100,158 +109,199 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
             The processed output data
         """
         pass
-    
-    def execute(self, input_data: TInput, lead_id: Optional[str] = None, run_id: Optional[str] = None) -> TOutput:
+
+    def execute(self, input_data: TInput, lead_id: str, run_id: str) -> TOutput: # Changed lead_id, run_id to non-optional
         """
         Main execution method for the agent.
         Handles timing, error logging, LLM usage tracking, and MCP reporting.
         Calls the process method that should be implemented by subclasses.
         """
-        self.metrics = AgentMetrics(agent_name=self.name, start_time=datetime.utcnow()) # Reset metrics
+        self.metrics = AgentMetrics(agent_name=self.name, start_time=datetime.utcnow())
         
         output: Optional[TOutput] = None
-        effective_lead_id = lead_id or "unknown_lead"
-        effective_run_id = run_id or "unknown_run"
-        output_json_str: Optional[str] = None
+        # lead_id and run_id are now guaranteed to be strings.
 
         try:
-            self.logger.info(f"Agent {self.name} (Lead: {effective_lead_id}, Run: {effective_run_id}): Starting execution.")
-            self.logger.debug(f"Agent {self.name} (Lead: {effective_lead_id}): Input type: {type(input_data).__name__}, Input data: {input_data.model_dump_json(indent=2, exclude_none=True)[:500]}...")
+            self.logger.info(f"Agent {self.name} (Lead: {lead_id}, Run: {run_id}): Starting execution.")
+            self.logger.debug(f"Agent {self.name} (Lead: {lead_id}): Input type: {type(input_data).__name__}, Input data: {input_data.model_dump_json(indent=2, exclude_none=True)[:500]}...")
             
             t_input_type_args = get_args(self.__orig_bases__[0]) if hasattr(self, "__orig_bases__") else None
             if t_input_type_args:
                 t_input_type = t_input_type_args[0]
                 if not isinstance(input_data, t_input_type):
-                    self.logger.error(f"Input type {type(input_data)} does not match expected {t_input_type}")
+                    self.logger.error(f"Agent {self.name} (Lead: {lead_id}): Input type {type(input_data)} does not match expected {t_input_type}")
                     raise ValueError(f"Input must be a Pydantic model of type {t_input_type.__name__}, got {type(input_data).__name__}")
             
-            output = self.process(input_data)
+            output = self.process(input_data) # Core agent logic
             
             if t_input_type_args:
                 t_output_type = t_input_type_args[1]
                 if not isinstance(output, t_output_type):
-                     self.logger.error(f"Output type {type(output)} does not match expected {t_output_type}")
+                     self.logger.error(f"Agent {self.name} (Lead: {lead_id}): Output type {type(output)} does not match expected {t_output_type}")
                      raise ValueError(f"Output must be a Pydantic model of type {t_output_type.__name__}, got {type(output).__name__}")
 
+            # Check for error message in output model itself (common pattern)
             if hasattr(output, 'error_message') and getattr(output, 'error_message'):
                 self.metrics.success = False
                 self.metrics.error_message = getattr(output, 'error_message')
-                self.logger.warning(f"Agent {self.name} (Lead: {effective_lead_id}): Execution completed with error in output: {self.metrics.error_message}")
+                self.logger.warning(f"Agent {self.name} (Lead: {lead_id}): Execution completed with error in output model: {self.metrics.error_message}")
             else:
                 self.metrics.success = True
-            self.logger.info(f"Agent {self.name} (Lead: {effective_lead_id}): Execution completed. Success: {self.metrics.success}")
+            self.logger.info(f"Agent {self.name} (Lead: {lead_id}): Execution completed. Success: {self.metrics.success}")
 
-        except ValidationError as e:
-            error_msg = f"Pydantic Validation error during agent {self.name} execution: {e}"
-            self.logger.error(f"Agent {self.name} (Lead: {effective_lead_id}): {error_msg}")
+        except ValidationError as e_val:
+            error_msg = f"Pydantic Validation error during agent {self.name} execution: {e_val}"
+            self.logger.error(f"Agent {self.name} (Lead: {lead_id}): {error_msg}")
             self.metrics.success = False
-            self.metrics.error_message = error_msg
+            self.metrics.error_message = error_msg # Use the detailed validation error
+            # Attempt to create a default error output object
             try:
                 output_model_type = get_args(self.__orig_bases__[0])[1]
                 if hasattr(output_model_type, "model_fields") and 'error_message' in output_model_type.model_fields:
-                    output = output_model_type(error_message=error_msg)
-                elif hasattr(output_model_type, "__fields__") and 'error_message' in output_model_type.__fields__:
-                    output = output_model_type(error_message=error_msg) # type: ignore
+                    output = output_model_type(error_message=self.metrics.error_message) # type: ignore
             except Exception as e_inner:
-                self.logger.error(f"Agent {self.name} (Lead: {effective_lead_id}): Could not form error output object: {e_inner}")
+                self.logger.error(f"Agent {self.name} (Lead: {lead_id}): Could not form error output object after ValidationError: {e_inner}")
+            raise # Re-raise ValidationError
 
-        except Exception as e:
-            error_msg = f"Processing error in agent {self.name}: {str(e)}\n{traceback.format_exc()}"
-            self.logger.error(f"Agent {self.name} (Lead: {effective_lead_id}): {error_msg}")
+        except Exception as e_gen:
+            error_msg = f"Processing error in agent {self.name}: {str(e_gen)}\n{traceback.format_exc()}"
+            self.logger.error(f"Agent {self.name} (Lead: {lead_id}): {error_msg}")
             self.metrics.success = False
-            self.metrics.error_message = str(e)
+            self.metrics.error_message = str(e_gen)
             try:
                 output_model_type = get_args(self.__orig_bases__[0])[1]
                 if hasattr(output_model_type, "model_fields") and 'error_message' in output_model_type.model_fields:
-                    output = output_model_type(error_message=str(e))
-                elif hasattr(output_model_type, "__fields__") and 'error_message' in output_model_type.__fields__:
-                    output = output_model_type(error_message=str(e)) # type: ignore
+                    output = output_model_type(error_message=self.metrics.error_message) # type: ignore
             except Exception as e_inner:
-                 self.logger.error(f"Agent {self.name} (Lead: {effective_lead_id}): Could not form error output object after general exception: {e_inner}")
+                 self.logger.error(f"Agent {self.name} (Lead: {lead_id}): Could not form error output object after general exception: {e_inner}")
+            raise # Re-raise general exception
             
         finally:
             self.metrics.end_time = datetime.utcnow()
             if self.metrics.start_time:
                 self.metrics.processing_time_seconds = (self.metrics.end_time - self.metrics.start_time).total_seconds()
             
-            if output is not None:
-                try:
-                    output_json_str = output.model_dump_json(exclude_none=True) if hasattr(output, "model_dump_json") else json.dumps(str(output))
-                except Exception as e_json:
-                    self.logger.error(f"Agent {self.name} (Lead: {effective_lead_id}): Failed to serialize output to JSON for MCP: {e_json}")
-                    try:
-                        output_dict = output.model_dump() if hasattr(output, "model_dump") else dict(output) if hasattr(output, "__dict__") else {"raw_output": str(output)}
-                        output_json_str = json.dumps({"error": "Failed to serialize output with model_dump_json for MCP", "detail": str(e_json), "fallback_output": output_dict})
-                    except Exception as e_dict_json:
-                         output_json_str = json.dumps({"error": "Failed to serialize output completely for MCP", "detail": str(e_dict_json)})
-            else:
-                output_json_str = json.dumps({"error": "Agent output was None.", "agent_error_message": self.metrics.error_message})
+            # Consolidate LLM usage if client exists and has tracking
+            if self.llm_client and hasattr(self.llm_client, 'get_usage_stats'):
+                llm_stats = self.llm_client.get_usage_stats() # Assuming this returns a dict like {"total_tokens": ..., "input_tokens": ..., ...}
+                self.metrics.llm_calls = llm_stats.get("llm_calls", self.metrics.llm_calls) # if get_usage_stats has #calls
+                self.metrics.input_tokens = llm_stats.get("input_tokens", self.metrics.input_tokens)
+                self.metrics.output_tokens = llm_stats.get("output_tokens", self.metrics.output_tokens)
+                self.metrics.total_tokens = llm_stats.get("total_tokens", self.metrics.total_tokens)
+                # self.metrics.llm_usage might be populated by individual LLM calls if needed, or get_usage_stats provides all
 
-            if self.enable_mcp_reporting and lead_id and run_id:
-                self._report_event_to_mcp(effective_lead_id, effective_run_id, output_json_str)
+            mcp_status = AgentExecutionStatusEnum.SUCCESS if self.metrics.success else AgentExecutionStatusEnum.FAILED
 
-            self.logger.info(f"Agent {self.name} (Lead: {effective_lead_id}, Run: {effective_run_id}): Finished in {self.metrics.processing_time_seconds:.4f}s. Success: {self.metrics.success}. LLM Calls: {self.metrics.llm_calls}, Total Tokens: {self.metrics.total_tokens}")
+            # metrics_dict for MCP: using the AgentMetrics model itself, or a subset
+            metrics_for_mcp = self.metrics.model_dump(exclude={'start_time', 'end_time'}) # Exclude Nones, or specific fields
+
+            self._report_event_to_mcp(
+                lead_id=lead_id,
+                agent_name=self.name,
+                status=mcp_status,
+                start_time=self.metrics.start_time,
+                end_time=self.metrics.end_time,
+                output_model_instance=output, # Pass the Pydantic model instance
+                metrics_dict=metrics_for_mcp,
+                error_message_str=self.metrics.error_message
+            )
+
+            self.logger.info(f"Agent {self.name} (Lead: {lead_id}, Run: {run_id}): Finished in {self.metrics.processing_time_seconds:.4f}s. Success: {self.metrics.success}. LLM Calls: {self.metrics.llm_calls}, Total Tokens: {self.metrics.total_tokens}")
             if self.metrics.error_message and not self.metrics.success:
-                 self.logger.error(f"Agent {self.name} (Lead: {effective_lead_id}, Run: {effective_run_id}): Error: {self.metrics.error_message}")
+                 self.logger.error(f"Agent {self.name} (Lead: {lead_id}, Run: {run_id}): Error: {self.metrics.error_message}")
 
+        # This part is reached only if no exceptions were re-raised by the except blocks.
         if output is None:
-             self.logger.critical(f"Agent {self.name} (Lead: {effective_lead_id}): Output is None at the end of execute. This indicates a logic flaw or TOutput cannot represent error state adequately.")
+             # This case should ideally be prevented by the except blocks creating a default error TOutput,
+             # or by self.process() always returning a valid TOutput.
+             self.logger.critical(f"Agent {self.name} (Lead: {lead_id}): Output is None at the end of execute and no exception was propagated. This is unexpected.")
+             # Attempt to create a default error output if possible
              try:
                 output_model_type = get_args(self.__orig_bases__[0])[1]
-                error_msg_content = self.metrics.error_message or "Unknown error: Output was None and no specific error message in metrics."
+                err_msg = self.metrics.error_message or "Output was None and no prior error captured."
                 if hasattr(output_model_type, "model_fields") and 'error_message' in output_model_type.model_fields:
-                    output = output_model_type(error_message=error_msg_content)
-                elif hasattr(output_model_type, "__fields__") and 'error_message' in output_model_type.__fields__:
-                    output = output_model_type(error_message=error_msg_content) # type: ignore
-                else:
-                    raise ValueError(f"Agent {self.name}: Output is None and TOutput type ({output_model_type}) has no 'error_message' field. Cannot create default error response.")
-             except Exception as e_final:
-                 self.logger.error(f"Agent {self.name} (Lead: {effective_lead_id}): Truly failed to create any TOutput: {e_final}")
-                 raise ValueError(f"Agent {self.name}: Critical error - output is None and cannot form error response. Original error: {self.metrics.error_message or 'Unknown'}")
-        return output
+                    return output_model_type(error_message=err_msg) # type: ignore
+                else: # If TOutput can't represent an error, raise a generic critical error.
+                    raise Exception(f"Critical: Agent {self.name} resulted in None output without error propagation, and TOutput cannot describe errors.")
+             except Exception as e_final_create:
+                 raise Exception(f"Critical: Agent {self.name} resulted in None output. Attempt to create error TOutput failed: {e_final_create}. Original error: {self.metrics.error_message}")
 
-    def _report_event_to_mcp(self, lead_id: str, run_id: str, output_json_str: Optional[str]):
-        """Helper method to report agent execution event to MCP server."""
-        if not self.enable_mcp_reporting:
+        return output # Return the Pydantic model instance
+
+    def _report_event_to_mcp(
+        self,
+        lead_id: str,
+        agent_name: str,
+        status: AgentExecutionStatusEnum,
+        start_time: Optional[datetime], # Make optional to handle cases where it might not be set
+        end_time: Optional[datetime],   # Make optional
+        output_model_instance: Optional[BaseModel],
+        metrics_dict: Optional[Dict[str, Any]],
+        error_message_str: Optional[str]
+    ) -> None:
+        if not self.enable_mcp_reporting: # Check instance variable, not global
             return
 
-        metrics_payload_dict = {
-            "llm_calls": self.metrics.llm_calls,
-            "total_tokens": self.metrics.total_tokens,
-            "input_tokens": self.metrics.input_tokens,
-            "output_tokens": self.metrics.output_tokens,
-            "llm_usage_details": self.metrics.llm_usage
-        }
-        try:
-            metrics_json_str = json.dumps(metrics_payload_dict)
-        except Exception as e_metrics_json:
-            self.logger.error(f"Agent {self.name} (Lead: {lead_id}): Failed to serialize metrics to JSON: {e_metrics_json}")
-            metrics_json_str = json.dumps({"error": "Failed to serialize metrics", "detail": str(e_metrics_json)})
+        processing_time_seconds = None
+        if start_time and end_time: # Check if start_time and end_time are not None
+            processing_time_seconds = (end_time - start_time).total_seconds()
 
-        event_payload = {
-            "agent_name": self.name,
-            "status": "SUCCESS" if self.metrics.success else "FAILED",
-            "start_time": self.metrics.start_time.isoformat() if self.metrics.start_time else datetime.utcnow().isoformat(),
-            "end_time": self.metrics.end_time.isoformat() if self.metrics.end_time else datetime.utcnow().isoformat(),
-            "processing_time_seconds": self.metrics.processing_time_seconds,
-            "output_json": output_json_str,
-            "metrics_json": metrics_json_str,
-            "error_message": self.metrics.error_message
-        }
+        output_json_str = None
+        if output_model_instance and hasattr(output_model_instance, 'model_dump_json'):
+            try:
+                output_json_str = output_model_instance.model_dump_json()
+            except Exception as e:
+                logger.error(f"[{self.name}] MCP Reporting: Error serializing output model for lead {lead_id}: {e}")
+                output_json_str = json.dumps({"serialization_error": str(e)})
+        elif isinstance(output_model_instance, dict):
+            try:
+                output_json_str = json.dumps(output_model_instance)
+            except Exception as e:
+                logger.error(f"[{self.name}] MCP Reporting: Error serializing dict output for lead {lead_id}: {e}")
+                output_json_str = json.dumps({"serialization_error": str(e)})
+        elif output_model_instance is None and status == AgentExecutionStatusEnum.FAILED:
+             output_json_str = json.dumps({"error": "Agent execution failed before output could be generated."})
 
-        endpoint_url = f"{self.mcp_server_url}/api/lead/{lead_id}/event"
+
+        metrics_json_str = None
+        if metrics_dict:
+            try:
+                metrics_json_str = json.dumps(metrics_dict)
+            except Exception as e:
+                logger.error(f"[{self.name}] MCP Reporting: Error serializing metrics for lead {lead_id}: {e}")
+                metrics_json_str = json.dumps({"serialization_error": str(e)})
+
+        # Ensure start_time and end_time are valid for AgentEventPayload
+        # If they were None, use current time as a fallback, though this indicates an issue.
+        _start_time = start_time or datetime.utcnow()
+        _end_time = end_time or datetime.utcnow()
+        if not start_time: logger.warning(f"[{self.name}] MCP Reporting: start_time was None for agent {agent_name}, lead {lead_id}. Using current time.")
+        if not end_time: logger.warning(f"[{self.name}] MCP Reporting: end_time was None for agent {agent_name}, lead {lead_id}. Using current time.")
+
+
+        payload_data = AgentEventPayload(
+            agent_name=agent_name,
+            status=status,
+            start_time=_start_time,
+            end_time=_end_time,
+            processing_time_seconds=processing_time_seconds,
+            output_json=output_json_str,
+            metrics_json=metrics_json_str,
+            error_message=error_message_str
+        )
+
+        endpoint_url = f"{self.mcp_server_url}/api/lead/{lead_id}/event" # Use instance variable
         try:
-            self.logger.debug(f"Agent {self.name} (Lead: {lead_id}): Reporting event to MCP: {endpoint_url} with payload keys: {list(event_payload.keys())}")
-            response = requests.post(endpoint_url, json=event_payload, timeout=10)
+            response = requests.post(endpoint_url, json=payload_data.model_dump(), timeout=5) # Use model_dump()
             response.raise_for_status()
-            self.logger.info(f"Agent {self.name} (Lead: {lead_id}): Successfully reported event to MCP server (status {response.status_code}).")
+            logger.info(f"[{self.name}] MCP Reporting: Successfully reported event for lead {lead_id} to {endpoint_url}")
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"Agent {self.name} (Lead: {lead_id}): Failed to report event to MCP server at {endpoint_url}. Error: {e}")
-        except Exception as e_unexpected:
-            self.logger.error(f"Agent {self.name} (Lead: {lead_id}): Unexpected error while reporting to MCP: {e_unexpected}")
+            logger.error(f"[{self.name}] MCP Reporting: Failed to report event for lead {lead_id} to {endpoint_url}. Error: {e}")
+        except Exception as e_unex:
+            logger.error(f"[{self.name}] MCP Reporting: Unexpected error for lead {lead_id}. Error: {e_unex}")
 
 
-    def generate_llm_response(self, prompt: str) -> str:
+    async def generate_llm_response(self, prompt: str, temperature: float = 0.7, max_tokens: int = 1000) -> LLMResponse: # Added temperature and max_tokens and return type
         """
         Generate a response from the LLM with error handling.
         

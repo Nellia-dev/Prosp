@@ -21,6 +21,7 @@ GEMINI_TEXT_INPUT_TRUNCATE_CHARS: int = 30000 # Max characters for Gemini text i
 class TavilyEnrichmentInput(BaseModel):
     company_name: str
     initial_extracted_text: str
+    product_service_offered: Optional[str] = None # Added for context in summarization
 
 class TavilyEnrichmentOutput(BaseModel):
     enriched_data: str
@@ -162,14 +163,16 @@ class TavilyEnrichmentAgent(BaseAgent[TavilyEnrichmentInput, TavilyEnrichmentOut
                 self.logger.info("Summarizing Tavily search results with LLM.")
                 summarization_prompt = f"""
                 Based on the initial information about '{input_data.company_name}' and the following search results from Tavily, provide a concise and comprehensive summary.
-                Focus on enriching the initial data with new, relevant B2B insights. Avoid redundancy.
-                If the search results are irrelevant or unhelpful, state that and primarily use the initial text.
+                Focus on enriching the initial data with new, relevant B2B insights, particularly those that might be useful when considering the company as a prospect for: '{input_data.product_service_offered if input_data.product_service_offered else "nossos produtos/serviços"}'.
+                Avoid redundancy. If the search results are irrelevant or unhelpful, state that and primarily use the initial text.
 
                 Initial Information:
                 {self._truncate_text(input_data.initial_extracted_text, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 2)}
 
                 Tavily Search Results:
                 {self._truncate_text(search_results_text, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 2)}
+
+                Our Product/Service Context (for relevance): {input_data.product_service_offered if input_data.product_service_offered else "Não especificado, foque em insights gerais B2B."}
 
                 Return only the summarized and enriched text.
                 """

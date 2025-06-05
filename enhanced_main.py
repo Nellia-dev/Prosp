@@ -197,11 +197,11 @@ class EnhancedNelliaProspector:
 
                 progress.update(task, description=f"[blue]Std Proc: {str(site_data.url)[:50]}...")
                 try:
-                    validated_lead = await self.lead_intake_agent.execute(site_data) # await
+                    validated_lead = await self.lead_intake_agent.execute(site_data, lead_id=lead_id, run_id=run_id) # await and pass ids
                     if not validated_lead.is_valid:
                         failed += 1; progress.advance(task); continue
                     
-                    analyzed_lead = await self.lead_analysis_agent.execute(validated_lead) # await
+                    analyzed_lead = await self.lead_analysis_agent.execute(validated_lead, lead_id=lead_id, run_id=run_id) # await and pass ids
                     if analyzed_lead.analysis.relevance_score < 0.3:
                         failed += 1; progress.advance(task); continue
                     
@@ -244,11 +244,11 @@ class EnhancedNelliaProspector:
 
                 progress.update(task, description=f"[green]Enh Proc: {str(site_data.url)[:50]}...")
                 try:
-                    validated_lead = await self.lead_intake_agent.execute(site_data) # await
+                    validated_lead = await self.lead_intake_agent.execute(site_data, lead_id=lead_id, run_id=run_id) # await and pass ids
                     if not validated_lead.is_valid:
                         failed += 1; progress.advance(task); continue
                     
-                    analyzed_lead = await self.lead_analysis_agent.execute(validated_lead) # await
+                    analyzed_lead = await self.lead_analysis_agent.execute(validated_lead, lead_id=lead_id, run_id=run_id) # await and pass ids
                     if analyzed_lead.analysis.relevance_score < 0.1:
                         failed += 1; progress.advance(task); continue
                     

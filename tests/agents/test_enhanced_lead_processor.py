@@ -52,10 +52,10 @@ class TestEnhancedLeadProcessor(unittest.IsolatedAsyncioTestCase): # Changed to 
             product_service_context="Nosso Produto Incrível de Teste",
             competitors_list="Concorrente A, Concorrente B",
             tavily_api_key="test_tavily_key",
-            mcp_server_url="http://mock-mcp-server.com", # Added
-            enable_mcp_reporting=True # Added
+            mcp_server_url="http://mock-mcp-server.com",
+            enable_mcp_reporting=True
         )
-        self.processor._report_agent_event_to_mcp = MagicMock() # Mock the reporting method
+        # self.processor._report_agent_event_to_mcp = MagicMock() # Removed: Method no longer exists in EnhancedLeadProcessor
 
         # Mock all internal agents - now using AsyncMock for their execute methods
         self.processor.tavily_enrichment_agent = MagicMock(spec=TavilyEnrichmentAgent)
@@ -89,7 +89,7 @@ class TestEnhancedLeadProcessor(unittest.IsolatedAsyncioTestCase): # Changed to 
         self.processor.internal_briefing_summary_agent = MagicMock(spec=InternalBriefingSummaryAgent)
         self.processor.internal_briefing_summary_agent.execute = AsyncMock()
 
-    async def test_process_successful_orchestration(self): # Made async
+    async def test_process_successful_orchestration(self):
         # 1. Prepare Input AnalyzedLead
         mock_site_data = SiteData(
             url="http://example.com",
@@ -240,21 +240,7 @@ class TestEnhancedLeadProcessor(unittest.IsolatedAsyncioTestCase): # Changed to 
         self.processor.b2b_personalized_message_agent.execute.assert_called_once()
         self.processor.internal_briefing_summary_agent.execute.assert_called_once()
 
-        # Assert MCP reporting calls
-        # There are 15 specialized agents called in the successful path.
-        self.assertEqual(self.processor._report_agent_event_to_mcp.call_count, 15)
-
-        # Example: Check arguments for one specific MCP report call (Tavily)
-        self.processor._report_agent_event_to_mcp.assert_any_call(
-            lead_id="test_lead_id_123",
-            agent_name=TavilyEnrichmentAgent.__name__,
-            status="SUCCESS",
-            start_time=unittest.mock.ANY,
-            end_time=unittest.mock.ANY,
-            output_model_instance=tavily_output, # The actual output object
-            agent_error_message=None
-        )
-
+        # Assertions for self.processor._report_agent_event_to_mcp removed, as this is now handled by BaseAgent.execute
 
         # 5. Assert Output ComprehensiveProspectPackage (selected fields)
         self.assertIsInstance(package_output, ComprehensiveProspectPackage)

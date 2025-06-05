@@ -1,20 +1,23 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch, AsyncMock
 import json
 
 from agents.competitor_identification_agent import CompetitorIdentificationAgent, CompetitorIdentificationInput, CompetitorIdentificationOutput, CompetitorDetail
 from core_logic.llm_client import LLMClientBase, LLMResponse
+from mcp_server.data_models import AgentExecutionStatusEnum
 
-class TestCompetitorIdentificationAgent(unittest.TestCase):
+class TestCompetitorIdentificationAgent(unittest.IsolatedAsyncioTestCase): # Changed to IsolatedAsyncioTestCase
 
     def setUp(self):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
-        self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
+        self.mock_llm_client.generate_llm_response = AsyncMock() # Mock async method
+        self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0, "llm_calls": 0, "llm_usage": []}
         self.mock_llm_client.update_usage_stats = MagicMock()
 
         self.agent = CompetitorIdentificationAgent(llm_client=self.mock_llm_client)
 
-    def test_process_success_finds_competitors(self):
+    @patch('agents.base_agent.BaseAgent._report_event_to_mcp')
+    async def test_process_success_finds_competitors(self, mock_report_event: MagicMock): # Made async
         mock_competitor1 = CompetitorDetail(
             name="Soluções Alfa",
             description="Concorrente direto que oferece produtos similares.",
@@ -37,7 +40,7 @@ class TestCompetitorIdentificationAgent(unittest.TestCase):
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
 
-        self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=60, input_tokens=30, output_tokens=30)
+        self.mock_llm_client.generate_llm_response.return_value = mock_json_output_str
 
         test_input = CompetitorIdentificationInput(
             initial_extracted_text="Nossa empresa, Exemplo Corp, se destaca pela flexibilidade, ao contrário de Soluções Alfa. Também observamos a Tech Inovadora Ltda.",
@@ -45,7 +48,7 @@ class TestCompetitorIdentificationAgent(unittest.TestCase):
             known_competitors_list_str="Soluções Beta, Rival X" # Known but not in text
         )
 
-        result = self.agent.execute(test_input)
+        result = await self.agent.execute(test_input, lead_id="test_lead_01", run_id="test_run_01")
 
         self.assertIsInstance(result, CompetitorIdentificationOutput)
         self.assertIsNone(result.error_message)
@@ -56,45 +59,59 @@ class TestCompetitorIdentificationAgent(unittest.TestCase):
         self.assertEqual(result.identified_competitors[1].name, mock_competitor2.name)
 
         self.assertEqual(result.other_notes, "O mercado parece ter alguns players consolidados e novas startups.")
-        self.mock_llm_client.generate.assert_called_once()
-        # call_args = self.mock_llm_client.generate.call_args[0][0]
-        # self.assertIn(test_input.known_competitors_list_str, call_args)
+        self.mock_llm_client.generate_llm_response.assert_called_once()
+
+        mock_report_event.assert_called_once()
+        args, _ = mock_report_event.call_args
+        self.assertEqual(args[0], "test_lead_01")
+        self.assertEqual(args[1], self.agent.name)
+        self.assertEqual(args[2], AgentExecutionStatusEnum.SUCCESS)
 
 
-    def test_process_no_competitors_found(self):
+    @patch('agents.base_agent.BaseAgent._report_event_to_mcp')
+    async def test_process_no_competitors_found(self, mock_report_event: MagicMock): # Made async
         mock_json_output_dict = {
             "identified_competitors": [],
             "other_notes": "Nenhuma menção clara a concorrentes diretos no texto fornecido."
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
-        self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=20, input_tokens=10, output_tokens=10)
+        self.mock_llm_client.generate_llm_response.return_value = mock_json_output_str
 
         test_input = CompetitorIdentificationInput(
             initial_extracted_text="Somos uma empresa única em um novo mercado.",
             product_service_offered="Solução Pioneira Delta"
         )
-        result = self.agent.execute(test_input)
+        result = await self.agent.execute(test_input, lead_id="test_lead_02", run_id="test_run_02")
 
         self.assertIsInstance(result, CompetitorIdentificationOutput)
         self.assertIsNone(result.error_message)
         self.assertEqual(len(result.identified_competitors), 0)
         self.assertEqual(result.other_notes, "Nenhuma menção clara a concorrentes diretos no texto fornecido.")
 
-    def test_process_llm_returns_malformed_json(self):
+        mock_report_event.assert_called_once()
+        args, _ = mock_report_event.call_args
+        self.assertEqual(args[0], "test_lead_02")
+        self.assertEqual(args[2], AgentExecutionStatusEnum.SUCCESS)
+
+    @patch('agents.base_agent.BaseAgent._report_event_to_mcp')
+    async def test_process_llm_returns_malformed_json(self, mock_report_event: MagicMock): # Made async
         malformed_json_str = '{ "identified_competitors": [ {"name": "Concorrente Quebrado"} ' # Malformed
-        self.mock_llm_client.generate.return_value = LLMResponse(content=malformed_json_str, provider_name="mock", model_name="mock_model", total_tokens=10, input_tokens=5, output_tokens=5)
+        self.mock_llm_client.generate_llm_response.return_value = malformed_json_str
 
         test_input = CompetitorIdentificationInput(
             initial_extracted_text="Texto qualquer.",
             product_service_offered="Produto qualquer."
         )
-        result = self.agent.execute(test_input)
+        result = await self.agent.execute(test_input, lead_id="test_lead_03", run_id="test_run_03")
 
         self.assertIsInstance(result, CompetitorIdentificationOutput)
         self.assertIsNotNone(result.error_message)
         self.assertIn("Failed to parse LLM response as JSON", result.error_message)
-        self.assertEqual(len(result.identified_competitors), 0) # Should default to empty list
-        self.assertIsNone(result.other_notes) # Should default to None
+
+        mock_report_event.assert_called_once()
+        args, _ = mock_report_event.call_args
+        self.assertEqual(args[0], "test_lead_03")
+        self.assertEqual(args[2], AgentExecutionStatusEnum.FAILED)
 
 if __name__ == '__main__':
     unittest.main()

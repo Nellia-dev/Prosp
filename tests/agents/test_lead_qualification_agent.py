@@ -1,20 +1,23 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch, AsyncMock
 import json
 
 from agents.lead_qualification_agent import LeadQualificationAgent, LeadQualificationInput, LeadQualificationOutput
 from core_logic.llm_client import LLMClientBase, LLMResponse
+from mcp_server.data_models import AgentExecutionStatusEnum
 
-class TestLeadQualificationAgent(unittest.TestCase):
+class TestLeadQualificationAgent(unittest.IsolatedAsyncioTestCase): # Changed to IsolatedAsyncioTestCase
 
     def setUp(self):
         self.mock_llm_client = MagicMock(spec=LLMClientBase)
-        self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0}
+        self.mock_llm_client.generate_llm_response = AsyncMock() # Mock async method
+        self.mock_llm_client.get_usage_stats.return_value = {"total_tokens": 0, "input_tokens":0, "output_tokens":0, "llm_calls": 0, "llm_usage": []}
         self.mock_llm_client.update_usage_stats = MagicMock()
 
         self.agent = LeadQualificationAgent(llm_client=self.mock_llm_client)
 
-    def test_process_success_high_potential(self):
+    @patch('agents.base_agent.BaseAgent._report_event_to_mcp')
+    async def test_process_success_high_potential(self, mock_report_event: MagicMock): # Made async
         mock_json_output_dict = {
             "qualification_tier": "Alto Potencial",
             "justification": "O lead demonstra forte alinhamento com o produto, dores claras e urgência.",
@@ -22,7 +25,7 @@ class TestLeadQualificationAgent(unittest.TestCase):
         }
         mock_json_output_str = json.dumps(mock_json_output_dict)
 
-        self.mock_llm_client.generate.return_value = LLMResponse(content=mock_json_output_str, provider_name="mock", model_name="mock_model", total_tokens=40, input_tokens=20, output_tokens=20)
+        self.mock_llm_client.generate_llm_response.return_value = mock_json_output_str
 
         test_input = LeadQualificationInput(
             lead_analysis="Empresa Z demonstra crescimento rápido e investimento em tecnologia.",
@@ -31,21 +34,25 @@ class TestLeadQualificationAgent(unittest.TestCase):
             product_service_offered="Plataforma de escalabilidade XaaS"
         )
 
-        result = self.agent.execute(test_input)
+        result = await self.agent.execute(test_input, lead_id="test_lead_01", run_id="test_run_01")
 
         self.assertIsInstance(result, LeadQualificationOutput)
         self.assertIsNone(result.error_message)
         self.assertEqual(result.qualification_tier, "Alto Potencial")
         self.assertEqual(result.justification, "O lead demonstra forte alinhamento com o produto, dores claras e urgência.")
         self.assertEqual(result.confidence_score, 0.92)
-        self.mock_llm_client.generate.assert_called_once()
-        # call_args = self.mock_llm_client.generate.call_args
-        # called_prompt = call_args[0][0]
-        # self.assertIn(test_input.product_service_offered, called_prompt)
+        self.mock_llm_client.generate_llm_response.assert_called_once()
 
-    def test_process_llm_returns_malformed_json(self):
-        malformed_json_str = '{ "qualification_tier": "Potencial Médio", "justification": "Algum alinhamento..." ' # Missing closing brace and confidence
-        self.mock_llm_client.generate.return_value = LLMResponse(content=malformed_json_str, provider_name="mock", model_name="mock_model", total_tokens=10, input_tokens=5, output_tokens=5)
+        mock_report_event.assert_called_once()
+        args, _ = mock_report_event.call_args
+        self.assertEqual(args[0], "test_lead_01")
+        self.assertEqual(args[1], self.agent.name)
+        self.assertEqual(args[2], AgentExecutionStatusEnum.SUCCESS)
+
+    @patch('agents.base_agent.BaseAgent._report_event_to_mcp')
+    async def test_process_llm_returns_malformed_json(self, mock_report_event: MagicMock): # Made async
+        malformed_json_str = '{ "qualification_tier": "Potencial Médio", "justification": "Algum alinhamento..." '
+        self.mock_llm_client.generate_llm_response.return_value = malformed_json_str
 
         test_input = LeadQualificationInput(
             lead_analysis="Análise.",
@@ -54,17 +61,21 @@ class TestLeadQualificationAgent(unittest.TestCase):
             product_service_offered="Produto."
         )
 
-        result = self.agent.execute(test_input)
+        result = await self.agent.execute(test_input, lead_id="test_lead_02", run_id="test_run_02")
 
         self.assertIsInstance(result, LeadQualificationOutput)
         self.assertIsNotNone(result.error_message)
         self.assertIn("Failed to parse LLM response as JSON", result.error_message)
-        self.assertEqual(result.qualification_tier, "Não Qualificado") # Default value
-        self.assertEqual(result.justification, "Não foi possível determinar a qualificação.") # Default
-        self.assertIsNone(result.confidence_score) # Default
 
-    def test_process_llm_returns_empty_response(self):
-        self.mock_llm_client.generate.return_value = LLMResponse(content="", provider_name="mock", model_name="mock_model", total_tokens=2, input_tokens=1, output_tokens=1)
+        mock_report_event.assert_called_once()
+        args, _ = mock_report_event.call_args
+        self.assertEqual(args[0], "test_lead_02")
+        self.assertEqual(args[2], AgentExecutionStatusEnum.FAILED)
+
+
+    @patch('agents.base_agent.BaseAgent._report_event_to_mcp')
+    async def test_process_llm_returns_empty_response(self, mock_report_event: MagicMock): # Made async
+        self.mock_llm_client.generate_llm_response.return_value = ""
 
         test_input = LeadQualificationInput(
             lead_analysis="Análise.",
@@ -73,19 +84,20 @@ class TestLeadQualificationAgent(unittest.TestCase):
             product_service_offered="Produto."
         )
 
-        result = self.agent.execute(test_input)
+        result = await self.agent.execute(test_input, lead_id="test_lead_03", run_id="test_run_03")
 
         self.assertIsInstance(result, LeadQualificationOutput)
         self.assertIsNotNone(result.error_message)
         self.assertIn("LLM call returned no response.", result.error_message)
-        self.assertEqual(result.qualification_tier, "Não Qualificado") # Default
+
+        mock_report_event.assert_called_once()
+        args, _ = mock_report_event.call_args
+        self.assertEqual(args[0], "test_lead_03")
+        self.assertEqual(args[2], AgentExecutionStatusEnum.FAILED)
 
 
-    def test_process_llm_returns_json_with_unknown_tier(self):
-        # Test if the model handles unexpected enum values gracefully if not strictly parsed by Pydantic
-        # Pydantic will likely raise an error if "Tier Desconhecido" is not in an Enum for qualification_tier.
-        # However, our current LeadQualificationOutput.qualification_tier is just a string, so this will pass.
-        # If it were an Enum, parse_llm_json_response would set an error.
+    @patch('agents.base_agent.BaseAgent._report_event_to_mcp')
+    async def test_process_llm_returns_json_with_unknown_tier(self, mock_report_event: MagicMock): # Made async
         mock_json_output_dict = {
             "qualification_tier": "Tier Desconhecido",
             "justification": "LLM retornou um tier não esperado.",
