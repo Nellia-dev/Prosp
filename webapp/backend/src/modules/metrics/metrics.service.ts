@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Agent } from '../../database/entities/agent.entity';
 import { Lead } from '../../database/entities/lead.entity';
+import { ProcessingStage } from '../../shared/enums/nellia.enums';
 import { ChatMessage } from '../../database/entities/chat-message.entity';
 import {
   DashboardMetrics,
@@ -191,8 +192,8 @@ export class MetricsService {
         .createQueryBuilder('lead')
         .select('lead.processing_stage', 'stage')
         .addSelect('COUNT(*)', 'count')
-        .addSelect('AVG(lead.roi_potential)', 'avgRoi')
-        .addSelect('COUNT(CASE WHEN lead.roi_potential > 75 THEN 1 END)', 'highPotential')
+        .addSelect('AVG(lead.roi_potential_score)', 'avgRoi')
+        .addSelect('COUNT(CASE WHEN lead.roi_potential_score > 75 THEN 1 END)', 'highPotential')
         .groupBy('lead.processing_stage')
         .getRawMany();
 
@@ -217,7 +218,7 @@ export class MetricsService {
 
   private async getCompletedLeadsCount(): Promise<number> {
     return await this.leadRepository.count({
-      where: { processing_stage: 'reuniao_agendada' },
+      where: { processing_stage: ProcessingStage.REUNIAO_AGENDADA },
     });
   }
 
@@ -234,7 +235,7 @@ export class MetricsService {
   private async getAverageRoiPotential(): Promise<number> {
     const result = await this.leadRepository
       .createQueryBuilder('lead')
-      .select('AVG(lead.roi_potential)', 'avgRoi')
+      .select('AVG(lead.roi_potential_score)', 'avgRoi')
       .getRawOne();
 
     return parseFloat(result?.avgRoi) || 0;
@@ -243,7 +244,7 @@ export class MetricsService {
   private async getDailyThroughput(startDate: Date, endDate: Date): Promise<number> {
     return await this.leadRepository.count({
       where: {
-        processing_stage: 'reuniao_agendada',
+        processing_stage: ProcessingStage.REUNIAO_AGENDADA,
         updated_at: {
           gte: startDate,
           lte: endDate,

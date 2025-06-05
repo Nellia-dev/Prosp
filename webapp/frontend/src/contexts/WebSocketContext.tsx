@@ -1,159 +1,218 @@
-import React, { createContext, useContext, useCallback, useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { useWebSocket, WebSocketState, NotificationData, MetricsUpdateData } from '../hooks/useWebSocket';
+import React, { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
+import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
-import { AgentStatus, LeadData } from '../types/nellia';
 import { useToast } from '../hooks/use-toast';
 
-interface WebSocketContextType extends WebSocketState {
-  connect: () => void;
-  disconnect: () => void;
-  emit: (event: string, data?: unknown) => boolean;
+interface WebSocketEventData {
+  [key: string]: unknown;
 }
 
-const WebSocketContext = createContext<WebSocketContextType | null>(null);
+interface WebSocketContextType {
+  socket: Socket | null;
+  isConnected: boolean;
+  connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'error';
+  connect: () => void;
+  disconnect: () => void;
+  emit: (event: string, data?: WebSocketEventData) => void;
+  subscribe: (event: string, callback: (data: WebSocketEventData) => void) => () => void;
+}
 
-export const useWebSocketContext = (): WebSocketContextType => {
-  const context = useContext(WebSocketContext);
-  if (!context) {
-    throw new Error('useWebSocketContext must be used within a WebSocketProvider');
-  }
-  return context;
-};
+const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
 
 interface WebSocketProviderProps {
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }) => {
-  const { isAuthenticated } = useAuth();
-  const queryClient = useQueryClient();
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  
+  const { user, token } = useAuth();
   const { toast } = useToast();
 
-  // Handle agent status updates
-  const handleAgentStatusUpdate = useCallback((agentId: string, status: Partial<AgentStatus>) => {
-    // Update specific agent in cache
-    queryClient.setQueryData(['agents', agentId], (oldData: AgentStatus | undefined) => {
-      if (!oldData) return oldData;
-      return { ...oldData, ...status };
+  const maxReconnectAttempts = 5;
+  const reconnectDelay = (attempt: number) => Math.min(1000 * Math.pow(2, attempt), 30000); // Exponential backoff, max 30s
+
+  const connect = useCallback(() => {
+    if (socket?.connected) return;
+    
+    if (!token) {
+      console.log('WebSocket: No token available, skipping connection');
+      return;
+    }
+
+    setConnectionStatus('connecting');
+    
+    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
+    
+    const newSocket = io(wsUrl, {
+      auth: {
+        token: token
+      },
+      transports: ['websocket', 'polling'],
+      timeout: 10000,
+      reconnection: false, // We'll handle reconnection manually
     });
 
-    // Invalidate agents list to trigger refetch
-    queryClient.invalidateQueries({ queryKey: ['agents'], exact: false });
-
-    // Show toast notification for significant status changes
-    if (status.status) {
+    // Connection handlers
+    newSocket.on('connect', () => {
+      console.log('WebSocket connected:', newSocket.id);
+      setIsConnected(true);
+      setConnectionStatus('connected');
+      setReconnectAttempts(0);
+      
       toast({
-        title: 'Agent Status Update',
-        description: `Agent ${status.name || agentId} is now ${status.status}`,
-        variant: status.status === 'error' ? 'destructive' : 'default',
+        title: "Connected",
+        description: "Real-time updates enabled",
+        duration: 2000,
       });
-    }
-  }, [queryClient, toast]);
-
-  // Handle lead updates
-  const handleLeadUpdate = useCallback((leadId: string, data: Partial<LeadData>) => {
-    // Update specific lead in cache
-    queryClient.setQueryData(['leads', leadId], (oldData: LeadData | undefined) => {
-      if (!oldData) return oldData;
-      return { ...oldData, ...data };
     });
 
-    // Invalidate related queries
-    queryClient.invalidateQueries({ queryKey: ['leads'], exact: false });
-    queryClient.invalidateQueries({ queryKey: ['leads', 'by-stage'] });
+    newSocket.on('disconnect', (reason) => {
+      console.log('WebSocket disconnected:', reason);
+      setIsConnected(false);
+      setConnectionStatus('disconnected');
+      
+      // Auto-reconnect on unexpected disconnections
+      if (reason === 'io server disconnect') {
+        // Server initiated disconnect, don't reconnect
+        toast({
+          title: "Disconnected",
+          description: "Connection closed by server",
+          variant: "destructive",
+        });
+      } else {
+        // Client side disconnect or network issue, attempt reconnect
+        setTimeout(() => {
+          if (reconnectAttempts < maxReconnectAttempts) {
+            setReconnectAttempts(prev => prev + 1);
+            connect();
+          }
+        }, reconnectDelay(reconnectAttempts));
+      }
+    });
 
-    // Show notification for stage changes
-    if (data.processing_stage) {
+    newSocket.on('connect_error', (error) => {
+      console.error('WebSocket connection error:', error);
+      setConnectionStatus('error');
+      
+      if (reconnectAttempts < maxReconnectAttempts) {
+        setTimeout(() => {
+          setReconnectAttempts(prev => prev + 1);
+          connect();
+        }, reconnectDelay(reconnectAttempts));
+      } else {
+        toast({
+          title: "Connection Failed",
+          description: "Unable to establish real-time connection",
+          variant: "destructive",
+        });
+      }
+    });
+
+    // Authentication error
+    newSocket.on('unauthorized', (error) => {
+      console.error('WebSocket authentication error:', error);
+      setConnectionStatus('error');
       toast({
-        title: 'Lead Updated',
-        description: `Lead ${data.company_name || leadId} moved to ${data.processing_stage}`,
+        title: "Authentication Error",
+        description: "Please refresh and log in again",
+        variant: "destructive",
       });
-    }
-  }, [queryClient, toast]);
+    });
 
-  // Handle metrics updates
-  const handleMetricsUpdate = useCallback((metrics: MetricsUpdateData) => {
-    // Update metrics cache
-    if (metrics.dashboardMetrics) {
-      queryClient.setQueryData(['metrics', 'dashboard'], metrics.dashboardMetrics);
+    setSocket(newSocket);
+  }, [token, reconnectAttempts, toast]);
+
+  const disconnect = useCallback(() => {
+    if (socket) {
+      socket.disconnect();
+      setSocket(null);
+      setIsConnected(false);
+      setConnectionStatus('disconnected');
+      setReconnectAttempts(0);
+    }
+  }, [socket]);
+
+  const emit = useCallback((event: string, data?: WebSocketEventData) => {
+    if (socket?.connected) {
+      socket.emit(event, data);
+    }
+  }, [socket]);
+
+  const subscribe = useCallback((event: string, callback: (data: WebSocketEventData) => void) => {
+    if (socket) {
+      socket.on(event, callback);
+      
+      // Return unsubscribe function
+      return () => {
+        socket.off(event, callback);
+      };
     }
     
-    if (metrics.agentMetrics) {
-      queryClient.setQueryData(['metrics', 'agents'], metrics.agentMetrics);
+    return () => {}; // No-op if no socket
+  }, [socket]);
+
+  // Connect when user is authenticated
+  useEffect(() => {
+    if (user && token) {
+      connect();
+    } else {
+      disconnect();
     }
-    
-    if (metrics.performanceData) {
-      queryClient.setQueryData(['metrics', 'performance'], metrics.performanceData);
-    }
 
-    // Invalidate metrics queries to ensure fresh data
-    queryClient.invalidateQueries({ queryKey: ['metrics'], exact: false });
-  }, [queryClient]);
+    // Cleanup on unmount
+    return () => {
+      disconnect();
+    };
+  }, [user, token, connect, disconnect]);
 
-  // Handle notifications
-  const handleNotification = useCallback((notification: NotificationData) => {
-    toast({
-      title: notification.title,
-      description: notification.message,
-      variant: notification.type === 'error' ? 'destructive' : 'default',
-    });
-  }, [toast]);
+  // Handle window focus/blur for connection management
+  useEffect(() => {
+    const handleFocus = () => {
+      if (user && token && !socket?.connected) {
+        connect();
+      }
+    };
 
-  // Handle connection events
-  const handleConnect = useCallback(() => {
-    toast({
-      title: 'Connected',
-      description: 'Real-time updates are now active',
-      variant: 'default',
-    });
-  }, [toast]);
+    const handleBlur = () => {
+      // Keep connection alive on blur, just reduce activity
+    };
 
-  const handleDisconnect = useCallback((reason: string) => {
-    toast({
-      title: 'Disconnected',
-      description: `Real-time updates paused: ${reason}`,
-      variant: 'destructive',
-    });
-  }, [toast]);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('blur', handleBlur);
 
-  const handleError = useCallback((error: Error) => {
-    console.error('WebSocket error:', error);
-    toast({
-      title: 'Connection Error',
-      description: 'Failed to establish real-time connection',
-      variant: 'destructive',
-    });
-  }, [toast]);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, [user, token, socket, connect]);
 
-  // Initialize WebSocket with event handlers
-  const webSocketState = useWebSocket(
-    {
-      autoConnect: true,
-      reconnectEnabled: true,
-      maxReconnectAttempts: 5,
-      reconnectDelay: 1000,
-    },
-    {
-      onAgentStatusUpdate: handleAgentStatusUpdate,
-      onLeadUpdate: handleLeadUpdate,
-      onMetricsUpdate: handleMetricsUpdate,
-      onNotification: handleNotification,
-      onConnect: handleConnect,
-      onDisconnect: handleDisconnect,
-      onError: handleError,
-    }
-  );
-
-  const contextValue: WebSocketContextType = {
-    ...webSocketState,
+  const value: WebSocketContextType = {
+    socket,
+    isConnected,
+    connectionStatus,
+    connect,
+    disconnect,
+    emit,
+    subscribe,
   };
 
   return (
-    <WebSocketContext.Provider value={contextValue}>
+    <WebSocketContext.Provider value={value}>
       {children}
     </WebSocketContext.Provider>
   );
 };
 
-export default WebSocketProvider;
+export const useWebSocket = (): WebSocketContextType => {
+  const context = useContext(WebSocketContext);
+  if (context === undefined) {
+    throw new Error('useWebSocket must be used within a WebSocketProvider');
+  }
+  return context;
+};
+
+export default WebSocketContext;

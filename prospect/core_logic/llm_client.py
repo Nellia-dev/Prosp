@@ -213,7 +213,7 @@ class OpenAIClient(LLMClientBase):
             raise ImportError("OpenAI package not installed. Install with: pip install openai")
         
         # Get API key from config or environment
-        api_key = config.api_key or os.getenv("OPENAI_API_KEY")
+        api_key = config.api_key or os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError("OpenAI API key not found in config or environment variables")
         
@@ -304,8 +304,8 @@ class LLMClientFactory:
         if not provider:
             if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
                 provider = LLMProvider.GEMINI
-            elif os.getenv("OPENAI_API_KEY"):
-                provider = LLMProvider.OPENAI
+            # elif os.getenv("GOOGLE_API_KEY"):
+            #     provider = LLMProvider.OPENAI
             else:
                 raise ValueError("No LLM API keys found in environment variables")
         

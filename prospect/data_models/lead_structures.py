@@ -213,7 +213,7 @@ class ContactInformation(BaseModel):
 class PainPointAnalysis(BaseModel):
     """Deep analysis of company pain points and challenges"""
     primary_pain_category: str = Field(default="Não especificado", description="Main category of pain point") # Added default
-    detailed_pain_points: List[DetailedPainPointSchema] = Field(default_factory=list) # Uses new schema
+    detailed_pain_points: List['DetailedPainPointSchema'] = Field(default_factory=list) # Uses new schema
     business_impact_assessment: Optional[str] = Field(None, description="Overall assessment of business impact from agent's raw text") # Made optional
     urgency_level: str = Field(default="medium", description="Urgency level: low, medium, high, critical")
     investigative_questions: List[str] = Field(
@@ -229,7 +229,7 @@ class PainPointAnalysis(BaseModel):
 
 class CompetitorIntelligence(BaseModel):
     """Competitive intelligence and market analysis"""
-    identified_competitors: List[CompetitorDetailSchema] = Field(default_factory=list) # Uses new schema
+    identified_competitors: List['CompetitorDetailSchema'] = Field(default_factory=list) # Uses new schema
     other_notes: Optional[str] = Field(None, description="Other general notes on competitive landscape")
     raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
     error_message: Optional[str] = None
@@ -238,7 +238,7 @@ class CompetitorIntelligence(BaseModel):
 
 class PurchaseTriggers(BaseModel):
     """Purchase triggers and timing indicators"""
-    identified_triggers: List[IdentifiedTriggerSchema] = Field(default_factory=list) # Uses new schema
+    identified_triggers: List['IdentifiedTriggerSchema'] = Field(default_factory=list) # Uses new schema
     other_observations: Optional[str] = Field(None, description="Other general observations on triggers")
     raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
     error_message: Optional[str] = None

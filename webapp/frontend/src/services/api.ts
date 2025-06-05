@@ -31,8 +31,13 @@ export { apiClient };
 // Authentication API
 export const authApi = {
   login: async (data: LoginRequest): Promise<LoginResponse> => {
-    const response = await apiClient.post<ApiResponse<LoginResponse>>('/auth/login', data);
-    return response.data.data;
+    const response = await apiClient.post<LoginResponse>('/auth/login', data);
+    return response.data;
+  },
+
+  register: async (data: { email: string; password: string; firstName: string; lastName: string }): Promise<LoginResponse> => {
+    const response = await apiClient.post<LoginResponse>('/auth/register', data);
+    return response.data;
   },
 
   logout: async (): Promise<void> => {

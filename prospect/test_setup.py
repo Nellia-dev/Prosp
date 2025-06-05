@@ -66,7 +66,6 @@ def test_environment():
     env_vars = {
         "GEMINI_API_KEY": "Google Gemini API key",
         "GOOGLE_API_KEY": "Alternative Google API key",
-        "OPENAI_API_KEY": "OpenAI API key (optional)"
     }
     
     results = {}
@@ -78,7 +77,7 @@ def test_environment():
             # Mask the API key for security
             masked = value[:8] + "..." + value[-4:] if len(value) > 12 else "***"
             results[var] = (True, f"{description} (configured: {masked})")
-            if var in ["GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"]:
+            if var in ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_API_KEY"]:
                 has_any_key = True
         else:
             optional = "(optional)" in description

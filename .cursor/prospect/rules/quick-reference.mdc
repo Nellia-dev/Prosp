@@ -110,7 +110,6 @@ self.metrics.tokens_used = self.llm_client.total_tokens - tokens_before
 
 ```bash
 GEMINI_API_KEY=xxx          # Required
-OPENAI_API_KEY=xxx          # Optional
 AGENT_TEMPERATURE=0.7       # LLM creativity (0-1)
 AGENT_MAX_TOKENS=8192       # Max response size
 ```

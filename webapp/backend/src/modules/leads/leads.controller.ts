@@ -1,22 +1,11 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-  Query,
-  HttpStatus,
-  HttpCode,
-} from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { LeadsService } from './leads.service';
-import {
-  CreateLeadDto,
-  UpdateLeadDto,
-  LeadFilters,
-  ProcessingStage,
+import { 
+  LeadData, 
+  CreateLeadDto, 
+  UpdateLeadDto, 
+  LeadFilters 
 } from '../../shared/types/nellia.types';
 
 @ApiTags('leads')
@@ -24,120 +13,73 @@ import {
 export class LeadsController {
   constructor(private readonly leadsService: LeadsService) {}
 
-  @Post()
-  @ApiOperation({ summary: 'Create a new lead' })
-  @ApiResponse({ status: 201, description: 'Lead created successfully' })
-  @ApiResponse({ status: 400, description: 'Bad request' })
-  async create(@Body() createLeadDto: CreateLeadDto) {
-    return this.leadsService.create(createLeadDto);
-  }
-
-  @Post('bulk')
-  @ApiOperation({ summary: 'Create multiple leads' })
-  @ApiResponse({ status: 201, description: 'Leads created successfully' })
-  @ApiResponse({ status: 400, description: 'Bad request' })
-  async createBulk(@Body() createLeadDtos: CreateLeadDto[]) {
-    return this.leadsService.createBulk(createLeadDtos);
-  }
-
   @Get()
-  @ApiOperation({ summary: 'Get all leads with optional filtering' })
-  @ApiQuery({ name: 'search', required: false, description: 'Search term for company name' })
-  @ApiQuery({ name: 'company_sector', required: false, description: 'Filter by company sector' })
-  @ApiQuery({ name: 'qualification_tier', required: false, description: 'Filter by qualification tier' })
-  @ApiQuery({ name: 'processing_stage', required: false, description: 'Filter by processing stage' })
-  @ApiQuery({ name: 'sort_by', required: false, description: 'Sort field' })
-  @ApiQuery({ name: 'sort_order', required: false, description: 'Sort order (asc/desc)' })
-  @ApiQuery({ name: 'limit', required: false, description: 'Number of results to return' })
-  @ApiQuery({ name: 'offset', required: false, description: 'Number of results to skip' })
-  async findAll(@Query() query: any) {
-    const filters: LeadFilters = {
-      search: query.search,
-      company_sector: query.company_sector,
-      qualification_tier: query.qualification_tier,
-      processing_stage: query.processing_stage,
-      sort_by: query.sort_by,
-      sort_order: query.sort_order,
-      limit: query.limit ? parseInt(query.limit) : undefined,
-      offset: query.offset ? parseInt(query.offset) : undefined,
-    };
-
-    // Handle score range filter
-    if (query.score_min !== undefined && query.score_max !== undefined) {
-      filters.score_range = {
-        min: parseFloat(query.score_min),
-        max: parseFloat(query.score_max),
-      };
-    }
-
+  @ApiOperation({ summary: 'Get all leads with optional filters' })
+  @ApiResponse({ status: 200, description: 'List of leads with pagination info' })
+  async findAll(@Query() filters?: LeadFilters): Promise<{ data: LeadData[], total: number }> {
     return this.leadsService.findAll(filters);
   }
 
-  @Get('by-stage')
-  @ApiOperation({ summary: 'Get leads grouped by processing stage' })
-  @ApiResponse({ status: 200, description: 'Leads grouped by stage' })
-  async getLeadsByStage() {
-    return this.leadsService.getLeadsByStage();
-  }
-
-  @Get('analytics')
-  @ApiOperation({ summary: 'Get lead analytics and statistics' })
-  @ApiResponse({ status: 200, description: 'Lead analytics data' })
-  async getAnalytics() {
-    return this.leadsService.getAnalytics();
-  }
-
   @Get(':id')
-  @ApiOperation({ summary: 'Get a lead by ID' })
-  @ApiResponse({ status: 200, description: 'Lead found' })
+  @ApiOperation({ summary: 'Get specific lead details' })
+  @ApiParam({ name: 'id', description: 'Lead ID' })
+  @ApiResponse({ status: 200, description: 'Lead details' })
   @ApiResponse({ status: 404, description: 'Lead not found' })
-  async findOne(@Param('id') id: string) {
+  async findOne(@Param('id') id: string): Promise<LeadData> {
     return this.leadsService.findOne(id);
   }
 
+  @Post()
+  @ApiOperation({ summary: 'Create a new lead' })
+  @ApiResponse({ status: 201, description: 'Lead created successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid lead data' })
+  async create(@Body() createLeadDto: CreateLeadDto): Promise<LeadData> {
+    return this.leadsService.create(createLeadDto);
+  }
+
   @Patch(':id')
-  @ApiOperation({ summary: 'Update a lead' })
+  @ApiOperation({ summary: 'Update lead details' })
+  @ApiParam({ name: 'id', description: 'Lead ID' })
   @ApiResponse({ status: 200, description: 'Lead updated successfully' })
   @ApiResponse({ status: 404, description: 'Lead not found' })
-  async update(@Param('id') id: string, @Body() updateLeadDto: UpdateLeadDto) {
+  async update(@Param('id') id: string, @Body() updateLeadDto: UpdateLeadDto): Promise<LeadData> {
     return this.leadsService.update(id, updateLeadDto);
   }
 
   @Patch(':id/stage')
   @ApiOperation({ summary: 'Update lead processing stage' })
+  @ApiParam({ name: 'id', description: 'Lead ID' })
   @ApiResponse({ status: 200, description: 'Lead stage updated successfully' })
   @ApiResponse({ status: 404, description: 'Lead not found' })
   async updateStage(
-    @Param('id') id: string,
-    @Body('stage') stage: ProcessingStage,
-  ) {
+    @Param('id') id: string, 
+    @Body('stage') stage: string
+  ): Promise<LeadData> {
     return this.leadsService.updateStage(id, stage);
-  }
-
-  @Post(':id/process')
-  @ApiOperation({ summary: 'Trigger processing for a specific lead' })
-  @ApiResponse({ status: 200, description: 'Lead processing triggered' })
-  @ApiResponse({ status: 404, description: 'Lead not found' })
-  @HttpCode(HttpStatus.OK)
-  async processLead(@Param('id') id: string) {
-    const result = await this.leadsService.processLead(id);
-    return { success: result };
-  }
-
-  @Post('process-bulk')
-  @ApiOperation({ summary: 'Process multiple leads' })
-  @ApiResponse({ status: 200, description: 'Bulk processing initiated' })
-  @HttpCode(HttpStatus.OK)
-  async processBulk(@Body('leadIds') leadIds: string[]) {
-    return this.leadsService.processBulk(leadIds);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a lead' })
-  @ApiResponse({ status: 200, description: 'Lead deleted successfully' })
+  @ApiParam({ name: 'id', description: 'Lead ID' })
+  @ApiResponse({ status: 204, description: 'Lead deleted successfully' })
   @ApiResponse({ status: 404, description: 'Lead not found' })
-  async remove(@Param('id') id: string) {
-    const result = await this.leadsService.remove(id);
-    return { success: result };
+  async remove(@Param('id') id: string): Promise<void> {
+    return this.leadsService.remove(id);
+  }
+
+  @Get('stats/summary')
+  @ApiOperation({ summary: 'Get leads statistics summary' })
+  @ApiResponse({ status: 200, description: 'Leads statistics' })
+  async getStats(): Promise<{
+    total: number;
+    byStage: Record<string, number>;
+    byTier: Record<string, number>;
+    averageScores: {
+      relevance: number;
+      roi: number;
+      marketFit: number;
+    };
+  }> {
+    return this.leadsService.getLeadsStats();
   }
 }

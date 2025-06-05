@@ -1,24 +1,22 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Agent } from '../../database/entities/agent.entity';
-import { AgentStatus, AgentMetrics, AgentName } from '../../shared/types/nellia.types';
-import { McpService } from '../mcp/mcp.service';
+import { Agent, AgentName, AgentStatus as AgentStatusEnum } from '../../database/entities/agent.entity';
+import { AgentStatus, AgentMetrics, AgentCategory } from '../../shared/types/nellia.types';
 
 @Injectable()
 export class AgentsService {
   constructor(
     @InjectRepository(Agent)
     private readonly agentRepository: Repository<Agent>,
-    private readonly mcpService: McpService,
   ) {}
 
   async findAll(): Promise<AgentStatus[]> {
     const agents = await this.agentRepository.find({
-      order: { created_at: 'ASC' },
+      order: { name: 'ASC' },
     });
-
-    return agents.map(this.mapToAgentStatus);
+    
+    return agents.map(agent => this.convertToAgentStatus(agent));
   }
 
   async findOne(id: string): Promise<AgentStatus> {
@@ -27,178 +25,225 @@ export class AgentsService {
     if (!agent) {
       throw new NotFoundException(`Agent with ID ${id} not found`);
     }
-
-    return this.mapToAgentStatus(agent);
+    
+    return this.convertToAgentStatus(agent);
   }
 
-  async findByName(name: AgentName): Promise<AgentStatus> {
+  async findByName(name: AgentName): Promise<Agent | null> {
     const agent = await this.agentRepository.findOne({ where: { name } });
     
-    if (!agent) {
-      throw new NotFoundException(`Agent with name ${name} not found`);
+    if (agent) {
+      agent.syncMetricsToFields();
     }
-
-    return this.mapToAgentStatus(agent);
+    
+    return agent;
   }
 
-  async updateAgentStatus(id: string, status: 'active' | 'inactive' | 'processing' | 'error' | 'completed'): Promise<AgentStatus> {
-    const agent = await this.agentRepository.findOne({ where: { id } });
+  async findByCategory(category: AgentCategory): Promise<AgentStatus[]> {
+    const agents = await this.agentRepository.find({
+      order: { name: 'ASC' },
+    });
     
-    if (!agent) {
-      throw new NotFoundException(`Agent with ID ${id} not found`);
-    }
-
-    agent.status = status;
-    agent.last_updated = new Date();
-    
-    const updatedAgent = await this.agentRepository.save(agent);
-    return this.mapToAgentStatus(updatedAgent);
+    const filteredAgents = agents.filter(agent => agent.getCategory() === category);
+    return filteredAgents.map(agent => this.convertToAgentStatus(agent));
   }
 
-  async updateAgentMetrics(id: string, metrics: AgentMetrics): Promise<AgentStatus> {
-    const agent = await this.agentRepository.findOne({ where: { id } });
+  async findByStatus(status: AgentStatusEnum): Promise<Agent[]> {
+    const agents = await this.agentRepository.find({ 
+      where: { status },
+      order: { name: 'ASC' },
+    });
     
-    if (!agent) {
-      throw new NotFoundException(`Agent with ID ${id} not found`);
-    }
-
-    agent.metrics = metrics;
-    agent.last_updated = new Date();
-    
-    const updatedAgent = await this.agentRepository.save(agent);
-    return this.mapToAgentStatus(updatedAgent);
-  }
-
-  async updateCurrentTask(id: string, task: string): Promise<AgentStatus> {
-    const agent = await this.agentRepository.findOne({ where: { id } });
-    
-    if (!agent) {
-      throw new NotFoundException(`Agent with ID ${id} not found`);
-    }
-
-    agent.current_task = task;
-    agent.last_updated = new Date();
-    
-    const updatedAgent = await this.agentRepository.save(agent);
-    return this.mapToAgentStatus(updatedAgent);
+    agents.forEach(agent => agent.syncMetricsToFields());
+    return agents;
   }
 
   async startAgent(id: string): Promise<AgentStatus> {
-    const agent = await this.agentRepository.findOne({ where: { id } });
+    const agent = await this.getAgentEntity(id);
     
-    if (!agent) {
-      throw new NotFoundException(`Agent with ID ${id} not found`);
-    }
-
-    // Communicate with MCP server to start the agent
-    try {
-      await this.mcpService.startAgent(agent.name);
-      
-      agent.status = 'active';
-      agent.last_updated = new Date();
-      
-      const updatedAgent = await this.agentRepository.save(agent);
-      return this.mapToAgentStatus(updatedAgent);
-    } catch (error) {
-      agent.status = 'error';
-      agent.last_updated = new Date();
-      await this.agentRepository.save(agent);
-      throw error;
-    }
+    agent.status = AgentStatusEnum.ACTIVE;
+    agent.currentTask = null;
+    agent.last_updated = new Date();
+    
+    await this.agentRepository.save(agent);
+    return this.convertToAgentStatus(agent);
   }
 
   async stopAgent(id: string): Promise<AgentStatus> {
-    const agent = await this.agentRepository.findOne({ where: { id } });
+    const agent = await this.getAgentEntity(id);
     
-    if (!agent) {
-      throw new NotFoundException(`Agent with ID ${id} not found`);
-    }
-
-    // Communicate with MCP server to stop the agent
-    try {
-      await this.mcpService.stopAgent(agent.name);
-      
-      agent.status = 'inactive';
-      agent.current_task = null;
-      agent.last_updated = new Date();
-      
-      const updatedAgent = await this.agentRepository.save(agent);
-      return this.mapToAgentStatus(updatedAgent);
-    } catch (error) {
-      agent.status = 'error';
-      agent.last_updated = new Date();
-      await this.agentRepository.save(agent);
-      throw error;
-    }
+    agent.status = AgentStatusEnum.INACTIVE;
+    agent.currentTask = null;
+    agent.last_updated = new Date();
+    
+    await this.agentRepository.save(agent);
+    return this.convertToAgentStatus(agent);
   }
 
   async getAgentMetrics(id: string): Promise<AgentMetrics> {
+    const agent = await this.getAgentEntity(id);
+    agent.syncMetricsToFields();
+    return agent.metrics;
+  }
+
+  async getAgentsByPipeline(): Promise<{
+    initial: AgentStatus[];
+    orchestrator: AgentStatus[];
+    specialized: AgentStatus[];
+    alternative: AgentStatus[];
+  }> {
+    const agents = await this.findAll();
+    
+    return {
+      initial: agents.filter(agent => agent.category === 'initial_processing'),
+      orchestrator: agents.filter(agent => agent.category === 'orchestrator'),
+      specialized: agents.filter(agent => agent.category === 'specialized'),
+      alternative: agents.filter(agent => agent.category === 'alternative'),
+    };
+  }
+
+  async getAllAgentsByCategory(): Promise<Record<AgentCategory, AgentStatus[]>> {
+    const agents = await this.findAll();
+    
+    return {
+      initial_processing: agents.filter(agent => agent.category === 'initial_processing'),
+      orchestrator: agents.filter(agent => agent.category === 'orchestrator'),
+      specialized: agents.filter(agent => agent.category === 'specialized'),
+      alternative: agents.filter(agent => agent.category === 'alternative'),
+    };
+  }
+
+  // Method for updating agent metrics (used by metrics collector)
+  async updateAgentMetrics(id: string, metrics: Partial<AgentMetrics>): Promise<Agent> {
+    return this.updateMetrics(id, metrics);
+  }
+
+  async updateStatus(id: string, status: AgentStatusEnum, currentTask?: string): Promise<Agent> {
+    const agent = await this.getAgentEntity(id);
+    
+    agent.status = status;
+    agent.currentTask = currentTask || null;
+    agent.last_updated = new Date();
+    
+    return this.agentRepository.save(agent);
+  }
+
+  async updateMetrics(id: string, metrics: Partial<AgentMetrics>): Promise<Agent> {
+    const agent = await this.getAgentEntity(id);
+    
+    agent.metrics = { ...agent.metrics, ...metrics };
+    agent.syncMetricsToFields();
+    
+    return this.agentRepository.save(agent);
+  }
+
+  async incrementThroughput(id: string): Promise<Agent> {
+    const agent = await this.getAgentEntity(id);
+    
+    agent.throughput += 1;
+    agent.syncFieldsToMetrics();
+    
+    return this.agentRepository.save(agent);
+  }
+
+  async addTokenUsage(id: string, tokens: number): Promise<Agent> {
+    const agent = await this.getAgentEntity(id);
+    
+    agent.llmTokenUsage += tokens;
+    if (agent.metrics.llm_usage) {
+      agent.metrics.llm_usage.total_tokens += tokens;
+    }
+    
+    return this.agentRepository.save(agent);
+  }
+
+  async updateSuccessRate(id: string, successRate: number): Promise<Agent> {
+    const agent = await this.getAgentEntity(id);
+    
+    agent.successRate = successRate;
+    agent.syncFieldsToMetrics();
+    
+    return this.agentRepository.save(agent);
+  }
+
+  async getActiveAgentsCount(): Promise<number> {
+    return this.agentRepository.count({ where: { status: AgentStatusEnum.ACTIVE } });
+  }
+
+  async getProcessingAgentsCount(): Promise<number> {
+    return this.agentRepository.count({ where: { status: AgentStatusEnum.PROCESSING } });
+  }
+
+  async getAgentStats(): Promise<{
+    total: number;
+    active: number;
+    inactive: number;
+    processing: number;
+    error: number;
+  }> {
+    const [total, active, inactive, processing, error] = await Promise.all([
+      this.agentRepository.count(),
+      this.agentRepository.count({ where: { status: AgentStatusEnum.ACTIVE } }),
+      this.agentRepository.count({ where: { status: AgentStatusEnum.INACTIVE } }),
+      this.agentRepository.count({ where: { status: AgentStatusEnum.PROCESSING } }),
+      this.agentRepository.count({ where: { status: AgentStatusEnum.ERROR } }),
+    ]);
+
+    return { total, active, inactive, processing, error };
+  }
+
+  async getTotalThroughput(): Promise<number> {
+    const result = await this.agentRepository
+      .createQueryBuilder('agent')
+      .select('SUM(agent.throughput)', 'total')
+      .getRawOne();
+    
+    return parseInt(result.total) || 0;
+  }
+
+  async getTotalTokenUsage(): Promise<number> {
+    const result = await this.agentRepository
+      .createQueryBuilder('agent')
+      .select('SUM(agent.llmTokenUsage)', 'total')
+      .getRawOne();
+    
+    return parseInt(result.total) || 0;
+  }
+
+  async getAverageProcessingTime(): Promise<number> {
+    const result = await this.agentRepository
+      .createQueryBuilder('agent')
+      .select('AVG(agent.processingTime)', 'average')
+      .getRawOne();
+    
+    return parseFloat(result.average) || 0;
+  }
+
+  // Helper method to get agent entity
+  private async getAgentEntity(id: string): Promise<Agent> {
     const agent = await this.agentRepository.findOne({ where: { id } });
     
     if (!agent) {
       throw new NotFoundException(`Agent with ID ${id} not found`);
     }
-
-    // Get real-time metrics from MCP server
-    try {
-      const metrics = await this.mcpService.getAgentMetrics(agent.name);
-      
-      // Update stored metrics
-      agent.metrics = metrics;
-      agent.last_updated = new Date();
-      await this.agentRepository.save(agent);
-      
-      return metrics;
-    } catch (error) {
-      // Fallback to stored metrics
-      return agent.metrics;
-    }
+    
+    agent.syncMetricsToFields();
+    return agent;
   }
 
-  async initializeDefaultAgents(): Promise<void> {
-    const agentNames: AgentName[] = [
-      'lead_intake',
-      'analysis',
-      'persona_creation',
-      'approach_strategy',
-      'message_crafting',
-    ];
-
-    const defaultMetrics: AgentMetrics = {
-      processing_time_seconds: 0,
-      llm_usage: {
-        total_tokens: 0,
-        prompt_tokens: 0,
-        completion_tokens: 0,
-      },
-      success_rate: 0,
-      queue_depth: 0,
-      throughput_per_hour: 0,
-    };
-
-    for (const name of agentNames) {
-      const existingAgent = await this.agentRepository.findOne({ where: { name } });
-      
-      if (!existingAgent) {
-        const agent = this.agentRepository.create({
-          name,
-          status: 'inactive',
-          metrics: defaultMetrics,
-        });
-        
-        await this.agentRepository.save(agent);
-      }
-    }
-  }
-
-  private mapToAgentStatus(agent: Agent): AgentStatus {
+  // Convert Agent entity to AgentStatus for API responses
+  private convertToAgentStatus(agent: Agent): AgentStatus {
+    agent.syncMetricsToFields();
+    
     return {
       id: agent.id,
       name: agent.name,
-      status: agent.status,
+      status: agent.status as any,
       metrics: agent.metrics,
       last_updated: agent.last_updated.toISOString(),
-      current_task: agent.current_task,
+      current_task: agent.currentTask,
+      description: `${agent.getDisplayName()} - ${agent.getCategory()} agent`,
+      category: agent.getCategory() as AgentCategory,
     };
   }
 }

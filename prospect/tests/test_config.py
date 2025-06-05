@@ -32,11 +32,6 @@ class TestLLMConfig:
         config = LLMConfig()
         assert config.api_key == "google_test_key"
     
-    @patch.dict(os.environ, {"OPENAI_API_KEY": "openai_test_key"})
-    def test_openai_api_key(self):
-        config = LLMConfig(provider="openai")
-        assert config.api_key == "openai_test_key"
-    
     def test_missing_api_key_raises_error(self):
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(ValueError, match="API key not found"):

@@ -263,5 +263,3 @@ if __name__ == '__main__':
         print(f"Enriched Data (no results test): {output_no_results.enriched_data}")
         if output_no_results.error_message:
             print(f"Error (no results test): {output_no_results.error_message}")
-
-```

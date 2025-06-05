@@ -18,7 +18,7 @@ def init_db():
     # they will be registered properly on the metadata. Otherwise
     # you will have to import them first before calling init_db()
     # noinspection PyUnresolvedReferences
-    from . import models # SQLAlchemy models
+    import models # SQLAlchemy models
     Base.metadata.create_all(bind=engine)
 
 def get_db():

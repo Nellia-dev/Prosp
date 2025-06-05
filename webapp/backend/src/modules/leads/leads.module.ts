@@ -1,17 +1,13 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { LeadsController } from './leads.controller';
+import { Lead } from '@/database/entities/lead.entity';
 import { LeadsService } from './leads.service';
-import { Lead } from '../../database/entities/lead.entity';
-import { McpModule } from '../mcp/mcp.module';
+import { LeadsController } from './leads.controller';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Lead]),
-    McpModule,
-  ],
-  controllers: [LeadsController],
+  imports: [TypeOrmModule.forFeature([Lead])],
   providers: [LeadsService],
-  exports: [LeadsService],
+  controllers: [LeadsController],
+  exports: [LeadsService, TypeOrmModule],
 })
 export class LeadsModule {}

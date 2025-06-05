@@ -32,9 +32,11 @@ export interface LoginResponse {
   user: {
     id: string;
     email: string;
+    firstName: string;
+    lastName: string;
     role: 'admin' | 'user';
-    createdAt: string;
-    updatedAt: string;
+    isActive: boolean;
+    lastLogin: string;
   };
 }
 

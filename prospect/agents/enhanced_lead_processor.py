@@ -9,11 +9,13 @@ import json
 import re
 import time
 import requests
+import traceback # Added import
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from loguru import logger
 
 from data_models.lead_structures import (
+    LeadAnalysis, # Added import
     AnalyzedLead,
     ComprehensiveProspectPackage,
     ContactInformation,

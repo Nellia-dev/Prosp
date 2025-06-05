@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
-import { ProcessingStage, QualificationTier } from '../../shared/types/nellia.types';
+import { ProcessingStage, QualificationTier } from '../../shared/enums/nellia.enums';
 
 @Entity('leads')
 export class Lead {
@@ -23,7 +23,7 @@ export class Lead {
 
   @Column({
     type: 'enum',
-    enum: ['High Potential', 'Medium Potential', 'Low Potential'],
+    enum: QualificationTier,
   })
   qualification_tier: QualificationTier;
 
@@ -44,8 +44,8 @@ export class Lead {
 
   @Column({
     type: 'enum',
-    enum: ['intake', 'analysis', 'persona', 'strategy', 'message', 'completed'],
-    default: 'intake',
+    enum: ProcessingStage,
+    default: ProcessingStage.INTAKE,
   })
   processing_stage: ProcessingStage;
 
@@ -54,4 +54,40 @@ export class Lead {
 
   @UpdateDateColumn()
   updated_at: Date;
+
+    // Additional optional fields for extended lead data
+  @Column({ type: 'varchar', nullable: true })
+  description?: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  contact_email?: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  contact_phone?: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  contact_role?: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  market_region?: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  company_size?: string;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
+  annual_revenue?: number;
+
+  @Column({ type: 'text', nullable: true })
+  persona_analysis?: string;
+
+  @Column({ type: 'decimal', precision: 3, scale: 2, nullable: true })
+  decision_maker_probability?: number;
+
+    get stage(): string {
+      return this.processing_stage;
+    }
+  
+    set stage(value: string) {
+      this.processing_stage = value as ProcessingStage;
+    }
 }

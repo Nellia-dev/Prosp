@@ -1,3 +1,5 @@
+import { AgentCategory, AgentName, ProcessingStage, QualificationTier } from '../enums/nellia.enums';
+
 export interface AgentMetrics {
   processing_time_seconds: number;
   llm_usage: {
@@ -12,11 +14,13 @@ export interface AgentMetrics {
 
 export interface AgentStatus {
   id: string;
-  name: string;
+  name: AgentName;
   status: 'active' | 'inactive' | 'processing' | 'error' | 'completed';
   metrics: AgentMetrics;
   last_updated: string;
   current_task?: string;
+  description?: string;
+  category?: AgentCategory;
 }
 
 export interface LeadData {
@@ -68,11 +72,10 @@ export interface ProcessingProgress {
   current_step: string;
 }
 
-export type AgentName = 'lead_intake' | 'analysis' | 'persona_creation' | 'approach_strategy' | 'message_crafting';
+// Re-export types from enums for consistency
+export { AgentName, AgentCategory, ProcessingStage, QualificationTier } from '../enums/nellia.enums';
 
-export type ProcessingStage = 'lead_qualification' | 'analyzing_refining' | 'possibly_qualified' | 'prospecting' | 'revisando' | 'primeiras_mensagens' | 'negociando' | 'desqualificado' | 'reuniao_agendada';
 
-export type QualificationTier = 'High Potential' | 'Medium Potential' | 'Low Potential';
 
 export interface McpRequest {
   method: string;

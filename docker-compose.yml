@@ -1,0 +1,227 @@
+version: "3.8"
+
+services:
+  # Database Services
+  postgres:
+    image: postgres:14
+    container_name: nellia-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: nellia_prospector
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nellia-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: nellia-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nellia-network
+
+  # Core Application Services
+  prospect-mcp-server:
+    build:
+      context: ./prospect
+      dockerfile: Dockerfile
+      target: mcp-server
+    container_name: nellia-prospect-mcp-server
+    environment:
+      - PYTHONPATH=/app
+      - SQLALCHEMY_DATABASE_URL=sqlite:///./mcp_server_data.db
+      - FLASK_ENV=production
+      - FLASK_DEBUG=false
+    ports:
+      - "5001:5001"
+    volumes:
+      - mcp_server_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - nellia-network
+    restart: unless-stopped
+
+  prospect-agents:
+    build:
+      context: ./prospect
+      dockerfile: Dockerfile
+      target: agents-system
+    container_name: nellia-prospect-agents
+    environment:
+      - PYTHONPATH=/app
+      - MCP_SERVER_URL=http://prospect-mcp-server:5001
+      - ENABLE_MCP_REPORTING=true
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - LOG_LEVEL=INFO
+    volumes:
+      - prospect_data:/app/data
+      - prospect_logs:/app/logs
+    depends_on:
+      prospect-mcp-server:
+        condition: service_healthy
+    networks:
+      - nellia-network
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./webapp/backend
+      dockerfile: Dockerfile
+    container_name: nellia-backend
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      # - PGSSLMODE=disable # Commented out as we are now trying to use SSL in the client config
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=postgres
+      - DB_DATABASE=nellia_prospector # Changed DB_NAME to DB_DATABASE for consistency
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MCP_SERVER_URL=http://prospect-mcp-server:5001
+      - MCP_SERVER_TIMEOUT=30000
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - FRONTEND_URL=http://localhost:3000
+    ports:
+      - "3001:3001"
+    volumes:
+      - backend_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      prospect-mcp-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - nellia-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./webapp/frontend
+      dockerfile: Dockerfile
+    container_name: nellia-frontend
+    environment:
+      - NODE_ENV=production
+      - VITE_API_BASE_URL=http://localhost:3001/api/v1
+      - VITE_WS_URL=ws://localhost:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - nellia-network
+    restart: unless-stopped
+
+  # Optional: PostgreSQL Admin Interface
+  pgladmin:
+    image: dpage/pgadmin4:latest
+    container_name: nellia-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@nellia.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5050:80"
+    volumes:
+      - pgladmin_data:/var/lib/pgladmin
+    depends_on:
+      - postgres
+    networks:
+      - nellia-network
+    profiles:
+      - admin
+
+  # Optional: Redis Admin Interface
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: nellia-redis-commander
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - nellia-network
+    profiles:
+      - admin
+
+  # Optional: System Monitoring
+  monitoring:
+    image: grafana/grafana:latest
+    container_name: nellia-monitoring
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    ports:
+      - "3002:3000"
+    volumes:
+      - monitoring_data:/var/lib/grafana
+    networks:
+      - nellia-network
+    profiles:
+      - monitoring
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgladmin_data:
+    driver: local
+  mcp_server_data:
+    driver: local
+  prospect_data:
+    driver: local
+  prospect_logs:
+    driver: local
+  backend_uploads:
+    driver: local
+  monitoring_data:
+    driver: local
+
+networks:
+  nellia-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
