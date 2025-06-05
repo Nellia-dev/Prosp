@@ -2,7 +2,7 @@
 # Supports both MCP Server and Agents System deployments
 
 # Base stage with common dependencies
-FROM python:3.11-slim as base
+FROM python:3.12-slim AS base
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -34,7 +34,7 @@ RUN mkdir -p /app/data /app/logs /app/harvester_output && \
     chown -R appuser:appuser /app
 
 # MCP Server target
-FROM base as mcp-server
+FROM base AS mcp-server
 
 # Install MCP server specific dependencies
 COPY mcp-server/requirements.txt mcp-requirements.txt
@@ -61,7 +61,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "2", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "--chdir", "/app/mcp-server", "app_enhanced:app"]
 
 # Agents System target
-FROM base as agents-system
+FROM base AS agents-system
 
 # Install additional dependencies for agents system if needed
 RUN pip install --no-cache-dir playwright && \
@@ -104,7 +104,7 @@ USER appuser
 CMD ["/app/start-agents.sh"]
 
 # Development target (optional)
-FROM base as development
+FROM base AS development
 
 # Install development dependencies
 RUN pip install --no-cache-dir \

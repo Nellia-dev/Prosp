@@ -1,7 +1,7 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 
 export const API_CONFIG = {
-  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api',
+  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api/v1',
   WS_URL: import.meta.env.VITE_WS_URL || 'ws://localhost:3001',
   TIMEOUT: 10000, // 10 seconds
   RETRY_ATTEMPTS: 3,

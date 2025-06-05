@@ -95,11 +95,12 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3001
+      # - PGSSLMODE=disable # Commented out as we are now trying to use SSL in the client config
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USERNAME=postgres
       - DB_PASSWORD=postgres
-      - DB_NAME=nellia_prospector
+      - DB_DATABASE=nellia_prospector # Changed DB_NAME to DB_DATABASE for consistency
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - MCP_SERVER_URL=http://prospect-mcp-server:5001
@@ -134,8 +135,8 @@ services:
     container_name: nellia-frontend
     environment:
       - NODE_ENV=production
-      - REACT_APP_API_URL=http://localhost:3001/api/v1
-      - REACT_APP_WS_URL=ws://localhost:3001
+      - VITE_API_BASE_URL=http://localhost:3001/api/v1
+      - VITE_WS_URL=ws://localhost:3001
     ports:
       - "3000:3000"
     depends_on:

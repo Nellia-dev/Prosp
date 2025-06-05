@@ -1,5 +1,5 @@
 # Multi-stage Dockerfile for Nellia Prospector Frontend
-FROM node:20-alpine as base
+FROM node:22-alpine AS base
 
 # Install system dependencies
 RUN apk add --no-cache \
@@ -15,7 +15,7 @@ COPY package*.json ./
 # ===================================
 # Development Stage
 # ===================================
-FROM base as development
+FROM base AS development
 
 # Install all dependencies
 RUN npm ci
@@ -32,7 +32,7 @@ CMD ["npm", "run", "dev"]
 # ===================================
 # Build Stage
 # ===================================
-FROM base as build
+FROM base AS build
 
 # Install all dependencies
 RUN npm ci
@@ -46,7 +46,7 @@ RUN npm run build
 # ===================================
 # Production Stage
 # ===================================
-FROM nginx:alpine as production
+FROM nginx:alpine AS production
 
 # Install curl for health checks
 RUN apk add --no-cache curl

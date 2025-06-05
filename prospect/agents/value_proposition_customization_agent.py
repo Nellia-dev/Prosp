@@ -1,5 +1,6 @@
-from typing import Optional
-from pydantic import BaseModel
+import re # Moved import re to top
+from typing import Optional, List
+from pydantic import BaseModel, Field
 
 from agents.base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
@@ -124,12 +125,12 @@ class ValuePropositionCustomizationAgent(BaseAgent[ValuePropositionCustomization
         except Exception as e:
             self.logger.error(f"An unexpected error occurred in {self.name}: {e}")
             import traceback
-            import re # Ensure re is imported for the persona name extraction
+            # import re # Moved to top
             traceback.print_exc()
             return ValuePropositionCustomizationOutput(error_message=f"An unexpected error occurred: {str(e)}")
 
 if __name__ == '__main__':
-    import re # Ensure re is imported for the main block too
+    # import re # Moved to top
     class MockLLMClient(LLMClientBase):
         def __init__(self, api_key: str = "mock_key"):
             super().__init__(api_key)
