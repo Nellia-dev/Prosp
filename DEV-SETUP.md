@@ -255,7 +255,7 @@ DB_DATABASE=nellia_prospector
 REDIS_HOST=localhost
 REDIS_PORT=6379
 JWT_SECRET=dev-secret-key
-OPENAI_API_KEY=your-key-here
+GOOGLE_API_KEY=your-key-here
 TAVILY_API_KEY=your-key-here
 ```
 

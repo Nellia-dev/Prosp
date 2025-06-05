@@ -29,7 +29,7 @@ class LLMConfig:
             if self.provider == "gemini":
                 self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
             elif self.provider == "openai":
-                self.api_key = os.getenv("OPENAI_API_KEY")
+                self.api_key = os.getenv("GOOGLE_API_KEY")
         
         if not self.api_key:
             raise ValueError(f"API key not found for provider: {self.provider}")

@@ -70,7 +70,7 @@ set +a
 
 # Validate critical environment variables
 echo -e "${BLUE}🔒 Validating environment configuration...${NC}"
-required_vars=("DB_PASSWORD" "JWT_SECRET" "OPENAI_API_KEY")
+required_vars=("DB_PASSWORD" "JWT_SECRET" "GOOGLE_API_KEY")
 for var in "${required_vars[@]}"; do
     if [ -z "${!var}" ] || [[ "${!var}" == *"your-"* ]]; then
         echo -e "${RED}❌ $var is not properly configured${NC}"

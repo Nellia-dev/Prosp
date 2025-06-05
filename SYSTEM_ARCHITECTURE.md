@@ -111,7 +111,7 @@ MCP_SERVER_URL=http://prospect-mcp-server:5001
 ENABLE_MCP_REPORTING=true
 
 # AI Services
-OPENAI_API_KEY=your-key
+GOOGLE_API_KEY=your-key
 TAVILY_API_KEY=your-key
 ```
 

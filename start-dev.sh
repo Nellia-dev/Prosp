@@ -33,7 +33,7 @@ if [ ! -f .env ]; then
     echo -e "${YELLOW}📝 Creating .env file from template...${NC}"
     cp .env.example .env
     echo -e "${YELLOW}⚠️  Please edit .env file with your API keys and configuration.${NC}"
-    echo -e "${YELLOW}Important: Set your OPENAI_API_KEY and TAVILY_API_KEY${NC}"
+    echo -e "${YELLOW}Important: Set your GOOGLE_API_KEY and TAVILY_API_KEY${NC}"
     echo ""
     echo -e "${BLUE}Press Enter to continue once you've configured .env...${NC}"
     read

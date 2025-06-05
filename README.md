@@ -43,7 +43,7 @@ cd nellia-prospector
 
 # Copy and configure environment
 cp .env.example .env
-# Edit .env with your API keys (OPENAI_API_KEY, TAVILY_API_KEY)
+# Edit .env with your API keys (GOOGLE_API_KEY, TAVILY_API_KEY)
 ```
 
 ### 2. Start System

@@ -236,10 +236,10 @@ env-check:
 	@test -f docker-compose.yml || (echo "❌ docker-compose.yml not found" && exit 1)
 	@echo "✅ Required files present"
 	@echo "Checking environment variables..."
-	@if [ -z "$$OPENAI_API_KEY" ] || [ "$$OPENAI_API_KEY" = "your-openai-api-key-here" ]; then \
-		echo "⚠️  OPENAI_API_KEY not configured properly"; \
+	@if [ -z "$$GOOGLE_API_KEY" ] || [ "$$GOOGLE_API_KEY" = "your-openai-api-key-here" ]; then \
+		echo "⚠️  GOOGLE_API_KEY not configured properly"; \
 	else \
-		echo "✅ OPENAI_API_KEY configured"; \
+		echo "✅ GOOGLE_API_KEY configured"; \
 	fi
 	@if [ -z "$$JWT_SECRET" ] || [ "$$JWT_SECRET" = "your-super-secret-jwt-key-change-in-production" ]; then \
 		echo "⚠️  JWT_SECRET should be changed for production"; \
