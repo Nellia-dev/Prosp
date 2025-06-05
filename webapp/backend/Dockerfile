@@ -54,8 +54,8 @@ RUN npm run build
 # ===================================
 FROM node:22-alpine AS production
 
-# Install dumb-init for proper signal handling
-RUN apk add --no-cache dumb-init curl
+# Install dumb-init and bash for proper signal handling and startup script
+RUN apk add --no-cache dumb-init curl bash
 
 # Create app directory
 WORKDIR /app
@@ -64,15 +64,27 @@ WORKDIR /app
 RUN addgroup -g 1001 -S nodejs
 RUN adduser -S nestjs -u 1001
 
-# Copy package files and install production dependencies
+# Copy package files and install all dependencies (including dev dependencies for TypeORM CLI)
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci && npm cache clean --force
 
 # Copy built application from build stage
 COPY --from=build --chown=nestjs:nodejs /app/dist ./dist
 
+# Copy source migration files (needed for TypeORM CLI)
+COPY --from=build --chown=nestjs:nodejs /app/src ./src
+
+# Copy TypeScript configuration (needed for TypeORM CLI)
+COPY --from=build --chown=nestjs:nodejs /app/tsconfig.json ./tsconfig.json
+
+# Copy startup script
+COPY --chown=nestjs:nodejs start.sh ./start.sh
+
 # Create uploads directory
 RUN mkdir -p uploads && chown nestjs:nodejs uploads
+
+# Make startup script executable
+RUN chmod +x start.sh
 
 # Switch to non-root user
 USER nestjs
@@ -87,5 +99,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start the application
-CMD ["node", "dist/main.js"]
+# Start the application using the startup script
+CMD ["./start.sh"]
