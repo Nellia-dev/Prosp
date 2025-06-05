@@ -1,117 +1,130 @@
 # Multi-stage Dockerfile for Nellia Prospector
-FROM python:3.12-slim as base
+# Supports both MCP Server and Agents System deployments
+
+# Base stage with common dependencies
+FROM python:3.11-slim as base
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Create app directory and user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     gcc \
     g++ \
-    make \
-    libc6-dev \
-    libffi-dev \
-    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-
-# Install Python dependencies
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Download and install Playwright browsers (needed for web scraping)
-RUN playwright install --with-deps chromium
 
 # Copy application code
 COPY . .
 
-# Create data and logs directories
-RUN mkdir -p /app/data /app/logs
+# Create necessary directories and set permissions
+RUN mkdir -p /app/data /app/logs /app/harvester_output && \
+    chown -R appuser:appuser /app
 
-# ===================================
-# MCP Server Stage
-# ===================================
+# MCP Server target
 FROM base as mcp-server
 
-# Set environment variables for MCP server
-ENV PYTHONPATH=/app
-ENV FLASK_APP=mcp-server/app.py
-ENV FLASK_ENV=production
+# Install MCP server specific dependencies
+COPY mcp-server/requirements.txt mcp-requirements.txt
+RUN pip install --no-cache-dir -r mcp-requirements.txt
 
-# Initialize MCP database
-RUN cd /app/mcp-server && python init_db.py
+# Install additional dependencies for web server
+RUN pip install --no-cache-dir gunicorn
 
 # Expose MCP server port
 EXPOSE 5001
 
-# Health check for MCP server
+# Create health check endpoint script
+RUN echo '#!/bin/bash\ncurl -f http://localhost:5001/health || exit 1' > /app/healthcheck.sh && \
+    chmod +x /app/healthcheck.sh
+
+# Switch to non-root user
+USER appuser
+
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:5001/health || exit 1
+    CMD /app/healthcheck.sh
 
-# Start MCP server with Gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "2", "--timeout", "120", "--chdir", "mcp-server", "app:app"]
+# Start MCP server
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "2", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "--chdir", "/app/mcp-server", "app_enhanced:app"]
 
-# ===================================
-# Agents System Stage
-# ===================================
+# Agents System target
 FROM base as agents-system
 
-# Set environment variables for agents
-ENV PYTHONPATH=/app
-ENV LOG_LEVEL=INFO
+# Install additional dependencies for agents system if needed
+RUN pip install --no-cache-dir playwright && \
+    playwright install --with-deps chromium
 
-# Create a non-root user for security
-RUN useradd --create-home --shell /bin/bash nellia
-RUN chown -R nellia:nellia /app
-USER nellia
+# Create startup script for agents system
+RUN echo '#!/bin/bash\n\
+    echo "Starting Nellia Prospector Agents System..."\n\
+    echo "Environment: $NODE_ENV"\n\
+    echo "MCP Server URL: $MCP_SERVER_URL"\n\
+    echo "Log Level: $LOG_LEVEL"\n\
+    \n\
+    # Wait for MCP server to be ready\n\
+    if [ ! -z "$MCP_SERVER_URL" ]; then\n\
+    echo "Waiting for MCP server to be ready..."\n\
+    timeout=60\n\
+    while [ $timeout -gt 0 ]; do\n\
+    if curl -f "$MCP_SERVER_URL/health" > /dev/null 2>&1; then\n\
+    echo "MCP server is ready!"\n\
+    break\n\
+    fi\n\
+    echo "Waiting for MCP server... ($timeout seconds remaining)"\n\
+    sleep 2\n\
+    timeout=$((timeout-2))\n\
+    done\n\
+    \n\
+    if [ $timeout -le 0 ]; then\n\
+    echo "Warning: MCP server not ready after 60 seconds, continuing anyway..."\n\
+    fi\n\
+    fi\n\
+    \n\
+    # Start the agents system\n\
+    exec python enhanced_main.py "$@"\n' > /app/start-agents.sh && \
+    chmod +x /app/start-agents.sh
 
-# Expose port for potential agent APIs (currently not used)
-EXPOSE 7777
+# Switch to non-root user
+USER appuser
 
-# Health check for agents system (check if main components are accessible)
-HEALTHCHECK --interval=60s --timeout=30s --start-period=60s --retries=3 \
-    CMD python -c "from agents.enhanced_lead_processor import EnhancedLeadProcessor; print('Agents system healthy')" || exit 1
+# Start agents system
+CMD ["/app/start-agents.sh"]
 
-# Default command runs enhanced main (can be overridden)
-CMD ["python", "enhanced_main.py", "--help"]
-
-# ===================================
-# Development Stage (optional)
-# ===================================
+# Development target (optional)
 FROM base as development
 
 # Install development dependencies
 RUN pip install --no-cache-dir \
-    jupyter \
+    pytest \
+    pytest-asyncio \
+    black \
+    mypy \
     ipython \
-    debugpy
+    jupyter
 
-# Install additional development tools
-RUN apt-get update && apt-get install -y \
-    vim \
-    htop \
-    tree \
-    && rm -rf /var/lib/apt/lists/*
+# Install MCP server dependencies for development
+COPY mcp-server/requirements.txt mcp-requirements.txt
+RUN pip install --no-cache-dir -r mcp-requirements.txt
 
-# Expose Jupyter port
-EXPOSE 8888
+# Install playwright for development
+RUN pip install --no-cache-dir playwright && \
+    playwright install --with-deps chromium
 
-# Development command
-CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]
+# Switch to non-root user
+USER appuser
 
-# ===================================
-# Legacy Harvester Stage (for backward compatibility)
-# ===================================
-FROM base as harvester
-
-# Set environment for harvester
-ENV PYTHONPATH=/app
-
-# Expose harvester port
-EXPOSE 7777
-
-# Health check for harvester
-HEALTHCHECK --interval=60s --timeout=30s --start-period=60s --retries=3 \
-    CMD python -c "import harvester; print('Harvester healthy')" || exit 1
-
-# Start harvester
-CMD ["python", "harvester.py"]
+# Default command for development
+CMD ["python", "-c", "print('Development container ready. Use docker exec to run commands.')"]
