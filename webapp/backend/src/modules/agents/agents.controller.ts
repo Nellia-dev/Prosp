@@ -1,7 +1,7 @@
-import { Controller, Get, Post, Param, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { Controller, Get, Post, Param, HttpCode, HttpStatus, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { AgentsService } from './agents.service';
-import { AgentStatus, AgentMetrics } from '../../shared/types/nellia.types';
+import { AgentStatus, AgentMetrics, AgentCategory } from '../../shared/types/nellia.types';
 
 @ApiTags('agents')
 @Controller('agents')
@@ -53,5 +53,42 @@ export class AgentsController {
   @ApiResponse({ status: 404, description: 'Agent not found' })
   async getMetrics(@Param('id') id: string): Promise<AgentMetrics> {
     return this.agentsService.getAgentMetrics(id);
+  }
+
+  @Get('category/:category')
+  @ApiOperation({ summary: 'Get agents by category' })
+  @ApiParam({
+    name: 'category',
+    description: 'Agent category',
+    enum: ['initial_processing', 'orchestrator', 'specialized', 'alternative']
+  })
+  @ApiResponse({ status: 200, description: 'List of agents in the specified category' })
+  async findByCategory(@Param('category') category: AgentCategory): Promise<AgentStatus[]> {
+    return this.agentsService.findByCategory(category);
+  }
+
+  @Get('pipeline/structure')
+  @ApiOperation({ summary: 'Get all agents organized by pipeline structure' })
+  @ApiResponse({
+    status: 200,
+    description: 'All agents organized by their role in the processing pipeline'
+  })
+  async getPipelineStructure(): Promise<{
+    initial: AgentStatus[];
+    orchestrator: AgentStatus[];
+    specialized: AgentStatus[];
+    alternative: AgentStatus[];
+  }> {
+    return this.agentsService.getAgentsByPipeline();
+  }
+
+  @Get('categories/all')
+  @ApiOperation({ summary: 'Get all agents grouped by category' })
+  @ApiResponse({
+    status: 200,
+    description: 'All agents grouped by their categories'
+  })
+  async getAllByCategory(): Promise<Record<AgentCategory, AgentStatus[]>> {
+    return this.agentsService.getAllAgentsByCategory();
   }
 }

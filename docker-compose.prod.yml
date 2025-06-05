@@ -1,0 +1,210 @@
+version: "3.8"
+
+services:
+  # Database Services
+  postgres:
+    image: postgres:14
+    container_name: nellia-postgres-prod
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nellia-network-prod
+    restart: unless-stopped
+    # Don't expose ports in production - only internal access
+
+  redis:
+    image: redis:7-alpine
+    container_name: nellia-redis-prod
+    volumes:
+      - redis_data_prod:/data
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nellia-network-prod
+    restart: unless-stopped
+    # Don't expose ports in production - only internal access
+
+  # Core Application Services
+  prospect-mcp-server:
+    build:
+      context: ./prospect
+      dockerfile: Dockerfile
+      target: mcp-server
+    container_name: nellia-prospect-mcp-server-prod
+    environment:
+      - PYTHONPATH=/app
+      - SQLALCHEMY_DATABASE_URL=sqlite:///./mcp_server_data.db
+      - FLASK_ENV=production
+      - FLASK_DEBUG=false
+    volumes:
+      - mcp_server_data_prod:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - nellia-network-prod
+    restart: unless-stopped
+    # Internal only - accessed through backend
+
+  prospect-agents:
+    build:
+      context: ./prospect
+      dockerfile: Dockerfile
+      target: agents-system
+    container_name: nellia-prospect-agents-prod
+    environment:
+      - PYTHONPATH=/app
+      - MCP_SERVER_URL=http://prospect-mcp-server:5001
+      - ENABLE_MCP_REPORTING=true
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - LOG_LEVEL=INFO
+    volumes:
+      - prospect_data_prod:/app/data
+      - prospect_logs_prod:/app/logs
+    depends_on:
+      prospect-mcp-server:
+        condition: service_healthy
+    networks:
+      - nellia-network-prod
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./webapp/backend
+      dockerfile: Dockerfile
+    container_name: nellia-backend-prod
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - MCP_SERVER_URL=http://prospect-mcp-server:5001
+      - MCP_SERVER_TIMEOUT=30000
+      - JWT_SECRET=${JWT_SECRET}
+      - FRONTEND_URL=${FRONTEND_URL}
+    ports:
+      - "3001:3001"
+    volumes:
+      - backend_uploads_prod:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      prospect-mcp-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - nellia-network-prod
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./webapp/frontend
+      dockerfile: Dockerfile
+    container_name: nellia-frontend-prod
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_API_URL=${FRONTEND_URL}/api/v1
+      - REACT_APP_WS_URL=${WS_URL}
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - nellia-network-prod
+    restart: unless-stopped
+
+  # Reverse Proxy for Production
+  nginx:
+    image: nginx:alpine
+    container_name: nellia-nginx-prod
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - nellia-network-prod
+    restart: unless-stopped
+    profiles:
+      - proxy
+
+  # Monitoring (Production)
+  monitoring:
+    image: grafana/grafana:latest
+    container_name: nellia-monitoring-prod
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_INSTALL_PLUGINS=redis-datasource
+    volumes:
+      - monitoring_data_prod:/var/lib/grafana
+    networks:
+      - nellia-network-prod
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+volumes:
+  postgres_data_prod:
+    driver: local
+  redis_data_prod:
+    driver: local
+  mcp_server_data_prod:
+    driver: local
+  prospect_data_prod:
+    driver: local
+  prospect_logs_prod:
+    driver: local
+  backend_uploads_prod:
+    driver: local
+  monitoring_data_prod:
+    driver: local
+
+networks:
+  nellia-network-prod:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

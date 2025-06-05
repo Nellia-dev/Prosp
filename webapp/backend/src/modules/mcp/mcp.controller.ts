@@ -163,4 +163,198 @@ export class McpController {
       );
     }
   }
+
+  @Get('agents/all/status')
+  @ApiOperation({ summary: 'Get status of all agents in the system' })
+  @ApiResponse({
+    status: 200,
+    description: 'Status of all agents organized by category',
+    schema: {
+      type: 'object',
+      properties: {
+        statuses: {
+          type: 'object',
+          additionalProperties: { type: 'string' }
+        },
+        summary: {
+          type: 'object',
+          properties: {
+            total: { type: 'number' },
+            active: { type: 'number' },
+            inactive: { type: 'number' },
+            processing: { type: 'number' }
+          }
+        }
+      }
+    }
+  })
+  async getAllAgentStatuses() {
+    try {
+      const statuses = await this.mcpService.getAllAgentStatuses();
+      
+      // Calculate summary statistics
+      const statusValues = Object.values(statuses);
+      const summary = {
+        total: statusValues.length,
+        active: statusValues.filter(status => status === 'active').length,
+        inactive: statusValues.filter(status => status === 'inactive').length,
+        processing: statusValues.filter(status => status === 'processing').length,
+        error: statusValues.filter(status => status === 'error').length,
+      };
+      
+      return {
+        statuses,
+        summary,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      throw new HttpException(
+        `Failed to get all agent statuses: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+
+  @Get('agents/support/verify')
+  @ApiOperation({ summary: 'Verify MCP server supports all required agents' })
+  @ApiResponse({
+    status: 200,
+    description: 'Agent support verification results',
+    schema: {
+      type: 'object',
+      properties: {
+        supportedAgents: {
+          type: 'array',
+          items: { type: 'string' }
+        },
+        unsupportedAgents: {
+          type: 'array',
+          items: { type: 'string' }
+        },
+        totalAgents: { type: 'number' },
+        supportPercentage: { type: 'number' }
+      }
+    }
+  })
+  async verifyAgentSupport() {
+    try {
+      const verification = await this.mcpService.verifyAgentSupport();
+      return {
+        ...verification,
+        timestamp: new Date().toISOString(),
+        status: verification.supportPercentage === 100 ? 'fully_supported' : 'partial_support'
+      };
+    } catch (error) {
+      throw new HttpException(
+        `Failed to verify agent support: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+
+  @Get('agents/categories')
+  @ApiOperation({ summary: 'Get all agents organized by category' })
+  @ApiResponse({
+    status: 200,
+    description: 'All agents organized by their categories',
+    schema: {
+      type: 'object',
+      properties: {
+        initial_processing: {
+          type: 'array',
+          items: { type: 'string' }
+        },
+        orchestrator: {
+          type: 'array',
+          items: { type: 'string' }
+        },
+        specialized: {
+          type: 'array',
+          items: { type: 'string' }
+        },
+        alternative: {
+          type: 'array',
+          items: { type: 'string' }
+        }
+      }
+    }
+  })
+  async getAgentsByCategory() {
+    try {
+      // Define agents by category
+      const agentsByCategory = {
+        initial_processing: [
+          'lead_intake_agent',
+          'lead_analysis_agent'
+        ],
+        orchestrator: [
+          'enhanced_lead_processor'
+        ],
+        specialized: [
+          'tavily_enrichment_agent',
+          'contact_extraction_agent',
+          'pain_point_deepening_agent',
+          'lead_qualification_agent',
+          'competitor_identification_agent',
+          'strategic_question_generation_agent',
+          'buying_trigger_identification_agent',
+          'tot_strategy_generation_agent',
+          'tot_strategy_evaluation_agent',
+          'tot_action_plan_synthesis_agent',
+          'detailed_approach_plan_agent',
+          'objection_handling_agent',
+          'value_proposition_customization_agent',
+          'b2b_personalized_message_agent',
+          'internal_briefing_summary_agent'
+        ],
+        alternative: [
+          'approach_strategy_agent',
+          'b2b_persona_creation_agent',
+          'message_crafting_agent',
+          'persona_creation_agent',
+          'lead_analysis_generation_agent'
+        ]
+      };
+
+      return {
+        categories: agentsByCategory,
+        summary: {
+          total_agents: Object.values(agentsByCategory).flat().length,
+          categories: Object.keys(agentsByCategory).length,
+          agents_per_category: Object.fromEntries(
+            Object.entries(agentsByCategory).map(([category, agents]) => [category, agents.length])
+          )
+        },
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      throw new HttpException(
+        `Failed to get agents by category: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+
+  @Post('test/connection')
+  @ApiOperation({ summary: 'Test connection to MCP server' })
+  @ApiResponse({ status: 200, description: 'Connection test results' })
+  async testConnection() {
+    try {
+      const isConnected = await this.mcpService.testConnection();
+      const systemStatus = await this.mcpService.getSystemStatus();
+      
+      return {
+        connected: isConnected,
+        status: isConnected ? 'success' : 'failed',
+        serverUrl: systemStatus.serverUrl,
+        timestamp: new Date().toISOString(),
+        details: systemStatus
+      };
+    } catch (error) {
+      throw new HttpException(
+        `Connection test failed: ${error.message}`,
+        HttpStatus.SERVICE_UNAVAILABLE
+      );
+    }
+  }
 }

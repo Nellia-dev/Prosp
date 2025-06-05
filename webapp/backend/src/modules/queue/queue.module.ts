@@ -9,13 +9,14 @@ import { AgentsModule } from '../agents/agents.module';
 import { LeadsModule } from '../leads/leads.module';
 import { MetricsModule } from '../metrics/metrics.module';
 import { McpModule } from '../mcp/mcp.module';
+import { WebSocketModule } from '../websocket/websocket.module';
 
 @Module({
   imports: [
     // Register Bull queues
     BullModule.registerQueue(
       {
-        name: 'lead-processing',
+        name: 'leadProcessing',
         defaultJobOptions: {
           removeOnComplete: 50, // Keep last 50 completed jobs
           removeOnFail: 25, // Keep last 25 failed jobs
@@ -27,7 +28,7 @@ import { McpModule } from '../mcp/mcp.module';
         },
       },
       {
-        name: 'metrics-collection',
+        name: 'metricsCollection',
         defaultJobOptions: {
           removeOnComplete: 20,
           removeOnFail: 10,
@@ -53,6 +54,7 @@ import { McpModule } from '../mcp/mcp.module';
     LeadsModule,
     MetricsModule,
     McpModule,
+    WebSocketModule,
   ],
   providers: [
     LeadProcessingProcessor,

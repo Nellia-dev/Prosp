@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Agent } from '../../database/entities/agent.entity';
 import { Lead } from '../../database/entities/lead.entity';
+import { ProcessingStage } from '../../shared/enums/nellia.enums';
 import { ChatMessage } from '../../database/entities/chat-message.entity';
 import {
   DashboardMetrics,
@@ -217,7 +218,7 @@ export class MetricsService {
 
   private async getCompletedLeadsCount(): Promise<number> {
     return await this.leadRepository.count({
-      where: { processing_stage: 'reuniao_agendada' },
+      where: { processing_stage: ProcessingStage.REUNIAO_AGENDADA },
     });
   }
 
@@ -243,7 +244,7 @@ export class MetricsService {
   private async getDailyThroughput(startDate: Date, endDate: Date): Promise<number> {
     return await this.leadRepository.count({
       where: {
-        processing_stage: 'reuniao_agendada',
+        processing_stage: ProcessingStage.REUNIAO_AGENDADA,
         updated_at: {
           gte: startDate,
           lte: endDate,

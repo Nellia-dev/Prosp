@@ -19,6 +19,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './modules/health/health.module';
 import { QueueModule } from './modules/queue/queue.module';
+import { WebSocketModule } from './modules/websocket/websocket.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { QueueModule } from './modules/queue/queue.module';
     DatabaseModule,
     HealthModule,
     QueueModule,
+    WebSocketModule,
   ],
   controllers: [],
   providers: [],
