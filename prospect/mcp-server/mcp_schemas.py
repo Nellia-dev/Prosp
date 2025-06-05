@@ -10,7 +10,7 @@ class LeadProcessingStatusEnum(str, enum.Enum):
     FAILED = "FAILED"
 
 class AgentExecutionStatusEnum(str, enum.Enum):
-    SUCCESS = "SUCCESS"
+    SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
 
 class LeadProcessingStateBase(BaseModel):

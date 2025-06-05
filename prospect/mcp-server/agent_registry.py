@@ -13,7 +13,9 @@ from dataclasses import dataclass
 from loguru import logger
 
 # Add prospect directory to path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+prospect_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if prospect_root not in sys.path:
+    sys.path.insert(0, prospect_root)
 
 from agents.base_agent import BaseAgent
 

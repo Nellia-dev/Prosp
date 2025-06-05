@@ -7,3 +7,34 @@ pydantic>=2.0.0
 
 # Development
 python-dotenv>=1.0.0
+
+# Logging
+loguru>=0.7.0
+
+# HTTP requests
+requests>=2.31.0
+
+# Async support
+aiohttp>=3.8.0
+
+# LLM clients (needed by prospect system)
+google-generativeai>=0.3.0
+openai>=1.0.0
+
+# External intelligence and APIs (needed by prospect system)
+tavily-python>=0.3.0
+
+# Data processing (needed by prospect system)
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+playwright>=1.40.0
+
+# Additional typing and validation support
+typing-extensions>=4.0.0
+pydantic[email]>=2.0.0
+
+# CLI support (needed by prospect system)
+rich>=13.0.0
+click>=8.0.0
+
+# Note: gzip, json, traceback, datetime, typing, os, sys, importlib, inspect are built-in modules

@@ -11,9 +11,11 @@ from loguru import logger
 import traceback
 
 # Add prospect directory to path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+prospect_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if prospect_root not in sys.path:
+    sys.path.insert(0, prospect_root)
 
-from core_logic.llm_client import LLMClientBase, get_llm_client
+from core_logic.llm_client import LLMClientBase, LLMClientFactory
 from agents.base_agent import BaseAgent, AgentMetrics
 from agent_registry import get_agent_registry, AgentRegistry, AgentInfo
 
@@ -33,7 +35,7 @@ class McpLlmService:
     def _initialize_llm_client(self) -> None:
         """Initialize the LLM client"""
         try:
-            self.llm_client = get_llm_client()
+            self.llm_client = LLMClientFactory.create_from_env()
             logger.info("LLM client initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize LLM client: {e}")

@@ -11,36 +11,81 @@ from datetime import datetime
 from loguru import logger
 
 # Add prospect directory to path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+prospect_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if prospect_root not in sys.path:
+    sys.path.insert(0, prospect_root)
 
-from data_models.lead_structures import (
-    ComprehensiveProspectPackage,
-    AnalyzedLead,
-    ValidatedLead,
-    SiteData,
-    GoogleSearchData,
-    LeadAnalysis,
-    EnhancedStrategy,
-    EnhancedPersonalizedMessage,
-    InternalBriefing,
-    ContactInformation,
-    ExternalIntelligence,
-    PainPointAnalysis,
-    LeadQualification,
-    CompetitorIntelligence,
-    PurchaseTriggers,
-    ValueProposition,
-    ObjectionFramework,
-    PersonalizedMessage,
-    CommunicationChannel
-)
+# Import from prospect's data_models package
+try:
+    from data_models.lead_structures import (
+        ComprehensiveProspectPackage,
+        AnalyzedLead,
+        ValidatedLead,
+        SiteData,
+        GoogleSearchData,
+        LeadAnalysis,
+        EnhancedStrategy,
+        EnhancedPersonalizedMessage,
+        InternalBriefing,
+        ContactInformation,
+        ExternalIntelligence,
+        PainPointAnalysis,
+        LeadQualification,
+        CompetitorIntelligence,
+        PurchaseTriggers,
+        ValueProposition,
+        ObjectionFramework,
+        PersonalizedMessage,
+        CommunicationChannel
+    )
+except ImportError as e:
+    logger.error(f"Failed to import prospect data models: {e}")
+    # Create placeholder classes for development
+    class ComprehensiveProspectPackage:
+        pass
+    class AnalyzedLead:
+        pass
+    class ValidatedLead:
+        pass
+    class SiteData:
+        pass
+    class GoogleSearchData:
+        pass
+    class LeadAnalysis:
+        pass
+    class EnhancedStrategy:
+        pass
+    class EnhancedPersonalizedMessage:
+        pass
+    class InternalBriefing:
+        pass
+    class ContactInformation:
+        pass
+    class ExternalIntelligence:
+        pass
+    class PainPointAnalysis:
+        pass
+    class LeadQualification:
+        pass
+    class CompetitorIntelligence:
+        pass
+    class PurchaseTriggers:
+        pass
+    class ValueProposition:
+        pass
+    class ObjectionFramework:
+        pass
+    class PersonalizedMessage:
+        pass
+    class CommunicationChannel:
+        pass
 
-from data_models import (
-    LeadProcessingState as LeadProcessingStatePydantic,
-    AgentExecutionRecord as AgentExecutionRecordPydantic,
-    LeadProcessingStatusEnum,
-    AgentExecutionStatusEnum
-)
+# Import from local MCP schemas file
+import mcp_schemas
+LeadProcessingStatePydantic = mcp_schemas.LeadProcessingState
+AgentExecutionRecordPydantic = mcp_schemas.AgentExecutionRecord
+LeadProcessingStatusEnum = mcp_schemas.LeadProcessingStatusEnum
+AgentExecutionStatusEnum = mcp_schemas.AgentExecutionStatusEnum
 
 class DataBridge:
     """Bridge between MCP server models and prospect system data structures"""

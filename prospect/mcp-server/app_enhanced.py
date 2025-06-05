@@ -9,7 +9,8 @@ from typing import Dict, Any, List, Optional
 # Import database and models from the same directory
 import database
 import models
-from data_models import (
+# Import from local MCP schemas file
+from .mcp_schemas import (
     LeadProcessingStateCreate, LeadProcessingState as LeadProcessingStatePydantic,
     AgentEventPayload, AgentExecutionRecordCreate, AgentExecutionRecord as AgentExecutionRecordPydantic,
     LeadProcessingStatusEnum, AgentExecutionStatusEnum
@@ -76,7 +77,7 @@ def process_lead_enhanced(lead_id: str):
             return jsonify({"error": "Request body must be JSON"}), 400
 
         # Convert input data to validated lead format
-        validated_lead = data_bridge.convert_site_data_to_validated_lead(data)
+        validated_lead = DataBridge.convert_site_data_to_validated_lead(data)
         if not validated_lead:
             return jsonify({"error": "Failed to convert input data to ValidatedLead format"}), 400
 
@@ -165,7 +166,7 @@ def execute_specific_agent(lead_id: str, agent_name: str):
         result = llm_service.execute_agent_by_name(agent_name, input_data, **agent_params)
 
         # Create agent execution record
-        agent_summary = data_bridge.create_agent_execution_summary(agent_name, result)
+        agent_summary = DataBridge.create_agent_execution_summary(agent_name, result)
         
         db_agent_record = models.AgentExecutionRecordOrm(
             lead_id=lead_id,
@@ -240,7 +241,7 @@ def execute_agent_pipeline(lead_id: str):
 
         # Create agent execution records for each step
         for step_result in result.get('pipeline_results', []):
-            agent_summary = data_bridge.create_agent_execution_summary(
+            agent_summary = DataBridge.create_agent_execution_summary(
                 step_result['agent_name'], 
                 step_result
             )
@@ -414,7 +415,7 @@ def record_agent_event(lead_id: str):
             lead_state.error_message = event_payload.error_message or f"Agent {event_payload.agent_name} failed."
             lead_state.end_time = event_payload.end_time or datetime.datetime.utcnow()
             lead_state.current_agent = f"Failed: {event_payload.agent_name}"
-        else: # Agent Succeeded
+        elif event_payload.status == AgentExecutionStatusEnum.SUCCEEDED: # Agent Succeeded
             lead_state.current_agent = f"Completed: {event_payload.agent_name}"
             # Determine if this is the last agent. This logic is simplified.
             # A more robust system might have a predefined workflow or check a specific "final_agent_name" list.

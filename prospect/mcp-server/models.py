@@ -5,7 +5,9 @@ import datetime # For default values
 
 from database import Base
 # Import Pydantic enums to be reused by SQLAlchemy's Enum type
-from data_models import LeadProcessingStatusEnum, AgentExecutionStatusEnum
+import mcp_schemas
+LeadProcessingStatusEnum = mcp_schemas.LeadProcessingStatusEnum
+AgentExecutionStatusEnum = mcp_schemas.AgentExecutionStatusEnum
 
 class LeadProcessingStateOrm(Base):
     __tablename__ = "leads_processing_state"

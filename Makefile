@@ -1,7 +1,7 @@
 # Nellia Prospector Development Environment
 # Simple make commands to manage the development environment
 
-.PHONY: dev start stop stop-clean setup install install-backend install-frontend install-python build build-backend build-frontend test test-backend test-frontend test-integration lint lint-backend lint-frontend logs logs-backend logs-frontend logs-db db-migrate db-reset db-reset-hard docker-up docker-down docker-reset health help prod-build prod-deploy prod-stop env-check admin monitoring security-check backup restore clean
+.PHONY: dev start stop stop-clean setup install install-backend install-frontend install-python build build-backend build-frontend test test-backend test-frontend test-integration test-python test-mcp-server lint lint-backend lint-frontend lint-python format-python run-mcp-server run-prospect-agents logs logs-backend logs-frontend logs-db db-migrate db-reset db-reset-hard docker-up docker-down docker-reset health help prod-build prod-deploy prod-stop env-check admin monitoring security-check backup restore clean
 
 # Default target
 help:
@@ -29,12 +29,20 @@ help:
 	@echo "  make test          - Run all tests"
 	@echo "  make test-backend  - Run backend tests"
 	@echo "  make test-frontend - Run frontend tests"
+	@echo "  make test-python   - Run Python/prospect tests"
+	@echo "  make test-mcp-server - Test MCP server health"
 	@echo "  make test-integration - Run full integration tests"
 	@echo ""
 	@echo "🔍 Code Quality:"
 	@echo "  make lint          - Lint all code"
 	@echo "  make lint-backend  - Lint backend code"
 	@echo "  make lint-frontend - Lint frontend code"
+	@echo "  make lint-python   - Lint Python code"
+	@echo "  make format-python - Format Python code with black"
+	@echo ""
+	@echo "🐍 Python/MCP Operations:"
+	@echo "  make run-mcp-server - Start MCP server in development"
+	@echo "  make run-prospect-agents - Run prospect processing agents"
 	@echo ""
 	@echo "📊 Monitoring:"
 	@echo "  make logs          - View all service logs"
@@ -85,11 +93,20 @@ install-frontend:
 
 install-python:
 	@echo "🐍 Setting up Python environment..."
-	@if [ -d "python-project" ]; then \
-		cd python-project && \
+	@if [ -d "prospect" ]; then \
+		echo "📦 Installing prospect dependencies..."; \
+		cd prospect && \
 		python -m venv venv && \
 		. venv/bin/activate && \
-		pip install -r requirements.txt; \
+		pip install -r requirements.txt && \
+		echo "📦 Installing MCP server dependencies..."; \
+		if [ -d "mcp-server" ] && [ -f "mcp-server/requirements.txt" ]; then \
+			pip install -r mcp-server/requirements.txt; \
+			echo "✅ MCP server dependencies installed"; \
+		else \
+			echo "⚠️  MCP server requirements not found, skipping..."; \
+		fi && \
+		echo "✅ Python environment setup complete"; \
 	else \
 		echo "⚠️  Python project directory not found, skipping..."; \
 	fi
@@ -115,8 +132,76 @@ build-frontend:
 	@echo "🏗️  Building frontend..."
 	cd webapp/frontend && npm run build
 
+# Python/MCP Server Operations
+test-python:
+	@echo "🧪 Running Python tests..."
+	@if [ -d "prospect" ]; then \
+		cd prospect && \
+		. venv/bin/activate && \
+		python -m pytest tests/ -v; \
+	else \
+		echo "⚠️  Python project directory not found, skipping..."; \
+	fi
+
+test-mcp-server:
+	@echo "🧪 Testing MCP server..."
+	@if [ -d "prospect/mcp-server" ]; then \
+		cd prospect && \
+		. venv/bin/activate && \
+		echo "Testing MCP server health endpoint..." && \
+		python -c "import requests; r = requests.get('http://localhost:5001/health'); print(f'Status: {r.status_code}'); print(r.json())" || echo "❌ MCP server not responding"; \
+	else \
+		echo "⚠️  MCP server directory not found, skipping..."; \
+	fi
+
+lint-python:
+	@echo "🔍 Linting Python code..."
+	@if [ -d "prospect" ]; then \
+		cd prospect && \
+		. venv/bin/activate && \
+		echo "Running black..." && \
+		black --check . || echo "Run 'black .' to format code" && \
+		echo "Running mypy..." && \
+		mypy . --ignore-missing-imports || echo "Type checking issues found"; \
+	else \
+		echo "⚠️  Python project directory not found, skipping..."; \
+	fi
+
+format-python:
+	@echo "🎨 Formatting Python code..."
+	@if [ -d "prospect" ]; then \
+		cd prospect && \
+		. venv/bin/activate && \
+		black . && \
+		echo "✅ Python code formatted"; \
+	else \
+		echo "⚠️  Python project directory not found, skipping..."; \
+	fi
+
+run-mcp-server:
+	@echo "🚀 Starting MCP server in development mode..."
+	@if [ -d "prospect/mcp-server" ]; then \
+		cd prospect && \
+		. venv/bin/activate && \
+		echo "Starting MCP server on http://localhost:5001" && \
+		cd mcp-server && \
+		python app_enhanced.py; \
+	else \
+		echo "⚠️  MCP server directory not found"; \
+	fi
+
+run-prospect-agents:
+	@echo "🤖 Running Prospect agents..."
+	@if [ -d "prospect" ]; then \
+		cd prospect && \
+		. venv/bin/activate && \
+		python enhanced_main.py; \
+	else \
+		echo "⚠️  Prospect directory not found"; \
+	fi
+
 # Testing
-test: test-backend test-frontend
+test: test-backend test-frontend test-python
 
 test-backend:
 	@echo "🧪 Running backend tests..."
@@ -127,7 +212,7 @@ test-frontend:
 	cd webapp/frontend && npm test
 
 # Code Quality
-lint: lint-backend lint-frontend
+lint: lint-backend lint-frontend lint-python
 
 lint-backend:
 	@echo "🔍 Linting backend code..."
