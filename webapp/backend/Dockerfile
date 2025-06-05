@@ -70,7 +70,6 @@ RUN npm ci --only=production && npm cache clean --force
 
 # Copy built application from build stage
 COPY --from=build --chown=nestjs:nodejs /app/dist ./dist
-COPY --from=build --chown=nestjs:nodejs /app/node_modules ./node_modules
 
 # Create uploads directory
 RUN mkdir -p uploads && chown nestjs:nodejs uploads

@@ -42,6 +42,7 @@ export const databaseConfig = (configService: any) => ({
   migrations: ['dist/database/migrations/*.js'],
   synchronize: false,
   logging: configService.get('NODE_ENV') === 'development',
+  ssl: false, // Explicitly disable SSL
   retryAttempts: 3,
   retryDelay: 3000,
 });
