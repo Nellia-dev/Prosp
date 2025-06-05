@@ -81,7 +81,11 @@ Two migrations are already defined:
    - Added source file copying for TypeORM CLI
    - Changed CMD to use startup script
 
-3. **`test-migration-fix.sh`** (NEW)
+3. **`webapp/backend/src/modules/metrics/metrics.service.ts`**
+   - Fixed column name mismatch: `roi_potential` → `roi_potential_score`
+   - Updated all query builders to use correct column names
+
+4. **`test-migration-fix.sh`** (NEW)
    - Comprehensive test script to verify the fix works
 
 ## Testing
