@@ -187,10 +187,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         user: {
           id: apiResponse.user.id,
           email: apiResponse.user.email,
-          name: undefined, // API doesn't provide name yet
+          name: `${apiResponse.user.firstName} ${apiResponse.user.lastName}`,
           role: mapApiRoleToUserRole(apiResponse.user.role),
-          createdAt: apiResponse.user.createdAt,
-          updatedAt: apiResponse.user.updatedAt
+          createdAt: new Date().toISOString(), // Set current date since API doesn't provide it
+          updatedAt: new Date().toISOString()  // Set current date since API doesn't provide it
         }
       };
       
@@ -231,10 +231,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         user: {
           id: apiResponse.user.id,
           email: apiResponse.user.email,
-          name: userData.name, // Use the name from registration
+          name: `${userData.firstName} ${userData.lastName}`, // Combine first and last name
           role: mapApiRoleToUserRole(apiResponse.user.role),
-          createdAt: apiResponse.user.createdAt,
-          updatedAt: apiResponse.user.updatedAt
+          createdAt: new Date().toISOString(), // Set current date since API doesn't provide it
+          updatedAt: new Date().toISOString()  // Set current date since API doesn't provide it
         }
       };
       

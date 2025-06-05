@@ -12,7 +12,8 @@ const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isRegisterMode, setIsRegisterMode] = useState(false);
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
 
   const { login, register, isLoading, error, clearError } = useAuth();
   const navigate = useNavigate();
@@ -30,7 +31,8 @@ const Login: React.FC = () => {
         await register({
           email,
           password,
-          name
+          firstName,
+          lastName
         });
       } else {
         await login({ email, password });
@@ -50,7 +52,8 @@ const Login: React.FC = () => {
     // Clear form fields when switching modes
     setEmail('');
     setPassword('');
-    setName('');
+    setFirstName('');
+    setLastName('');
   };
 
   return (
@@ -77,18 +80,32 @@ const Login: React.FC = () => {
             )}
 
             {isRegisterMode && (
-              <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
-                <Input
-                  id="name"
-                  type="text"
-                  placeholder="Enter your full name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  disabled={isLoading}
-                />
-              </div>
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="firstName">First Name</Label>
+                  <Input
+                    id="firstName"
+                    type="text"
+                    placeholder="Enter your first name"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    required
+                    disabled={isLoading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName">Last Name</Label>
+                  <Input
+                    id="lastName"
+                    type="text"
+                    placeholder="Enter your last name"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    required
+                    disabled={isLoading}
+                  />
+                </div>
+              </>
             )}
 
             <div className="space-y-2">
@@ -114,7 +131,7 @@ const Login: React.FC = () => {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 disabled={isLoading}
-                minLength={6}
+                minLength={8}
               />
             </div>
           </CardContent>
