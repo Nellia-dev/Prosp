@@ -16,7 +16,7 @@ import { WebSocketModule } from '../websocket/websocket.module';
     // Register Bull queues
     BullModule.registerQueue(
       {
-        name: 'leadProcessing',
+        name: 'lead-processing',
         defaultJobOptions: {
           removeOnComplete: 50, // Keep last 50 completed jobs
           removeOnFail: 25, // Keep last 25 failed jobs
@@ -28,7 +28,7 @@ import { WebSocketModule } from '../websocket/websocket.module';
         },
       },
       {
-        name: 'metricsCollection',
+        name: 'metrics-collection',
         defaultJobOptions: {
           removeOnComplete: 20,
           removeOnFail: 10,
