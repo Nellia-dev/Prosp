@@ -7,7 +7,7 @@ import {
   AlertTriangle,
   RefreshCw 
 } from "lucide-react";
-import { useConnectionStatus, useNelliaWebSocket } from "../hooks/useWebSocket";
+import { useConnectionStatus, useNelliaSocket } from "../hooks/useSocketIO";
 
 interface ConnectionStatusIndicatorProps {
   showText?: boolean;
@@ -19,7 +19,7 @@ export const ConnectionStatusIndicator = ({
   compact = false 
 }: ConnectionStatusIndicatorProps) => {
   const { status, statusColor, statusText, error } = useConnectionStatus();
-  const { connect } = useNelliaWebSocket();
+  const { connect } = useNelliaSocket();
 
   const getIcon = () => {
     switch (status) {

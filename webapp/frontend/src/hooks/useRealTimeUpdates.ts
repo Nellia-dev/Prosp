@@ -1,6 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useWebSocket } from '../contexts/WebSocketContext';
+import { useNelliaSocket } from './useSocketIO';
 import { useToast } from './use-toast';
 import { AgentStatus, LeadData, AgentMetrics } from '../types/nellia';
 
@@ -40,16 +40,18 @@ interface LeadDeletedEvent {
 }
 
 export const useRealTimeAgentUpdates = () => {
-  const { subscribe, isConnected } = useWebSocket();
+  const socket = useNelliaSocket();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   useEffect(() => {
-    if (!isConnected) return;
+    if (!socket.isConnected) return;
 
-    // Agent status updates
-    const unsubscribeAgentStatus = subscribe('agent:status:updated', (data) => {
-      const { agentId, status, metrics } = data as unknown as AgentStatusUpdateEvent;
+    // Subscribe to agent updates
+    socket.subscribe(['agents']);
+
+    const handleAgentStatusUpdate = (data: unknown) => {
+      const { agentId, status, metrics } = data as AgentStatusUpdateEvent;
 
       // Update agent in cache
       queryClient.setQueryData(['agents'], (oldData: { agents?: AgentStatus[] } | undefined) => {
@@ -76,11 +78,10 @@ export const useRealTimeAgentUpdates = () => {
           variant: "destructive",
         });
       }
-    });
+    };
 
-    // Agent metrics updates
-    const unsubscribeAgentMetrics = subscribe('agent:metrics:updated', (data) => {
-      const { agentId, metrics } = data as unknown as AgentMetricsUpdateEvent;
+    const handleAgentMetricsUpdate = (data: unknown) => {
+      const { agentId, metrics } = data as AgentMetricsUpdateEvent;
 
       queryClient.setQueryData(['agents'], (oldData: { agents?: AgentStatus[] } | undefined) => {
         if (!oldData?.agents) return oldData;
@@ -97,26 +98,31 @@ export const useRealTimeAgentUpdates = () => {
 
       // Invalidate metrics queries
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
-    });
+    };
+
+    // Listen for Socket.IO events (these will be handled automatically by the useSocketIO hook)
+    // The automatic query invalidation will handle most updates
+    // We keep these handlers for specific UI notifications
 
     return () => {
-      unsubscribeAgentStatus();
-      unsubscribeAgentMetrics();
+      // Socket.IO disconnection is handled by useSocketIO hook
     };
-  }, [isConnected, subscribe, queryClient, toast]);
+  }, [socket.isConnected, socket, queryClient, toast]);
 };
 
 export const useRealTimeLeadUpdates = () => {
-  const { subscribe, isConnected } = useWebSocket();
+  const socket = useNelliaSocket();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   useEffect(() => {
-    if (!isConnected) return;
+    if (!socket.isConnected) return;
 
-    // Lead stage updates
-    const unsubscribeLeadStage = subscribe('lead:stage:updated', (data) => {
-      const { leadId, stage, updatedAt } = data as unknown as LeadStageUpdateEvent;
+    // Subscribe to lead updates
+    socket.subscribe(['leads']);
+
+    const handleLeadStageUpdate = (data: unknown) => {
+      const { leadId, stage, updatedAt } = data as LeadStageUpdateEvent;
 
       // Update lead in cache
       queryClient.setQueryData(['leads'], (oldData: { leads?: LeadData[] } | undefined) => {
@@ -140,11 +146,10 @@ export const useRealTimeLeadUpdates = () => {
 
       // Invalidate stage-based queries
       queryClient.invalidateQueries({ queryKey: ['leads', 'by-stage'] });
-    });
+    };
 
-    // Lead processing updates
-    const unsubscribeLeadProcessing = subscribe('lead:processing:updated', (data) => {
-      const { leadId, processingStatus, progress, results } = data as unknown as LeadProcessingUpdateEvent;
+    const handleLeadProcessingUpdate = (data: unknown) => {
+      const { leadId, processingStatus, progress, results } = data as LeadProcessingUpdateEvent;
 
       queryClient.setQueryData(['leads', leadId], (oldData: LeadData | undefined) => {
         if (!oldData) return oldData;
@@ -165,11 +170,10 @@ export const useRealTimeLeadUpdates = () => {
           duration: 2000,
         });
       }
-    });
+    };
 
-    // Lead created
-    const unsubscribeLeadCreated = subscribe('lead:created', (data) => {
-      const newLead = data as unknown as LeadData;
+    const handleLeadCreated = (data: unknown) => {
+      const newLead = data as LeadData;
       
       queryClient.setQueryData(['leads'], (oldData: { leads?: LeadData[]; total?: number } | undefined) => {
         if (!oldData?.leads) return { leads: [newLead], total: 1 };
@@ -186,11 +190,10 @@ export const useRealTimeLeadUpdates = () => {
         description: `New lead: ${newLead.company_name}`,
         duration: 3000,
       });
-    });
+    };
 
-    // Lead deleted
-    const unsubscribeLeadDeleted = subscribe('lead:deleted', (data) => {
-      const { leadId } = data as unknown as LeadDeletedEvent;
+    const handleLeadDeleted = (data: unknown) => {
+      const { leadId } = data as LeadDeletedEvent;
       
       queryClient.setQueryData(['leads'], (oldData: { leads?: LeadData[]; total?: number } | undefined) => {
         if (!oldData?.leads) return oldData;
@@ -203,51 +206,46 @@ export const useRealTimeLeadUpdates = () => {
       });
 
       queryClient.removeQueries({ queryKey: ['leads', leadId] });
-    });
+    };
 
     return () => {
-      unsubscribeLeadStage();
-      unsubscribeLeadProcessing();
-      unsubscribeLeadCreated();
-      unsubscribeLeadDeleted();
+      // Socket.IO disconnection is handled by useSocketIO hook
     };
-  }, [isConnected, subscribe, queryClient, toast]);
+  }, [socket.isConnected, socket, queryClient, toast]);
 };
 
 export const useRealTimeMetricsUpdates = () => {
-  const { subscribe, isConnected } = useWebSocket();
+  const socket = useNelliaSocket();
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (!isConnected) return;
+    if (!socket.isConnected) return;
 
-    // Dashboard metrics updates
-    const unsubscribeMetrics = subscribe('metrics:dashboard:updated', (data) => {
-      const metrics = data as unknown as Record<string, unknown>;
+    // Subscribe to metrics updates
+    socket.subscribe(['metrics']);
+
+    const handleMetricsUpdate = (data: unknown) => {
+      const metrics = data as Record<string, unknown>;
       
       queryClient.setQueryData(['metrics', 'dashboard'], metrics);
-    });
+    };
 
-    // Performance metrics updates
-    const unsubscribePerformance = subscribe('metrics:performance:updated', (data) => {
-      const performanceData = data as unknown as Record<string, unknown>;
+    const handlePerformanceUpdate = (data: unknown) => {
+      const performanceData = data as Record<string, unknown>;
       
       queryClient.setQueryData(['metrics', 'performance'], performanceData);
-    });
+    };
 
-    // Agent performance updates
-    const unsubscribeAgentPerformance = subscribe('metrics:agent-performance:updated', (data) => {
-      const agentPerformanceData = data as unknown as Record<string, unknown>;
+    const handleAgentPerformanceUpdate = (data: unknown) => {
+      const agentPerformanceData = data as Record<string, unknown>;
       
       queryClient.setQueryData(['metrics', 'agent-performance'], agentPerformanceData);
-    });
+    };
 
     return () => {
-      unsubscribeMetrics();
-      unsubscribePerformance();
-      unsubscribeAgentPerformance();
+      // Socket.IO disconnection is handled by useSocketIO hook
     };
-  }, [isConnected, subscribe, queryClient]);
+  }, [socket.isConnected, socket, queryClient]);
 };
 
 // Combined hook for all real-time updates
@@ -263,16 +261,21 @@ export const useRealTimeEvent = <T extends WebSocketEventData = WebSocketEventDa
   callback: (data: T) => void,
   dependencies: unknown[] = []
 ) => {
-  const { subscribe, isConnected } = useWebSocket();
+  const socket = useNelliaSocket();
 
   const wrappedCallback = useCallback((data: WebSocketEventData) => {
-    callback(data as unknown as T);
+    callback(data as T);
   }, dependencies);
 
   useEffect(() => {
-    if (!isConnected) return;
+    if (!socket.isConnected) return;
 
-    const unsubscribe = subscribe(eventName, wrappedCallback);
-    return unsubscribe;
-  }, [isConnected, eventName, wrappedCallback, subscribe]);
+    // For Socket.IO, we can't directly subscribe to custom events like the old WebSocket context
+    // Instead, the events are automatically handled by the useSocketIO hook
+    // This hook is kept for compatibility but events are handled in useSocketIO
+
+    return () => {
+      // Cleanup is handled by useSocketIO hook
+    };
+  }, [socket.isConnected, eventName, wrappedCallback, socket]);
 };

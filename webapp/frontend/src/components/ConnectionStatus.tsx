@@ -1,4 +1,4 @@
-import { useWebSocket } from '../contexts/WebSocketContext';
+import { useConnectionStatus, useNelliaSocket } from '../hooks/useSocketIO';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Wifi, WifiOff, RotateCcw, AlertCircle } from 'lucide-react';
@@ -9,10 +9,11 @@ interface ConnectionStatusProps {
 }
 
 export const ConnectionStatus = ({ className = '', showText = true }: ConnectionStatusProps) => {
-  const { connectionStatus, isConnected, connect } = useWebSocket();
+  const { status, statusColor, statusText, isConnected } = useConnectionStatus();
+  const { connect } = useNelliaSocket();
 
   const getStatusIcon = () => {
-    switch (connectionStatus) {
+    switch (status) {
       case 'connected':
         return <Wifi className="w-3 h-3" />;
       case 'connecting':
@@ -24,8 +25,8 @@ export const ConnectionStatus = ({ className = '', showText = true }: Connection
     }
   };
 
-  const getStatusColor = () => {
-    switch (connectionStatus) {
+  const getStatusBadgeColor = () => {
+    switch (status) {
       case 'connected':
         return 'bg-green-500 hover:bg-green-600';
       case 'connecting':
@@ -37,35 +38,22 @@ export const ConnectionStatus = ({ className = '', showText = true }: Connection
     }
   };
 
-  const getStatusText = () => {
-    switch (connectionStatus) {
-      case 'connected':
-        return 'Connected';
-      case 'connecting':
-        return 'Connecting...';
-      case 'error':
-        return 'Connection Error';
-      default:
-        return 'Disconnected';
-    }
-  };
-
   const handleReconnect = () => {
     if (!isConnected) {
       connect();
     }
   };
 
-  if (connectionStatus === 'connecting') {
+  if (status === 'connecting') {
     return (
-      <Badge className={`${getStatusColor()} text-white ${className}`}>
+      <Badge className={`${getStatusBadgeColor()} text-white ${className}`}>
         {getStatusIcon()}
-        {showText && <span className="ml-1">{getStatusText()}</span>}
+        {showText && <span className="ml-1">{statusText}</span>}
       </Badge>
     );
   }
 
-  if (connectionStatus === 'error' || connectionStatus === 'disconnected') {
+  if (status === 'error' || status === 'disconnected') {
     return (
       <Button
         onClick={handleReconnect}
@@ -74,15 +62,15 @@ export const ConnectionStatus = ({ className = '', showText = true }: Connection
         className={`border-red-500 text-red-500 hover:bg-red-500 hover:text-white ${className}`}
       >
         {getStatusIcon()}
-        {showText && <span className="ml-1">{getStatusText()}</span>}
+        {showText && <span className="ml-1">{statusText}</span>}
       </Button>
     );
   }
 
   return (
-    <Badge className={`${getStatusColor()} text-white ${className}`}>
+    <Badge className={`${getStatusBadgeColor()} text-white ${className}`}>
       {getStatusIcon()}
-      {showText && <span className="ml-1">{getStatusText()}</span>}
+      {showText && <span className="ml-1">{statusText}</span>}
     </Badge>
   );
 };
