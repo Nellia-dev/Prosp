@@ -86,7 +86,15 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
             The processed output data
         """
         pass
-    
+
+    async def process_async(self, input_data: TInput) -> TOutput:
+        """
+        Asynchronous version of the process method.
+        Default implementation calls the synchronous version.
+        Agents that need true async processing should override this.
+        """
+        return self.process(input_data)
+
     def execute(self, input_data: TInput) -> TOutput:
         """
         Execute the agent with error handling and metrics tracking.
@@ -146,6 +154,60 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
             metrics.error_message = str(e)
             raise
             
+        finally:
+            if not metrics.end_time:
+                metrics.end_time = datetime.now()
+                metrics.processing_time_seconds = (metrics.end_time - metrics.start_time).total_seconds()
+            
+            self.metrics.append(metrics)
+
+    async def execute_async(self, input_data: TInput) -> TOutput:
+        """
+        Asynchronously execute the agent with error handling and metrics tracking.
+        """
+        metrics = AgentMetrics(start_time=datetime.now())
+        
+        try:
+            logger.info(f"[{self.name}] Starting async processing")
+            logger.debug(f"[{self.name}] Input type: {type(input_data).__name__}")
+
+            if not isinstance(input_data, BaseModel):
+                raise ValueError(f"Input must be a Pydantic model, got {type(input_data)}")
+
+            # Await the async process method
+            output = await self.process_async(input_data)
+
+            if not isinstance(output, BaseModel):
+                raise ValueError(f"Output must be a Pydantic model, got {type(output)}")
+
+            metrics.end_time = datetime.now()
+            metrics.processing_time_seconds = (metrics.end_time - metrics.start_time).total_seconds()
+            metrics.success = True
+
+            if self.llm_client:
+                metrics.llm_usage = self.llm_client.get_usage_stats()
+
+            logger.info(
+                f"[{self.name}] Async processing completed successfully in "
+                f"{metrics.processing_time_seconds:.2f} seconds"
+            )
+            
+            return output
+
+        except ValidationError as e:
+            error_msg = f"Validation error during async execution: {e}"
+            logger.error(f"[{self.name}] {error_msg}")
+            metrics.success = False
+            metrics.error_message = error_msg
+            raise
+
+        except Exception as e:
+            error_msg = f"Async processing error: {str(e)}\n{traceback.format_exc()}"
+            logger.error(f"[{self.name}] {error_msg}")
+            metrics.success = False
+            metrics.error_message = str(e)
+            raise
+
         finally:
             if not metrics.end_time:
                 metrics.end_time = datetime.now()

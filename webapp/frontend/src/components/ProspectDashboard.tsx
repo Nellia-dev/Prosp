@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import { useProspectJobs, useStartProspecting, ProspectJob, StartProspectingRequest } from '../hooks/api/useProspect';
 import { usePlanInfo } from '../hooks/api/useUserPlanStatus';
+import { useRealTimeEvent } from '../hooks/useRealTimeUpdates';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
@@ -18,35 +19,55 @@ const toast = {
   error: (message: string) => console.error(`Toast Error: ${message}`),
 };
 
+interface EnrichmentEvent {
+  agent_name?: string;
+  [key: string]: unknown;
+}
+
+interface EnrichmentStatus {
+  [jobId: string]: {
+    events: EnrichmentEvent[];
+    lastUpdate: string;
+  };
+}
+
 // Child Component: ActiveJobsDisplay (Placeholder)
-const ActiveJobsDisplay = ({ jobs }: { jobs: ProspectJob[] }) => {
+const ActiveJobsDisplay = ({ jobs, enrichmentStatus }: { jobs: ProspectJob[], enrichmentStatus: EnrichmentStatus }) => {
   const { t } = useTranslation();
   if (!jobs || jobs.length === 0) return <p className="text-slate-400">{t('prospectDashboard.noActiveJobs')}</p>;
 
   return (
     <div className="space-y-4">
-      {jobs.map(job => (
-        <Card key={job.jobId} className="bg-slate-800 border-slate-700">
-          <CardHeader>
-            <CardTitle className="text-slate-200 text-lg">{t('prospectDashboard.jobId')}: {job.jobId}</CardTitle>
-            <Badge variant={job.status === 'active' ? 'default' : 'secondary'} className={
-              job.status === 'active' ? 'bg-blue-500 text-white' : 
-              job.status === 'waiting' ? 'bg-yellow-500 text-black' : 'bg-slate-600 text-slate-300'
-            }>
-              {job.status}
-            </Badge>
-          </CardHeader>
-          <CardContent>
-            {typeof job.progress === 'number' && (
-              <div className="mt-2">
-                <Progress value={job.progress} className="w-full [&>div]:bg-green-500" />
-                <p className="text-sm text-slate-400 mt-1">{job.progress}% {t('common.complete')}</p>
-              </div>
-            )}
-            <p className="text-xs text-slate-500 mt-2">{t('common.createdAt')}: {new Date(job.createdAt || Date.now()).toLocaleString()}</p>
-          </CardContent>
-        </Card>
-      ))}
+      {jobs.map(job => {
+        const enrichment = enrichmentStatus[job.jobId];
+        const lastEvent = enrichment?.events?.[enrichment.events.length - 1];
+        const agentName = lastEvent?.agent_name;
+        const progress = enrichment ? (enrichment.events.length / 15) * 100 : job.progress;
+
+        return (
+          <Card key={job.jobId} className="bg-slate-800 border-slate-700">
+            <CardHeader>
+              <CardTitle className="text-slate-200 text-lg">{t('prospectDashboard.jobId')}: {job.jobId}</CardTitle>
+              <Badge variant={job.status === 'active' ? 'default' : 'secondary'} className={
+                job.status === 'active' ? 'bg-blue-500 text-white' :
+                job.status === 'waiting' ? 'bg-yellow-500 text-black' : 'bg-slate-600 text-slate-300'
+              }>
+                {job.status}
+              </Badge>
+            </CardHeader>
+            <CardContent>
+              {typeof progress === 'number' && (
+                <div className="mt-2">
+                  <Progress value={progress} className="w-full [&>div]:bg-green-500" />
+                  <p className="text-sm text-slate-400 mt-1">{progress.toFixed(0)}% {t('common.complete')}</p>
+                  {agentName && <p className="text-xs text-slate-500 mt-1">Current Agent: {agentName}</p>}
+                </div>
+              )}
+              <p className="text-xs text-slate-500 mt-2">{t('common.createdAt')}: {new Date(job.createdAt || Date.now()).toLocaleString()}</p>
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 };
@@ -301,9 +322,23 @@ const StartProspectingModal = ({ open, onClose, onStart, isLoading }: StartProsp
 export const ProspectDashboard = () => {
   const { t } = useTranslation();
   const [showStartModal, setShowStartModal] = useState(false);
+  const [enrichmentStatus, setEnrichmentStatus] = useState<EnrichmentStatus>({});
   const { data: jobsData = [], isLoading: jobsLoading, error: jobsError } = useProspectJobs();
   const { mutate: startProspecting, isPending: startProspectingLoading } = useStartProspecting();
   const { canStartProspecting, hasActiveJob, isQuotaExhausted, isLoading: planLoading } = usePlanInfo();
+
+  useRealTimeEvent('enrichment-update', (data: { job_id: string }) => {
+    const { job_id } = data;
+    if (job_id) {
+      setEnrichmentStatus(prev => ({
+        ...prev,
+        [job_id]: {
+          ...prev[job_id],
+          events: [...(prev[job_id]?.events || []), data],
+        },
+      }));
+    }
+  });
 
   // Ensure jobsData is always an array, even if API returns null/undefined initially
   const jobs: ProspectJob[] = Array.isArray(jobsData) ? jobsData : [];
@@ -379,7 +414,7 @@ export const ProspectDashboard = () => {
         </CardHeader>
         <CardContent>
           {activeJobs.length > 0 ? (
-            <ActiveJobsDisplay jobs={activeJobs} />
+            <ActiveJobsDisplay jobs={activeJobs} enrichmentStatus={enrichmentStatus} />
           ) : (
             <ReadyToProspectDisplay />
           )}

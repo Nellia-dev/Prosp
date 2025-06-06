@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BusinessContextEntity } from '../../database/entities/business-context.entity';
@@ -14,28 +14,29 @@ export class BusinessContextService {
   constructor(
     @InjectRepository(BusinessContextEntity)
     private businessContextRepository: Repository<BusinessContextEntity>,
+    @Inject(forwardRef(() => McpService))
     private mcpService: McpService,
   ) {}
 
-  async findOne(): Promise<BusinessContextEntity | null> {
-    // Only one business context per application
+  async findOneByUserId(userId: string): Promise<BusinessContextEntity | null> {
     return this.businessContextRepository.findOne({
+      where: { userId },
       order: { updated_at: 'DESC' },
     });
   }
 
-  async create(createBusinessContextDto: CreateBusinessContextDto): Promise<BusinessContextEntity> {
-    // Check if context already exists
-    const existing = await this.findOne();
+  async create(userId: string, createBusinessContextDto: CreateBusinessContextDto): Promise<BusinessContextEntity> {
+    const existing = await this.findOneByUserId(userId);
     if (existing) {
-      // Update existing instead of creating new
-      return this.update(createBusinessContextDto);
+      return this.update(userId, createBusinessContextDto);
     }
 
-    const businessContext = this.businessContextRepository.create(createBusinessContextDto);
+    const businessContext = this.businessContextRepository.create({
+      ...createBusinessContextDto,
+      userId,
+    });
     const saved = await this.businessContextRepository.save(businessContext);
 
-    // Sync with MCP server
     try {
       await this.mcpService.updateBusinessContext(this.entityToDto(saved));
     } catch (error) {
@@ -45,12 +46,14 @@ export class BusinessContextService {
     return saved;
   }
 
-  async update(updateBusinessContextDto: UpdateBusinessContextDto): Promise<BusinessContextEntity> {
-    let businessContext = await this.findOne();
+  async update(userId: string, updateBusinessContextDto: UpdateBusinessContextDto): Promise<BusinessContextEntity> {
+    let businessContext = await this.findOneByUserId(userId);
     
     if (!businessContext) {
-      // Create new if none exists
-      businessContext = this.businessContextRepository.create(updateBusinessContextDto);
+      businessContext = this.businessContextRepository.create({
+        ...updateBusinessContextDto,
+        userId,
+      });
     } else {
       Object.assign(businessContext, updateBusinessContextDto);
       businessContext.updated_at = new Date();
@@ -58,7 +61,6 @@ export class BusinessContextService {
 
     const saved = await this.businessContextRepository.save(businessContext);
 
-    // Sync with MCP server
     try {
       await this.mcpService.updateBusinessContext(this.entityToDto(saved));
     } catch (error) {
@@ -68,15 +70,14 @@ export class BusinessContextService {
     return saved;
   }
 
-  async remove(): Promise<boolean> {
-    const businessContext = await this.findOne();
+  async remove(userId: string): Promise<boolean> {
+    const businessContext = await this.findOneByUserId(userId);
     if (!businessContext) {
-      throw new NotFoundException('Business context not found');
+      throw new NotFoundException(`Business context for user ${userId} not found`);
     }
 
     await this.businessContextRepository.remove(businessContext);
 
-    // Notify MCP server
     try {
       await this.mcpService.updateBusinessContext(null);
     } catch (error) {
@@ -115,17 +116,17 @@ export class BusinessContextService {
     };
   }
 
-  async isReadyForProspecting(): Promise<{
+  async isReadyForProspecting(userId: string): Promise<{
     ready: boolean;
     missingFields: string[];
     contextExists: boolean;
   }> {
-    const contextEntity = await this.findOne();
+    const contextEntity = await this.findOneByUserId(userId);
     
     if (!contextEntity) {
       return {
         ready: false,
-        missingFields: ['business_description', 'target_market', 'value_proposition'], // Core fields as per plan
+        missingFields: ['business_description', 'product_service_description', 'target_market', 'value_proposition'],
         contextExists: false
       };
     }
@@ -135,25 +136,31 @@ export class BusinessContextService {
     
     return {
       ready: validation.valid,
-      missingFields: validation.invalidFields, // Use the field names from validateContext
+      missingFields: validation.invalidFields,
       contextExists: true
     };
   }
 
-  async getContextForMcp(): Promise<BusinessContextType | null> {
-    const entity = await this.findOne();
+  async getContextForMcp(userId: string): Promise<BusinessContextType | null> {
+    const entity = await this.findOneByUserId(userId);
     return entity ? this.entityToDto(entity) : null;
   }
 
   private entityToDto(entity: BusinessContextEntity): BusinessContextType {
     return {
       id: entity.id,
+      userId: entity.userId,
       business_description: entity.business_description,
+      product_service_description: entity.product_service_description,
       target_market: entity.target_market,
       value_proposition: entity.value_proposition,
       ideal_customer: entity.ideal_customer,
       pain_points: entity.pain_points,
+      competitors: entity.competitors,
       industry_focus: entity.industry_focus,
+      competitive_advantage: entity.competitive_advantage,
+      geographic_focus: entity.geographic_focus,
+      is_active: entity.is_active,
       created_at: entity.created_at.toISOString(),
       updated_at: entity.updated_at.toISOString(),
     };

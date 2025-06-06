@@ -190,7 +190,9 @@ export const useSocketIO = (config: SocketConfig = {}) => {
         'quota-updated',
         'job-progress',
         'job-completed',
-        'job-failed'
+        'job-failed',
+        'enrichment-update',
+        'lead-update'
       ];
 
       eventTypes.forEach(eventType => {

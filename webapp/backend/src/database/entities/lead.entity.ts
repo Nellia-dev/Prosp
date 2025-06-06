@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
-import { ProcessingStage, QualificationTier } from '../../shared/enums/nellia.enums';
+import { ProcessingStage, QualificationTier, LeadStatus } from '../../shared/enums/nellia.enums';
 import { User } from './user.entity';
 
 @Entity('leads')
@@ -57,6 +57,16 @@ export class Lead {
     default: ProcessingStage.INTAKE,
   })
   processing_stage: ProcessingStage;
+
+  @Column({
+    type: 'enum',
+    enum: LeadStatus,
+    default: LeadStatus.NEW,
+  })
+  status: LeadStatus;
+
+  @Column({ type: 'jsonb', nullable: true })
+  enrichment_data: any;
 
   @CreateDateColumn()
   created_at: Date;

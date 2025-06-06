@@ -18,11 +18,15 @@ export const BusinessContextCenter = () => {
 
   const [context, setContext] = useState<BusinessContext>({
     business_description: '',
+    product_service_description: '',
     target_market: '',
     value_proposition: '',
     ideal_customer: '',
     pain_points: [],
-    industry_focus: []
+    competitive_advantage: '',
+    competitors: [],
+    industry_focus: [],
+    geographic_focus: [],
   });
 
   const [newPainPoint, setNewPainPoint] = useState('');
@@ -32,23 +36,32 @@ export const BusinessContextCenter = () => {
   // Adapter functions to convert between API and unified types
   const adaptApiToUnified = (apiContext: BusinessContextResponse): BusinessContext => ({
     id: apiContext.id,
-    business_description: apiContext.businessDescription,
-    target_market: apiContext.targetMarket,
-    value_proposition: apiContext.valueProposition,
-    ideal_customer: apiContext.idealCustomer,
-    pain_points: apiContext.painPointsSolved,
-    industry_focus: apiContext.industryFocus,
-    created_at: apiContext.createdAt,
-    updated_at: apiContext.updatedAt
+    business_description: apiContext.business_description,
+    product_service_description: apiContext.product_service_description,
+    target_market: apiContext.target_market,
+    value_proposition: apiContext.value_proposition,
+    ideal_customer: apiContext.ideal_customer,
+    pain_points: apiContext.pain_points,
+    competitive_advantage: apiContext.competitive_advantage,
+    competitors: apiContext.competitors,
+    industry_focus: apiContext.industry_focus,
+    geographic_focus: apiContext.geographic_focus,
+    is_active: apiContext.is_active,
+    created_at: apiContext.created_at,
+    updated_at: apiContext.updated_at
   });
 
   const adaptUnifiedToApi = (unifiedContext: BusinessContext): BusinessContextRequest => ({
-    businessDescription: unifiedContext.business_description,
-    targetMarket: unifiedContext.target_market,
-    valueProposition: unifiedContext.value_proposition,
-    idealCustomer: unifiedContext.ideal_customer || '',
-    painPointsSolved: unifiedContext.pain_points,
-    industryFocus: unifiedContext.industry_focus
+    business_description: unifiedContext.business_description,
+    product_service_description: unifiedContext.product_service_description,
+    target_market: unifiedContext.target_market,
+    value_proposition: unifiedContext.value_proposition,
+    ideal_customer: unifiedContext.ideal_customer || '',
+    pain_points: unifiedContext.pain_points,
+    competitive_advantage: unifiedContext.competitive_advantage,
+    competitors: unifiedContext.competitors,
+    industry_focus: unifiedContext.industry_focus,
+    geographic_focus: unifiedContext.geographic_focus,
   });
 
   // Load existing context when data is available
@@ -193,7 +206,17 @@ export const BusinessContextCenter = () => {
             <Textarea
               value={context.business_description}
               onChange={(e) => setContext(prev => ({ ...prev, business_description: e.target.value }))}
-              placeholder="Describe your business, products and services..."
+              placeholder="Describe your business..."
+              className="bg-slate-800 border-slate-600 text-white min-h-[100px]"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-white text-sm font-medium">Product/Service Description</label>
+            <Textarea
+              value={context.product_service_description}
+              onChange={(e) => setContext(prev => ({ ...prev, product_service_description: e.target.value }))}
+              placeholder="Describe your products and services..."
               className="bg-slate-800 border-slate-600 text-white min-h-[100px]"
             />
           </div>

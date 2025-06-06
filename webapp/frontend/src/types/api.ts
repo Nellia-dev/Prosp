@@ -140,24 +140,33 @@ export interface BulkLeadOperation {
 
 // Business Context API types
 export interface BusinessContextRequest {
-  businessDescription: string;
-  targetMarket: string;
-  valueProposition: string;
-  idealCustomer: string;
-  painPointsSolved: string[];
-  industryFocus: string[];
+  business_description: string;
+  product_service_description: string;
+  target_market: string;
+  value_proposition: string;
+  ideal_customer: string;
+  pain_points: string[];
+  competitive_advantage?: string;
+  competitors?: string[];
+  industry_focus: string[];
+  geographic_focus?: string[];
 }
 
 export interface BusinessContextResponse {
   id: string;
-  businessDescription: string;
-  targetMarket: string;
-  valueProposition: string;
-  idealCustomer: string;
-  painPointsSolved: string[];
-  industryFocus: string[];
-  createdAt: string;
-  updatedAt: string;
+  business_description: string;
+  product_service_description: string;
+  target_market: string;
+  value_proposition: string;
+  ideal_customer: string;
+  pain_points: string[];
+  competitive_advantage?: string;
+  competitors?: string[];
+  industry_focus: string[];
+  geographic_focus?: string[];
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 // Chat API types

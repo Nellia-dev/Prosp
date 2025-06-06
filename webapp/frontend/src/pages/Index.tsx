@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TranslationProvider, useTranslation } from '../hooks/useTranslation';
-import { useAgents, useLeads, useDashboardMetrics } from '../hooks/api';
+import { useAgents, useLeads, useDashboardMetrics, useBusinessContext } from '../hooks/api';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +23,7 @@ import {
 import { AgentStatusCard } from '../components/AgentStatusCard';
 import { LeadCard } from '../components/LeadCard';
 import { ChatInterface } from '../components/ChatInterface';
+import { BusinessContextForm } from '../components/BusinessContextForm';
 import { BusinessContextCenter } from '../components/BusinessContextCenter';
 import { MetricsVisualization } from '../components/MetricsVisualization';
 import { CRMBoard } from '../components/CRMBoard';
@@ -256,40 +257,35 @@ const mockLeads: LeadData[] = [
 const DashboardContent = () => {
   const { t, language, setLanguage } = useTranslation();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [showBusinessContextForm, setShowBusinessContextForm] = useState(false);
 
   // Initialize real-time updates
   useRealTimeUpdates();
 
-  // API calls using updated hooks that provide default empty states
+  // API calls
   const { data: agentsData, isLoading: agentsLoading, error: agentsError } = useAgents();
   const { data: leadsResponse, isLoading: leadsLoading, error: leadsError } = useLeads();
-  const { data: metricsData, isLoading: metricsLoading, error: metricsError } = useDashboardMetrics(); // metricsData is now DashboardMetricsResponse
-  
-  // The hooks now return data in the desired frontend shape
-  // useAgents returns AgentStatus[] due to its select function
-  // useLeads returns {data: LeadData[], total: number, ...} due to its select function
-  // useDashboardMetrics returns DashboardMetricsResponse (or the default structure from its select/placeholder)
+  const { data: metricsData, isLoading: metricsLoading, error: metricsError } = useDashboardMetrics();
+  const { data: businessContext, isLoading: businessContextLoading, error: businessContextError } = useBusinessContext();
 
-  // agentsData is AgentResponse[] from useAgents hook (if select is (data) => data || [])
-  // leadsResponse.data is LeadResponse[] from useLeads hook (if select is (data) => data?.data || [])
   const agents: AgentStatus[] = Array.isArray(agentsData) ? agentsData.map(transformAgentResponse) : [];
   const leads: LeadData[] = leadsResponse?.data ? leadsResponse.data.map(transformLeadResponse) : [];
-  
-  // metrics is now of type DashboardMetricsResponse
   const metrics: DashboardMetricsResponse = metricsData || getDefaultFrontendMetrics();
 
-
-  // Determine if it's a new user for onboarding flow
-  // This check should ideally be more robust, e.g., checking business context setup status from an API
-  const isNewUser = agents.length === 0 && leads.length === 0 && !agentsLoading && !leadsLoading;
+  // Determine if the user needs to go through onboarding.
+  const isNewUser = !businessContext && !businessContextLoading;
 
   const handleLeadUpdate = (updatedLead: LeadData) => {
-    // This will be handled by React Query mutations
     console.log('Lead updated:', updatedLead);
   };
 
+  const handleContextSetupComplete = () => {
+    setShowBusinessContextForm(false);
+    // Optionally, you can force a refetch of data here if needed
+  };
+
   // Show loading state
-  if (agentsLoading || leadsLoading || metricsLoading) {
+  if (agentsLoading || leadsLoading || metricsLoading || businessContextLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950 flex items-center justify-center">
         <div className="text-white text-xl">Loading...</div>
@@ -308,23 +304,25 @@ const DashboardContent = () => {
 
   // Onboarding Flow for new users
   if (isNewUser) {
-    // Placeholder for OnboardingFlow component - to be implemented in Phase 2
-    // For now, this shows a simple message and a button to guide to context setup.
-    // The actual <OnboardingFlow /> component will replace this div.
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950 flex items-center justify-center">
-        <Card className="p-8 bg-slate-800 border-slate-700 text-white text-center">
-          <Zap size={48} className="mx-auto mb-4 text-green-500" />
-          <h2 className="text-2xl font-bold mb-4">Bem-vindo ao Nellia Prospector!</h2>
-          <p className="mb-6 text-slate-300">
-            Parece que é sua primeira vez aqui ou ainda não temos dados.
-            <br />
-            Vamos configurar seu contexto de negócios para começar a encontrar leads.
-          </p>
-          {/* <OnboardingFlow /> // This will be added in Phase 2 */}
-          <Button onClick={() => setActiveTab('context')} className="bg-green-600 hover:bg-green-700">
-            Configurar Contexto de Negócios
-          </Button>
+        <Card className="p-8 bg-slate-800 border-slate-700 text-white text-center max-w-lg">
+          {!showBusinessContextForm ? (
+            <>
+              <Zap size={48} className="mx-auto mb-4 text-green-500" />
+              <h2 className="text-2xl font-bold mb-4">Bem-vindo ao Nellia Prospector!</h2>
+              <p className="mb-6 text-slate-300">
+                Parece que é sua primeira vez aqui.
+                <br />
+                Vamos configurar seu contexto de negócios para começar a encontrar leads.
+              </p>
+              <Button onClick={() => setShowBusinessContextForm(true)} className="bg-green-600 hover:bg-green-700">
+                Configurar Contexto de Negócios
+              </Button>
+            </>
+          ) : (
+            <BusinessContextForm onComplete={handleContextSetupComplete} />
+          )}
         </Card>
       </div>
     );

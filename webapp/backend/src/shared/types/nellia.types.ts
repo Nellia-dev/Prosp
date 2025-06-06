@@ -1,4 +1,6 @@
-import { AgentCategory, AgentName, ProcessingStage, QualificationTier } from '../enums/nellia.enums';
+import { AgentCategory, AgentName, ProcessingStage, QualificationTier, LeadStatus } from '../enums/nellia.enums';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsArray, IsOptional, IsNotEmpty } from 'class-validator';
 
 export interface AgentMetrics {
   processing_time_seconds: number;
@@ -45,12 +47,18 @@ export interface LeadData {
 
 export interface BusinessContext {
   id?: string;
+  userId?: string;
   business_description: string;
+  product_service_description: string;
   target_market: string;
   value_proposition: string;
   ideal_customer?: string;
   pain_points: string[];
+  competitive_advantage?: string;
+  competitors?: string[];
   industry_focus: string[];
+  geographic_focus?: string[];
+  is_active?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -106,6 +114,7 @@ export interface CreateLeadDto {
   company_size?: string;
   annual_revenue?: number;
   userId?: string; // Associated user for multi-tenant support
+  status?: LeadStatus;
 }
 
 export interface UpdateLeadDto {
@@ -145,22 +154,114 @@ export interface LeadFilters {
   offset?: number;
 }
 
-export interface CreateBusinessContextDto {
+export class CreateBusinessContextDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
   business_description: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  product_service_description: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
   target_market: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
   value_proposition: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
   ideal_customer?: string;
+
+  @ApiProperty()
+  @IsArray()
+  @IsString({ each: true })
   pain_points: string[];
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  competitive_advantage?: string;
+
+  @ApiProperty({ required: false })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  competitors?: string[];
+
+  @ApiProperty()
+  @IsArray()
+  @IsString({ each: true })
   industry_focus: string[];
+
+  @ApiProperty({ required: false })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  geographic_focus?: string[];
 }
 
-export interface UpdateBusinessContextDto {
+export class UpdateBusinessContextDto {
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
   business_description?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  product_service_description?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
   target_market?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
   value_proposition?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
   ideal_customer?: string;
+
+  @ApiProperty({ required: false })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
   pain_points?: string[];
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  competitive_advantage?: string;
+
+  @ApiProperty({ required: false })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  competitors?: string[];
+
+  @ApiProperty({ required: false })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
   industry_focus?: string[];
+
+  @ApiProperty({ required: false })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  geographic_focus?: string[];
 }
 
 // Metrics-related types

@@ -359,36 +359,38 @@ export interface HarvesterJobData {
 ## Implementation Timeline (Adjusted)
 
 ### Week 1-2: Foundations for Plans & Quotas
-- [ ] **DB Schema:** Update `UserEntity`, `LeadEntity`. Define `PLANS` config.
-- [ ] **Backend Services:** Implement basic `UserService` (user retrieval, plan update). Implement `QuotaService` (quota calculation, consumption, reset logic).
-- [ ] **API:** Create `/api/users/me/plan-status` endpoint.
-- [ ] **Auth:** Ensure `userId` is available in authenticated requests.
+- [x] **DB Schema:** Update `UserEntity`, `LeadEntity`. Define `PLANS` config.
+- [x] **Backend Services:** Implement basic `UserService` (user retrieval, plan update). Implement `QuotaService` (quota calculation, consumption, reset logic).
+- [x] **API:** Create `/api/users/me/plan-status` endpoint.
+- [x] **Auth:** Ensure `userId` is available in authenticated requests.
 
 ### Week 3-4: User-Aware Prospecting Backend
-- [ ] **DTOs:** Update `StartProspectingDto`, `HarvesterJobData` with `userId`, `maxLeadsToReturn`.
-- [ ] **ProspectService:** Modify `startProspectingProcess` for quota checks, concurrent job prevention, passing new data to job. Secure other methods by `userId`.
-- [ ] **ProspectProcessor:**
+- [x] **DTOs:** Update `StartProspectingDto`, `HarvesterJobData` with `userId`, `maxLeadsToReturn`.
+- [x] **ProspectService:** Modify `startProspectingProcess` for quota checks, concurrent job prevention, passing new data to job. Secure other methods by `userId`.
+- [x] **ProspectProcessor:**
     - Modify `handleHarvesterProcess` to use `userId`, `maxLeadsToReturn`.
     - Update helper methods (`executeHarvester`, `processHarvesterResults`, `saveLeadsToDatabase`) to handle `userId` and `maxLeadsToReturn`.
     - Integrate `QuotaService.consumeQuota` and `UserService.clearProspectingJob`.
-- [ ] **McpService:** Update `runHarvester` and `processRawDataToLead` signatures to accept `maxLeadsToReturn` and `userId` if needed by MCP.
-- [ ] **MCP Server (`prospect/` project):**
-    - Update `harvester.py` to accept and use `--max-leads` and `--user-id`.
-    - Update MCP server API endpoints (`/api/harvester/run`, `/api/mcp/process-raw-to-lead`) to handle these new parameters.
+- [x] **McpService:** Update `runHarvester` and `processRawDataToLead` signatures to accept `maxLeadsToReturn` and `userId` if needed by MCP.
+- [x] **MCP Server (`prospect/` project):**
+    - [x] Update `harvester.py` to accept and use `--max-leads` and `--user-id`.
+    - [x] MCP server integration handled via direct Python module calls (no web API endpoints needed).
 
 ### Week 5: Frontend Integration for Quotas & User-Aware Prospecting
-- [ ] **API Service:** Add `userApi.getPlanStatus()` to `services/api.ts`.
-- [ ] **Hooks:** Create `useUserPlanStatus` hook.
-- [ ] **ProspectDashboard:**
-    - Integrate `useUserPlanStatus` to display plan/quota.
-    - Disable/enable prospecting button based on quota.
+- [x] **API Service:** Add `userApi.getPlanStatus()` to `services/api.ts`.
+- [x] **Hooks:** Create `useUserPlanStatus` hook.
+- [x] **ProspectDashboard:**
+    - [x] Integrate `useUserPlanStatus` to display plan/quota.
+    - [x] Disable/enable prospecting button based on quota.
+    - [x] Add PlanStatusCard component with quota visualization.
+    - [x] Implement quota-aware button states and messaging.
 - [ ] **Testing:** Thoroughly test quota logic, job processing with limits, and lead ownership.
 
 ### Week 6: Real-time Quota Updates & Polish
-- [ ] **WebSocketGateway:** Implement user-specific rooms and `quota-updated` events.
-- [ ] **ProspectProcessor:** Trigger WebSocket events on job completion/quota consumption.
-- [ ] **Frontend Hooks:** Update WebSocket hooks to listen for `quota-updated` and refresh plan status.
-- [ ] UI Polish, error handling improvements related to quotas.
+- [x] **WebSocketGateway:** Implement user-specific rooms and `quota-updated` events.
+- [x] **ProspectProcessor:** Trigger WebSocket events on job completion/quota consumption.
+- [x] **Frontend Hooks:** Update WebSocket hooks to listen for `quota-updated` and refresh plan status.
+- [x] UI Polish, error handling improvements related to quotas.
 
 ## Testing Strategy (Expanded)
 

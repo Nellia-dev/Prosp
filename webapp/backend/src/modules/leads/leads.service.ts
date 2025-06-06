@@ -2,10 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Lead } from '@/database/entities/lead.entity';
-import { QualificationTier, ProcessingStage } from '@/shared/enums/nellia.enums';
-import { 
-  LeadData, 
-  CreateLeadDto, 
+import { QualificationTier, ProcessingStage, LeadStatus } from '@/shared/enums/nellia.enums';
+import {
+  LeadData,
+  CreateLeadDto,
   UpdateLeadDto, 
   LeadFilters 
 } from '../../shared/types/nellia.types';
@@ -88,8 +88,17 @@ export class LeadsService {
     return this.convertToLeadData(lead);
   }
 
+  async findById(id: string): Promise<Lead> {
+    const lead = await this.leadRepository.findOne({ where: { id } });
+    if (!lead) {
+      throw new NotFoundException(`Lead with ID ${id} not found`);
+    }
+    return lead;
+  }
+
   async create(createLeadDto: CreateLeadDto): Promise<LeadData> {
     const lead = this.leadRepository.create({
+      ...createLeadDto,
       company_name: createLeadDto.company_name,
       website: createLeadDto.website || '',
       company_sector: createLeadDto.company_sector || 'Unknown',
@@ -106,6 +115,7 @@ export class LeadsService {
       brazilian_market_fit: 0.5,
       qualification_tier: QualificationTier.MEDIUM_POTENTIAL,
       processing_stage: ProcessingStage.LEAD_QUALIFICATION,
+      status: LeadStatus.NEW,
     });
 
     const savedLead = await this.leadRepository.save(lead);
@@ -147,6 +157,20 @@ export class LeadsService {
     lead.processing_stage = this.mapStageToEnum(stage);
     lead.updated_at = new Date();
     
+    const savedLead = await this.leadRepository.save(lead);
+    return this.convertToLeadData(savedLead);
+  }
+
+  async updateStatus(id: string, status: LeadStatus): Promise<LeadData> {
+    const lead = await this.findById(id);
+    lead.status = status;
+    const savedLead = await this.leadRepository.save(lead);
+    return this.convertToLeadData(savedLead);
+  }
+
+  async updateEnrichmentData(id: string, enrichmentData: any): Promise<LeadData> {
+    const lead = await this.findById(id);
+    lead.enrichment_data = enrichmentData;
     const savedLead = await this.leadRepository.save(lead);
     return this.convertToLeadData(savedLead);
   }

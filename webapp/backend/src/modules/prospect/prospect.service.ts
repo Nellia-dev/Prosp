@@ -6,6 +6,7 @@ import { McpService } from '../mcp/mcp.service';
 import { UsersService } from '../users/users.service';
 import { QuotaService } from '../quota/quota.service';
 import { ApiProperty } from '@nestjs/swagger';
+import { BusinessContext as BusinessContextType } from '@/shared/types/nellia.types';
 
 export class StartProspectingDto {
   @ApiProperty({ example: 'tech companies in Brazil', description: 'The search query for prospecting' })
@@ -20,7 +21,7 @@ export interface HarvesterJobData {
   searchQuery: string;
   maxSites: number;
   maxLeadsToReturn: number; // Calculated based on user's remaining quota
-  businessContextId?: string; // If business context becomes user-specific
+  businessContext: BusinessContextType; // Pass the full context
   timestamp: string;
 }
 
@@ -55,9 +56,9 @@ export class ProspectService {
     this.logger.log(`User ${userId} attempting to start prospecting process with query: ${dto.searchQuery}`);
 
     // Step 1: Validate Business Context
-    const contextReadiness = await this.businessContextService.isReadyForProspecting();
+    const contextReadiness = await this.businessContextService.isReadyForProspecting(userId);
     if (!contextReadiness.ready) {
-      this.logger.warn(`Business context not ready. Missing fields: ${contextReadiness.missingFields.join(', ')}`);
+      this.logger.warn(`Business context not ready for user ${userId}. Missing fields: ${contextReadiness.missingFields.join(', ')}`);
       throw new BadRequestException(
         `Business context not ready for prospecting. Missing: ${contextReadiness.missingFields.join(', ')}`
       );
@@ -82,10 +83,10 @@ export class ProspectService {
     }
 
     // Step 3: Get Business Context
-    const context = await this.businessContextService.getContextForMcp();
-    if (!context && contextReadiness.contextExists) {
-      this.logger.error('Context exists but could not be fetched for MCP.');
-      throw new Error('Failed to fetch existing business context for prospecting job.');
+    const context = await this.businessContextService.getContextForMcp(userId);
+    if (!context) {
+      this.logger.error(`Context for user ${userId} could not be fetched for MCP.`);
+      throw new Error('Failed to fetch business context for prospecting job.');
     }
 
     // Step 4: Prepare Job Data
@@ -94,7 +95,7 @@ export class ProspectService {
       searchQuery: dto.searchQuery,
       maxSites: dto.maxSites || 10, // Default or user input
       maxLeadsToReturn: maxLeadsUserCanRequest, // Key: limit for MCP
-      businessContextId: context ? context.id : undefined, // If context is specific
+      businessContext: context,
       timestamp: new Date().toISOString(),
     };
 

@@ -87,6 +87,12 @@ interface JobFailedEvent {
   timestamp: string;
 }
 
+interface EnrichmentEvent {
+  event_type: string;
+  job_id: string;
+  [key: string]: unknown;
+}
+
 export const useRealTimeAgentUpdates = () => {
   const socket = useNelliaSocket();
   const queryClient = useQueryClient();
@@ -260,6 +266,38 @@ export const useRealTimeLeadUpdates = () => {
       // Socket.IO disconnection is handled by useSocketIO hook
     };
   }, [socket.isConnected, socket, queryClient, toast]);
+
+  useEffect(() => {
+    if (!socket.isConnected) return;
+
+    const handleEnrichmentUpdate = (data: EnrichmentEvent) => {
+      queryClient.setQueryData(['enrichment-status', data.job_id], (oldData: { events: EnrichmentEvent[] } | undefined) => {
+        const newEvents = oldData ? [...oldData.events, data] : [data];
+        return {
+          events: newEvents,
+          lastUpdate: new Date().toISOString(),
+        };
+      });
+
+      if (data.event_type === 'pipeline_end') {
+        toast({
+          title: "Enrichment Complete",
+          description: `Lead enrichment finished for job ${data.job_id}`,
+          duration: 5000,
+        });
+        queryClient.invalidateQueries({ queryKey: ['leads'] });
+      }
+    };
+
+    socket.subscribe(['enrichment']);
+    
+    const currentSocket = socket;
+    currentSocket.emit('enrichment-update', handleEnrichmentUpdate);
+
+    return () => {
+      currentSocket.emit('unsubscribe', { entities: ['enrichment'] });
+    };
+  }, [socket, queryClient, toast]);
 };
 
 export const useRealTimeMetricsUpdates = () => {

@@ -7,7 +7,8 @@ import {
   QuotaUpdateData,
   JobProgressData,
   JobCompletedData,
-  JobFailedData
+  JobFailedData,
+  LeadUpdateData
 } from './dto/websocket.dto';
 
 @Injectable()
@@ -213,5 +214,25 @@ export class WebSocketService {
   // Health check for WebSocket service
   isHealthy(): boolean {
     return this.server !== undefined;
+  }
+
+  emitLeadUpdate(userId: string, leadData: Partial<LeadUpdateData> & { id: string }) {
+    const message: WebSocketMessage = {
+      type: WebSocketMessageType.LEAD_UPDATE,
+      data: leadData,
+      timestamp: new Date().toISOString(),
+    };
+    this.sendToUserRoom(userId, 'lead-update', message);
+    this.logger.debug(`Sent lead update to user ${userId} for lead ${leadData.id}`);
+  }
+
+  emitEnrichmentUpdate(userId: string, event: any) {
+    const message: WebSocketMessage = {
+      type: WebSocketMessageType.ENRICHMENT_UPDATE,
+      data: event,
+      timestamp: new Date().toISOString(),
+    };
+    this.sendToUserRoom(userId, 'enrichment-update', message);
+    this.logger.debug(`Sent enrichment update to user ${userId} for job ${event.job_id}`);
   }
 }

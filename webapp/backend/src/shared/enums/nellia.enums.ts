@@ -62,3 +62,12 @@ export enum ProcessingStage {
     MESSAGE = 'message',
     COMPLETED = 'completed'
 }
+
+export enum LeadStatus {
+  NEW = 'new',
+  HARVESTED = 'harvested',
+  PENDING_ENRICHMENT = 'pending_enrichment',
+  ENRICHING = 'enriching',
+  ENRICHED = 'enriched',
+  ENRICHMENT_FAILED = 'enrichment_failed',
+}

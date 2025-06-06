@@ -8,8 +8,10 @@ export class QueueService {
   private readonly logger = new Logger(QueueService.name);
 
   constructor(
-    @InjectQueue('lead-processing')
-    private readonly leadProcessingQueue: Queue,
+    @InjectQueue('prospect-processing')
+    private readonly prospectProcessingQueue: Queue,
+    @InjectQueue('enrichment-processing')
+    private readonly enrichmentProcessingQueue: Queue,
     @InjectQueue('metrics-collection')
     private readonly metricsQueue: Queue,
     @InjectQueue('cleanup')
@@ -20,8 +22,8 @@ export class QueueService {
   // Lead Processing Queue Methods
   // ===================================
 
-  async addLeadProcessingJob(leadId: string, stage: ProcessingStage, priority = 0): Promise<void> {
-    await this.leadProcessingQueue.add(
+  async addProspectProcessingJob(leadId: string, stage: ProcessingStage, priority = 0): Promise<void> {
+    await this.prospectProcessingQueue.add(
       'process-lead',
       {
         leadId,
@@ -37,8 +39,8 @@ export class QueueService {
     this.logger.log(`Added lead processing job for lead ${leadId} at stage ${stage}`);
   }
 
-  async addBulkLeadProcessingJob(leadIds: string[], priority = 0): Promise<void> {
-    await this.leadProcessingQueue.add(
+  async addBulkProspectProcessingJob(leadIds: string[], priority = 0): Promise<void> {
+    await this.prospectProcessingQueue.add(
       'bulk-process-leads',
       {
         leadIds,
@@ -154,18 +156,21 @@ export class QueueService {
   // ===================================
 
   async getQueueStats(): Promise<{
-    leadProcessing: any;
+    prospectProcessing: any;
+    enrichmentProcessing: any;
     metricsCollection: any;
     cleanup: any;
   }> {
-    const [leadStats, metricsStats, cleanupStats] = await Promise.all([
-      this.getQueueInfo(this.leadProcessingQueue),
+    const [prospectStats, enrichmentStats, metricsStats, cleanupStats] = await Promise.all([
+      this.getQueueInfo(this.prospectProcessingQueue),
+      this.getQueueInfo(this.enrichmentProcessingQueue),
       this.getQueueInfo(this.metricsQueue),
       this.getQueueInfo(this.cleanupQueue),
     ]);
 
     return {
-      leadProcessing: leadStats,
+      prospectProcessing: prospectStats,
+      enrichmentProcessing: enrichmentStats,
       metricsCollection: metricsStats,
       cleanup: cleanupStats,
     };
@@ -210,8 +215,10 @@ export class QueueService {
 
   private getQueueByName(name: string): Queue {
     switch (name) {
-      case 'lead-processing':
-        return this.leadProcessingQueue;
+      case 'prospect-processing':
+        return this.prospectProcessingQueue;
+      case 'enrichment-processing':
+        return this.enrichmentProcessingQueue;
       case 'metrics-collection':
         return this.metricsQueue;
       case 'cleanup':

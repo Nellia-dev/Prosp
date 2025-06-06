@@ -1,5 +1,5 @@
-import { Processor, Process } from '@nestjs/bull';
-import { Job } from 'bull';
+import { Processor, Process, InjectQueue } from '@nestjs/bull';
+import { Job, Queue } from 'bull';
 import { Logger } from '@nestjs/common';
 import { BusinessContextService } from '../../business-context/business-context.service';
 import { LeadsService } from '../../leads/leads.service';
@@ -11,6 +11,7 @@ import { HarvesterJobData } from '../../prospect/prospect.service';
 import { BusinessContext as BusinessContextType, CreateLeadDto, LeadData } from '../../../shared/types/nellia.types';
 import { QuotaUpdateData, JobProgressData, JobCompletedData, JobFailedData } from '../../websocket/dto/websocket.dto';
 import { PLANS } from '../../../config/plans.config';
+import { LeadStatus } from '@/shared/enums/nellia.enums';
 
 interface HarvesterParams {
   query: string;
@@ -32,6 +33,7 @@ export class ProspectProcessor {
   private readonly logger = new Logger(ProspectProcessor.name);
 
   constructor(
+    @InjectQueue('enrichment-processing') private readonly enrichmentQueue: Queue,
     private businessContextService: BusinessContextService,
     private leadsService: LeadsService,
     private mcpService: McpService,
@@ -62,7 +64,7 @@ export class ProspectProcessor {
       await job.progress(20);
 
       // Step 2: Get business context
-      const context = await this.businessContextService.getContextForMcp();
+      const context = await this.businessContextService.getContextForMcp(userId);
       if (!context) {
         throw new Error('Business context not found or not configured.');
       }
@@ -88,23 +90,23 @@ export class ProspectProcessor {
       this.logger.log(`Job ${job.id}: Harvester executed, found ${harvesterResults.length} results`);
       await job.progress(60);
 
-      // Step 5: Process results through MCP agents
+      // Step 5: Process results through MCP agents to get initial lead data
       this.logger.log(`Job ${job.id}: Processing ${harvesterResults.length} harvester results for user ${userId}`);
       const processedLeadsDto = await this.processHarvesterResults(harvesterResults, context, userId);
       
       // Limit leads to user's quota (safety check)
-      const leadsToSave = processedLeadsDto.slice(0, Math.min(maxLeadsToReturn, remainingQuota));
-      this.logger.log(`Job ${job.id}: ${leadsToSave.length} leads processed and ready for saving (limited by quota)`);
+      const leadsToCreate = processedLeadsDto.slice(0, Math.min(maxLeadsToReturn, remainingQuota));
+      this.logger.log(`Job ${job.id}: ${leadsToCreate.length} leads processed and ready for creation (limited by quota)`);
       await job.progress(80);
 
-      // Step 6: Save leads to database with user association
-      this.logger.log(`Job ${job.id}: Saving ${leadsToSave.length} leads for user ${userId}`);
-      const savedLeads = await this.saveLeadsToDatabase(leadsToSave, userId);
+      // Step 6: Save leads to database with HARVESTED status and dispatch to enrichment queue
+      this.logger.log(`Job ${job.id}: Saving ${leadsToCreate.length} leads for user ${userId} and dispatching for enrichment.`);
+      const createdLeads = await this.createLeadsAndDispatchForEnrichment(leadsToCreate, userId, job.id.toString());
       
-      // Step 7: Consume quota for saved leads
-      if (savedLeads.length > 0) {
-        await this.quotaService.consumeQuota(userId, savedLeads.length);
-        this.logger.log(`Job ${job.id}: Consumed ${savedLeads.length} quota for user ${userId}`);
+      // Step 7: Consume quota for created leads
+      if (createdLeads.length > 0) {
+        await this.quotaService.consumeQuota(userId, createdLeads.length);
+        this.logger.log(`Job ${job.id}: Consumed ${createdLeads.length} quota for user ${userId}`);
       }
       
       // Step 8: Clear user's active job
@@ -112,12 +114,12 @@ export class ProspectProcessor {
       
       await job.progress(100);
 
-      const completionMessage = `Harvester process completed for user ${userId}, job ${job.id}. Saved ${savedLeads.length} leads, consumed ${savedLeads.length} quota.`;
+      const completionMessage = `Harvester process completed for user ${userId}, job ${job.id}. Dispatched ${createdLeads.length} leads for enrichment.`;
       this.logger.log(completionMessage);
 
       // Step 9: Emit WebSocket events for job completion and quota update
       try {
-        await this.emitJobCompletedEvent(userId, job.id.toString(), savedLeads.length, searchQuery);
+        await this.emitJobCompletedEvent(userId, job.id.toString(), createdLeads.length, searchQuery);
         this.logger.log(`Job ${job.id}: WebSocket events emitted for user ${userId}`);
       } catch (wsError) {
         this.logger.warn(`Job ${job.id}: Failed to emit WebSocket events: ${wsError.message}`);
@@ -126,8 +128,8 @@ export class ProspectProcessor {
       return {
         success: true,
         userId: userId,
-        leadsCreated: savedLeads.length,
-        quotaConsumed: savedLeads.length,
+        leadsDispatched: createdLeads.length,
+        quotaConsumed: createdLeads.length,
         jobId: job.id,
         message: completionMessage,
         completedAt: new Date().toISOString(),
@@ -290,22 +292,32 @@ export class ProspectProcessor {
     return processedLeads;
   }
 
-  private async saveLeadsToDatabase(leads: CreateLeadDto[], userId: string): Promise<LeadData[]> {
-    this.logger.debug(`Saving ${leads.length} leads to database for user ${userId}.`);
-    const savedLeads: LeadData[] = [];
+  private async createLeadsAndDispatchForEnrichment(leads: CreateLeadDto[], userId: string, harvesterJobId: string): Promise<LeadData[]> {
+    this.logger.debug(`Creating ${leads.length} leads and dispatching to enrichment queue for user ${userId}.`);
+    const createdLeads: LeadData[] = [];
 
     for (const leadDto of leads) {
       try {
-        const savedLead = await this.leadsService.create(leadDto);
-        this.logger.debug(`Saved lead: ${savedLead.company_name} (ID: ${savedLead.id}) for user ${userId}`);
-        savedLeads.push(savedLead);
+        // Create lead with HARVESTED status
+        const newLead = await this.leadsService.create({ ...leadDto, status: LeadStatus.HARVESTED });
+        this.logger.debug(`Created lead: ${newLead.company_name} (ID: ${newLead.id}) with status HARVESTED.`);
+        
+        // Dispatch to enrichment queue
+        await this.enrichmentQueue.add('enrich-lead', {
+          leadId: newLead.id,
+          userId: userId,
+          jobId: harvesterJobId, // Pass original job ID for tracking
+        });
+        this.logger.debug(`Dispatched lead ${newLead.id} to enrichment queue.`);
+
+        createdLeads.push(newLead);
       } catch (error) {
-        this.logger.warn(`Failed to save lead for ${leadDto.company_name}: ${error.message}`);
+        this.logger.error(`Failed to create or dispatch lead for ${leadDto.company_name}: ${error.message}`, error.stack);
       }
     }
     
-    this.logger.log(`Finished saving leads for user ${userId}. ${savedLeads.length} leads saved.`);
-    return savedLeads;
+    this.logger.log(`Finished creating and dispatching leads for user ${userId}. ${createdLeads.length} leads processed.`);
+    return createdLeads;
   }
 
   // WebSocket event emission methods

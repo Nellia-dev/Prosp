@@ -1,4 +1,5 @@
 import { IsString, IsObject, IsEnum, IsDateString, IsOptional } from 'class-validator';
+import { LeadStatus } from '@/shared/enums/nellia.enums';
 
 export enum WebSocketMessageType {
   AGENT_STATUS_UPDATE = 'agent_status_update',
@@ -9,6 +10,7 @@ export enum WebSocketMessageType {
   JOB_PROGRESS = 'job_progress',
   JOB_COMPLETED = 'job_completed',
   JOB_FAILED = 'job_failed',
+  ENRICHMENT_UPDATE = 'enrichment_update',
 }
 
 export enum RealTimeAction {
@@ -128,6 +130,18 @@ export class LeadUpdateData {
 
   @IsDateString()
   updated_at: string;
+
+  @IsEnum(LeadStatus)
+  @IsOptional()
+  status?: LeadStatus;
+
+  @IsObject()
+  @IsOptional()
+  enrichment_data?: any;
+
+  @IsString()
+  @IsOptional()
+  error?: string;
 }
 
 export class MetricsUpdateData {

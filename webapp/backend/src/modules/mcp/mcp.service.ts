@@ -1,10 +1,13 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { AxiosResponse } from 'axios';
 import { firstValueFrom } from 'rxjs';
-import { AgentMetrics, LeadData, ProcessingStage, BusinessContext as BusinessContextType } from '../../shared/types/nellia.types'; // Added BusinessContext as BusinessContextType
+import { AgentMetrics, LeadData, ProcessingStage, BusinessContext as BusinessContextType } from '../../shared/types/nellia.types';
 import { AgentName, AgentCategory } from '../../shared/enums/nellia.enums';
+import { Lead } from '@/database/entities/lead.entity';
+import { BusinessContextService } from '../business-context/business-context.service';
+import EventSource from 'eventsource';
 
 // MCP Server API Types (matching prospect/mcp-server Flask API)
 interface LeadProcessingStateCreate {
@@ -42,6 +45,16 @@ interface RunStatus {
   leads: any[];
 }
 
+interface EnrichmentJobData {
+  user_id: string;
+  job_id: string;
+  analyzed_lead_data: any; // Sending the full lead entity as dict
+  product_service_context: string;
+  competitors_list?: string;
+  timestamp: string;
+}
+
+
 @Injectable()
 export class McpService implements OnModuleInit {
   private readonly logger = new Logger(McpService.name);
@@ -51,9 +64,11 @@ export class McpService implements OnModuleInit {
   constructor(
     private readonly configService: ConfigService,
     private readonly httpService: HttpService,
+    @Inject(forwardRef(() => BusinessContextService))
+    private readonly businessContextService: BusinessContextService,
   ) {
     this.baseUrl = this.configService.get('MCP_SERVER_URL', 'http://localhost:5001');
-    this.timeout = this.configService.get('MCP_SERVER_TIMEOUT', 30000);
+    this.timeout = this.configService.get('MCP_SERVER_TIMEOUT', 180000); // Increased timeout for long-running processes
   }
 
   async onModuleInit() {
@@ -589,7 +604,8 @@ export class McpService implements OnModuleInit {
   // =====================================
 
   /**
-   * Runs the harvester process via MCP with quota-aware limits.
+   * Runs the agentic harvester process via MCP with quota-aware limits.
+   * This method calls the new /api/v2/run_agentic_harvester endpoint.
    * @param query The search query.
    * @param maxSites Maximum number of sites to process.
    * @param context The business context to use for harvesting.
@@ -604,7 +620,58 @@ export class McpService implements OnModuleInit {
     maxLeadsToReturn?: number,
     userId?: string,
   ): Promise<any[]> { // Replace 'any[]' with HarvesterResult[] once HarvesterResult is defined
-    this.logger.log(`Requesting MCP to run harvester for user ${userId || 'unknown'}. Query: "${query}", Max Sites: ${maxSites}, Max Leads: ${maxLeadsToReturn || 'unlimited'}`);
+    this.logger.log(`Requesting agentic harvester for user ${userId || 'unknown'}. Query: "${query}", Max Sites: ${maxSites}, Max Leads: ${maxLeadsToReturn || 'unlimited'}`);
+    try {
+      // Prepare payload for the new agentic harvester endpoint
+      const payload = {
+        user_id: userId || 'unknown',
+        initial_query: query,
+        business_context: context,
+        max_leads_to_generate: maxLeadsToReturn || 50, // Default fallback
+        max_sites_to_scrape: maxSites,
+        timestamp: new Date().toISOString(),
+      };
+
+      // Call the new agentic harvester endpoint
+      const response = await this.makeRequest<{
+        success: boolean;
+        job_id: string;
+        user_id: string;
+        total_leads_generated: number;
+        execution_time_seconds: number;
+        error_message?: string;
+        leads_data?: any[];
+      }>('POST', '/api/v2/run_agentic_harvester', payload);
+
+      if (!response.success) {
+        throw new Error(response.error_message || 'Agentic harvester failed');
+      }
+
+      const results = response.leads_data || [];
+      this.logger.log(`Agentic harvester completed successfully for user ${userId || 'unknown'}. Generated ${response.total_leads_generated} leads in ${response.execution_time_seconds.toFixed(2)}s. Job ID: ${response.job_id}`);
+      
+      return results;
+    } catch (error) {
+      this.logger.error(`Agentic harvester failed for user ${userId || 'unknown'}: ${error.message}`, error.stack);
+      
+      // Fallback to legacy harvester if agentic harvester fails
+      this.logger.warn('Falling back to legacy harvester due to agentic harvester failure');
+      return this.runLegacyHarvester(query, maxSites, context, maxLeadsToReturn, userId);
+    }
+  }
+
+  /**
+   * Legacy harvester method (fallback for compatibility).
+   * This is the original implementation for backward compatibility.
+   */
+  private async runLegacyHarvester(
+    query: string,
+    maxSites: number,
+    context: BusinessContextType,
+    maxLeadsToReturn?: number,
+    userId?: string,
+  ): Promise<any[]> {
+    this.logger.log(`Running legacy harvester for user ${userId || 'unknown'} as fallback`);
     try {
       const payload = {
         query,
@@ -614,10 +681,10 @@ export class McpService implements OnModuleInit {
         business_context: context,
       };
       const results: any[] = await this.makeRequest<any[]>('POST', '/api/harvester/run', payload);
-      this.logger.log(`MCP Harvester returned ${results.length} results for user ${userId || 'unknown'}.`);
+      this.logger.log(`Legacy harvester returned ${results.length} results for user ${userId || 'unknown'}.`);
       return results;
     } catch (error) {
-      this.logger.error(`MCP runHarvester failed for user ${userId || 'unknown'}: ${error.message}`, error.stack);
+      this.logger.error(`Legacy harvester also failed for user ${userId || 'unknown'}: ${error.message}`, error.stack);
       throw error;
     }
   }
@@ -710,5 +777,29 @@ export class McpService implements OnModuleInit {
       this.logger.error('MCP server connection test failed', error);
       return false;
     }
+  }
+
+  async streamEnrichmentPipeline(lead: Lead, userId: string, jobId: string): Promise<AsyncIterable<any>> {
+    const url = `${this.baseUrl}/api/v2/stream_enrichment_pipeline`;
+    this.logger.log(`Initiating enrichment stream for lead ${lead.id} at ${url}`);
+
+    const businessContext = await this.businessContextService.getContextForMcp(userId);
+
+    const payload: EnrichmentJobData = {
+      user_id: userId,
+      job_id: jobId,
+      analyzed_lead_data: lead,
+      product_service_context: businessContext.product_service_description,
+      competitors_list: businessContext.competitors?.join(','),
+      timestamp: new Date().toISOString(),
+    };
+
+    const response = await firstValueFrom(
+        this.httpService.post(url, payload, {
+            responseType: 'stream',
+        }),
+    );
+
+    return response.data;
   }
 }
