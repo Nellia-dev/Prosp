@@ -1,10 +1,10 @@
 # run.py
 
-import sys
 from dotenv import load_dotenv
 import os
-import re
+import sys
 import json
+import re
 from datetime import datetime
 import asyncio
 
@@ -17,7 +17,6 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
 
 
 # Importa TODOS os agentes relevantes do arquivo agent.py dentro de adk1
-# Renomeando para corresponder aos nomes dos agentes do seu projeto "Prospecter"
 from adk1.agent import (
     root_agent,  # Este é o query_refiner_agent (refinador de query)
     lead_search_and_qualify_agent,
@@ -31,7 +30,7 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from google.adk.agents import Agent # Mantém essa importação para type hinting se necessário
 
-APP_NAME = "prospecter_app" # Renomeado para o seu app
+APP_NAME = "prospecter_app"
 USER_ID = "prospector_user_1"
 DEFAULT_SESSION_ID = "session_001"
 
@@ -95,10 +94,8 @@ async def call_agent_and_run(agent_to_use: Agent, query: str) -> dict:
             print(f"\n--- Agente (Saída da Ferramenta {event.tool_code_output.name}): ---")
             output = event.tool_code_output.output
             if isinstance(output, (str, dict, list)):
-                # Tenta extrair JSON se a saída da ferramenta for string que parece JSON
                 if isinstance(output, str):
                     try:
-                        # Tenta remover markdown code block e parsear JSON
                         json_str_match = re.search(r'```json\n(.*?)```', output, re.DOTALL)
                         if json_str_match:
                             parsed_output = json.loads(json_str_match.group(1).strip())
@@ -112,10 +109,10 @@ async def call_agent_and_run(agent_to_use: Agent, query: str) -> dict:
                             extracted_json_data.append(parsed_output)
                             print(f"JSON extraído da ferramenta (1 item).")
                         else:
-                            print(str(output)[:500] + "...") # Não é JSON estruturado
+                            print(str(output)[:500] + "...")
                     except json.JSONDecodeError:
-                        print(str(output)[:500] + "...") # Não é JSON válido
-                else: # Se a saída já for dict ou list
+                        print(str(output)[:500] + "...")
+                else:
                     if isinstance(output, list) and all(isinstance(item, dict) for item in output):
                         extracted_json_data.extend(output)
                         print(f"JSON extraído da ferramenta (já como list/dict) ({len(output)} itens).")
@@ -123,7 +120,7 @@ async def call_agent_and_run(agent_to_use: Agent, query: str) -> dict:
                         extracted_json_data.append(output)
                         print(f"JSON extraído da ferramenta (já como dict).")
                     else:
-                        print(str(output)[:500] + "...") # Outro formato de dados
+                        print(str(output)[:500] + "...")
             else:
                 print(output)
         elif hasattr(event, 'content') and event.content and event.content.parts:
@@ -133,7 +130,6 @@ async def call_agent_and_run(agent_to_use: Agent, query: str) -> dict:
                 print("\n--- Agente (Resposta Final): ---")
                 print(final_response_text)
                 
-                # Tenta extrair JSON também da resposta final do agente
                 json_match = re.search(r'```json\n(.*?)```', final_response_text, re.DOTALL)
                 if json_match:
                     try:
@@ -144,8 +140,8 @@ async def call_agent_and_run(agent_to_use: Agent, query: str) -> dict:
                             extracted_json_data.append(parsed_json)
                         print(f"JSON extraído da resposta final do agente.")
                     except json.JSONDecodeError:
-                        pass # Ignora se não for JSON válido no final
-                break # Sai do loop após a resposta final
+                        pass
+                break
 
     return {
         "final_response": final_response_text,
@@ -158,7 +154,7 @@ async def main_loop():
     print("Digite sua solicitação para encontrar leads (ex: 'empresas de IA em São Paulo', 'e-mails de contato da empresa X', 'analisar este link: http://example.com/company').")
     print("Digite 'sair' para encerrar.")
 
-    while True: # Loop para interação contínua
+    while True:
         user_raw_query = input("\nVocê: ").strip()
         if user_raw_query.lower() == 'sair':
             print("Encerrando a sessão.")
@@ -172,26 +168,35 @@ async def main_loop():
 
         try:
             print("\n*** Etapa 1: Refinando a query com o query_refiner_agent ***")
-            # Primeiro, rode o agente de refinamento com a query bruta do usuário
-            refiner_result = await call_agent_and_run(root_agent, user_raw_query) # root_agent é o query_refiner_agent
+            refiner_result = await call_agent_and_run(root_agent, user_raw_query)
             refined_query = refiner_result['final_response']
             print(f"Query refinada: '{refined_query}'")
 
-            # Analise a query original do usuário para decidir qual agente de busca usar
-            # Esta lógica determina a INTENÇÃO da query original para o roteamento principal
-            if re.search(r'https?://\S+', user_raw_query): # Se a query ORIGINAL contiver URLs
-                print("\n*** Etapa 2: Processando links com o direct_url_lead_processor_agent ***")
-                # O direct_url_lead_processor_agent precisa da query original para extrair URLs e instrução
+            print("\n*** Etapa 2: Selecionando e executando agente especializado ***")
+            
+            # Detecção de Intenção para rotear para o agente correto
+            urls_found_in_input = re.findall(r'https?://\S+', user_raw_query)
+            
+            agent_result = {"final_response": "", "extracted_leads": []} # Inicializa com valores vazios
+
+            if urls_found_in_input:
+                print("Orquestrador: Intenção detectada: Processamento de URLs diretas.")
                 agent_result = await call_agent_and_run(direct_url_lead_processor_agent, user_raw_query)
-                session_leads_for_export.extend(agent_result['extracted_leads'])
-            elif any(keyword in user_raw_query.lower() for keyword in ["e-mails", "telefones", "contato", "estruturados", "dados da empresa", "cnpj"]):
-                print("\n*** Etapa 2: Extraindo dados estruturados de leads com o structured_lead_extractor_agent ***")
+            # Reorganizado para priorizar extração estruturada se a intenção for clara (e-mails, telefones, detalhes)
+            elif any(keyword in user_raw_query.lower() for keyword in ["e-mails", "telefones", "contato", "estruturados", "dados da empresa", "cnpj", "detalhes", "business_description", "target_market", "value_proposition", "ideal_customer", "pain_points", "industry_focus"]):
+                print("Orquestrador: Intenção detectada: Extração de dados estruturados de leads.")
                 agent_result = await call_agent_and_run(structured_lead_extractor_agent, refined_query)
-                session_leads_for_export.extend(agent_result['extracted_leads'])
             else: # Busca geral e qualificação
-                print("\n*** Etapa 2: Realizando busca geral e qualificação de leads com o lead_search_and_qualify_agent ***")
+                print("Orquestrador: Intenção detectada: Busca geral e qualificação de leads.")
                 agent_result = await call_agent_and_run(lead_search_and_qualify_agent, refined_query)
-                session_leads_for_export.extend(agent_result['extracted_leads'])
+            
+            # A resposta formatada já vem do agente (agent_result['final_response'])
+            print("\n*** Agente Principal (Resposta Consolidada): ***")
+            if agent_result['final_response']:
+                print(agent_result['final_response'])
+            
+            # Adiciona os leads extraídos na sessão para exportação
+            session_leads_for_export.extend(agent_result['extracted_leads'])
 
             # Oferecer exportação após cada ciclo completo de interação
             if session_leads_for_export:
@@ -203,8 +208,7 @@ async def main_loop():
         except Exception as e:
             print(f"\nUm erro ocorreu durante a execução do agente: {e}")
             print(f"Detalhes do erro: {e}")
-            import traceback; traceback.print_exc() # Para depuração
+            import traceback; traceback.print_exc()
 
 if __name__ == "__main__":
-    # Inicia o loop principal assíncrono
     asyncio.run(main_loop())
