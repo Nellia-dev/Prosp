@@ -1,7 +1,17 @@
 # project/adk/__init__.py
 
-from .agent import root_agent # <-- Esta linha é crucial!
+"""
+Prospecter: An intelligent AI agent system for lead generation.
+This package contains the definitions for various specialized agents and their tools.
+"""
 
-# Se você quiser que os outros agentes também sejam importáveis diretamente de 'adk',
-# você pode adicioná-los aqui, mas o sistema ADK principal só procura por 'root_agent'.
-# from .agent import query_builder_agent, search_executor_agent
+# Importa o agente principal que será o ponto de entrada para o refinamento de queries.
+# Conforme sua solicitação, 'root_agent' agora é um alias para o agente de refinamento.
+from .agent import root_agent
+
+# Importa os outros agentes especializados para que o orquestrador (run.py) possa acessá-los.
+from .agent import (
+    lead_search_and_qualify_agent,
+    structured_lead_extractor_agent,
+    direct_url_lead_processor_agent
+)
