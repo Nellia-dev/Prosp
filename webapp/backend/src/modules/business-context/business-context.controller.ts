@@ -74,7 +74,7 @@ export class BusinessContextController {
         {
           status: HttpStatus.BAD_REQUEST,
           error: 'Validation failed',
-          message: validation.errors,
+          message: validation.invalidFields, // Changed from validation.errors
         },
         HttpStatus.BAD_REQUEST,
       );
@@ -148,7 +148,23 @@ export class BusinessContextController {
   })
   async validateBusinessContext(
     @Body() businessContext: BusinessContextType,
-  ): Promise<{ valid: boolean; errors: string[] }> {
+  ): Promise<{ valid: boolean; invalidFields: string[] }> { // Updated to invalidFields
     return this.businessContextService.validateContext(businessContext);
+  }
+
+  @Get('ready-for-prospecting')
+  @ApiOperation({ summary: 'Check if business context is ready for prospecting' })
+  @ApiResponse({
+    status: 200,
+    description: 'Readiness status retrieved successfully',
+    // We can define a DTO for this response if needed for Swagger
+    // type: ReadinessStatusDto 
+  })
+  async isReadyForProspecting(): Promise<{
+    ready: boolean;
+    missingFields: string[];
+    contextExists: boolean;
+  }> {
+    return this.businessContextService.isReadyForProspecting();
   }
 }

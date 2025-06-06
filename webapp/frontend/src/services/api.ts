@@ -18,7 +18,7 @@ import type {
   BusinessContextResponse,
   ChatMessageRequest,
   ChatMessageResponse,
-  DashboardMetricsResponse,
+  // DashboardMetricsResponse is now imported from nellia.types for metricsApi
   PerformanceMetricsResponse,
   AgentPerformanceResponse,
   LeadStatsResponse,
@@ -53,8 +53,17 @@ export const authApi = {
 // Agents API
 export const agentsApi = {
   getAll: async (): Promise<AgentResponse[]> => {
-    const response = await apiClient.get<ApiResponse<AgentResponse[]>>('/agents');
-    return response.data.data;
+    try {
+      const response = await apiClient.get<ApiResponse<AgentResponse[]>>('/agents');
+      if (response.data && response.data.data) {
+        return response.data.data;
+      }
+      console.warn('agentsApi.getAll: response.data.data was null or undefined. Returning empty array.');
+    } catch (error) {
+      console.error('Error fetching all agents from API:', error);
+      // Fallthrough to return empty array on error
+    }
+    return []; // Fallback default
   },
 
   getById: async (id: string): Promise<AgentResponse> => {
@@ -87,10 +96,26 @@ export const leadsApi = {
         }
       });
     }
-    const response = await apiClient.get<ApiResponse<PaginatedResponse<LeadResponse>>>(
-      `/leads?${params.toString()}`
-    );
-    return response.data.data;
+    try {
+      const response = await apiClient.get<ApiResponse<PaginatedResponse<LeadResponse>>>(
+        `/leads?${params.toString()}`
+      );
+      if (response.data && response.data.data) {
+        // Ensure data array exists, even if empty, and pagination fields have defaults
+        return {
+          data: response.data.data.data || [],
+          total: response.data.data.total || 0,
+          page: response.data.data.page || 1,
+          limit: response.data.data.limit || 10,
+          totalPages: response.data.data.totalPages || 0,
+        };
+      }
+      console.warn('leadsApi.getAll: response.data.data was null or undefined. Returning default paginated response.');
+    } catch (error) {
+      console.error('Error fetching all leads from API:', error);
+      // Fallthrough to return default paginated response on error
+    }
+    return { data: [], total: 0, page: 1, limit: 10, totalPages: 0 }; // Fallback default
   },
 
   getById: async (id: string): Promise<LeadResponse> => {
@@ -162,11 +187,36 @@ export const chatApi = {
   },
 };
 
+import type { DashboardMetricsResponse as NelliaDashboardMetricsResponse } from '../types/nellia'; // Corrected import path
+
 // Metrics API
 export const metricsApi = {
-  getDashboard: async (): Promise<DashboardMetricsResponse> => {
-    const response = await apiClient.get<ApiResponse<DashboardMetricsResponse>>('/metrics/dashboard');
-    return response.data.data;
+  getDashboard: async (): Promise<NelliaDashboardMetricsResponse> => { // Use the new type
+    try {
+      const response = await apiClient.get<ApiResponse<NelliaDashboardMetricsResponse>>('/metrics/dashboard');
+      if (response.data && response.data.data) {
+        // Ensure lastUpdated is a string, as expected by NelliaDashboardMetricsResponse on frontend
+        const metrics = response.data.data;
+        if (metrics.lastUpdated && typeof metrics.lastUpdated !== 'string') {
+          metrics.lastUpdated = new Date(metrics.lastUpdated).toISOString();
+        }
+        return metrics;
+      }
+      console.warn('metricsApi.getDashboard: response.data.data was null or undefined. Returning default metrics.');
+    } catch (error) {
+      console.error('Error fetching dashboard metrics from API:', error);
+      // Fallthrough to return default metrics on error
+    }
+    // Fallback default if API call fails or data is malformed
+    return {
+      totalLeads: 0,
+      totalAgents: 0,
+      activeAgents: 0,
+      processingRate: 0,
+      successRate: 0,
+      recentActivity: [],
+      lastUpdated: new Date().toISOString(),
+    };
   },
 
   getPerformance: async (timeRange = '24h'): Promise<PerformanceMetricsResponse> => {
@@ -188,6 +238,51 @@ export const metricsApi = {
 
   getSummary: async (): Promise<MetricsSummaryResponse> => {
     const response = await apiClient.get<ApiResponse<MetricsSummaryResponse>>('/metrics/summary');
+    return response.data.data;
+  },
+};
+
+// Prospect API
+// Types for ProspectAPI (should match types in useProspect.ts or a shared types file)
+// These types are placeholders and should align with the actual DTOs/interfaces
+// used in useProspect.ts and the backend ProspectController/ProspectService.
+interface StartProspectingRequestDto {
+  searchQuery: string;
+  maxSites?: number;
+}
+
+interface ProspectJobResponse {
+  jobId: string | number;
+  status: string;
+  progress?: number | object;
+  createdAt?: string; // ISO Date string
+  finishedAt?: string | null; // ISO Date string
+  error?: string | null;
+  leadsCreated?: number;
+  // Add other fields from backend's ProspectJobStatus if needed
+}
+
+interface ProspectJobStatusDetailsResponse extends ProspectJobResponse {
+  data?: unknown; // Raw job data from Bull
+  result?: unknown; // Job result if completed
+  processedAt?: string | null; // ISO Date string
+  // Add other fields from backend's ProspectJobStatus
+}
+
+export const prospectApi = {
+  start: async (data: StartProspectingRequestDto): Promise<{ jobId: string | number; status: string }> => {
+    // Backend /prospect/start returns { jobId: job.id, status: 'started' } directly.
+    const response = await apiClient.post<{ jobId: string | number; status: string }>('/prospect/start', data);
+    return response.data; 
+  },
+  getJobs: async (): Promise<ProspectJobResponse[]> => {
+    // Backend /prospect/jobs returns ProspectJobStatus[] which should map to ProspectJobResponse[]
+    const response = await apiClient.get<ApiResponse<ProspectJobResponse[]>>('/prospect/jobs');
+    return response.data.data || [];
+  },
+  getJobStatus: async (jobId: string): Promise<ProspectJobStatusDetailsResponse> => {
+    // Backend /prospect/status/:jobId returns ProspectJobStatus which should map to ProspectJobStatusDetailsResponse
+    const response = await apiClient.get<ApiResponse<ProspectJobStatusDetailsResponse>>(`/prospect/status/${jobId}`);
     return response.data.data;
   },
 };

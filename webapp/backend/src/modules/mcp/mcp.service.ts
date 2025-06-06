@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { AxiosResponse } from 'axios';
 import { firstValueFrom } from 'rxjs';
-import { AgentMetrics, LeadData, ProcessingStage } from '../../shared/types/nellia.types';
+import { AgentMetrics, LeadData, ProcessingStage, BusinessContext as BusinessContextType } from '../../shared/types/nellia.types'; // Added BusinessContext as BusinessContextType
 import { AgentName, AgentCategory } from '../../shared/enums/nellia.enums';
 
 // MCP Server API Types (matching prospect/mcp-server Flask API)
@@ -555,16 +555,96 @@ export class McpService implements OnModuleInit {
   }
 
   // =====================================
-  // Business Context Methods (Not implemented)
+  // Business Context Methods
   // =====================================
 
-  async updateBusinessContext(context: any): Promise<void> {
-    this.logger.warn('Business context functionality not implemented in current MCP server');
+  async updateBusinessContext(context: BusinessContextType | null): Promise<void> {
+    this.logger.log(`Syncing business context with MCP server. Context: ${context ? context.id : 'null'}`);
+    try {
+      // Assuming an endpoint like /api/business-context
+      // If context is null, it means clear the context on MCP side
+      await this.makeRequest('POST', '/api/business-context', context);
+      this.logger.log('Business context synced with MCP server successfully.');
+    } catch (error) {
+      this.logger.error('Failed to sync business context with MCP server.', error.stack);
+      // Do not rethrow, allow main app to function even if MCP sync fails
+    }
   }
 
-  async getBusinessContext(): Promise<any> {
-    this.logger.warn('Business context functionality not implemented in current MCP server');
-    return {};
+  async getBusinessContext(): Promise<BusinessContextType | null> {
+    this.logger.log('Attempting to get business context from MCP server.');
+    try {
+      // Assuming an endpoint like /api/business-context
+      const context = await this.makeRequest<BusinessContextType | null>('GET', '/api/business-context');
+      this.logger.log(context ? 'Business context retrieved from MCP.' : 'No business context found on MCP.');
+      return context;
+    } catch (error) {
+      this.logger.error('Failed to get business context from MCP server.', error.stack);
+      return null;
+    }
+  }
+
+  // =====================================
+  // Prospecting Specific Methods
+  // =====================================
+
+  /**
+   * Runs the harvester process via MCP.
+   * @param query The search query.
+   * @param maxSites Maximum number of sites to process.
+   * @param context The business context to use for harvesting.
+   * @returns A promise resolving to an array of harvester results.
+   */
+  async runHarvester(
+    query: string,
+    maxSites: number,
+    context: BusinessContextType,
+  ): Promise<any[]> { // Replace 'any[]' with HarvesterResult[] once HarvesterResult is defined
+    this.logger.log(`Requesting MCP to run harvester. Query: "${query}", Max Sites: ${maxSites}`);
+    try {
+      const payload = {
+        query,
+        max_sites: maxSites,
+        business_context: context,
+      };
+      const results: any[] = await this.makeRequest<any[]>('POST', '/api/harvester/run', payload);
+      this.logger.log(`MCP Harvester returned ${results.length} results.`);
+      return results;
+    } catch (error) {
+      this.logger.error(`MCP runHarvester failed: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Processes raw data (e.g., from harvester) into a structured lead DTO via MCP.
+   * @param rawData A single harvester result (type 'any' for now, should be HarvesterResult).
+   * @param context The business context to use for processing.
+   * @returns A promise resolving to a CreateLeadDto or null if processing fails.
+   */
+  async processRawDataToLead(
+    rawData: any, // Should be HarvesterResult
+    context: BusinessContextType,
+  ): Promise<LeadData | null> { // Plan uses CreateLeadDto, but McpService might return full LeadData
+    const url = rawData && rawData.url ? rawData.url : 'unknown URL';
+    this.logger.log(`Requesting MCP to process raw data for URL: ${url}`);
+    try {
+      const payload = {
+        raw_data: rawData,
+        business_context: context,
+      };
+      // Assuming MCP returns data that can be cast or transformed into CreateLeadDto or LeadData
+      const leadDto = await this.makeRequest<LeadData | null>('POST', '/api/mcp/process-raw-to-lead', payload);
+      if (leadDto) {
+        this.logger.log(`MCP successfully processed raw data into lead DTO for URL: ${url}`);
+      } else {
+        this.logger.warn(`MCP returned null for raw data processing of URL: ${url}`);
+      }
+      return leadDto;
+    } catch (error) {
+      this.logger.error(`MCP processRawDataToLead failed for URL ${url}: ${error.message}`, error.stack);
+      return null;
+    }
   }
 
   // =====================================

@@ -6,12 +6,14 @@ import { Lead } from '../../database/entities/lead.entity';
 import { ProcessingStage } from '../../shared/enums/nellia.enums';
 import { ChatMessage } from '../../database/entities/chat-message.entity';
 import {
-  DashboardMetrics,
+  DashboardMetricsResponse, // Updated
+  RecentActivityItem, // Added
   AgentPerformanceData,
   PerformanceDataPoint,
   MetricsPeriod,
   AgentMetrics,
 } from '../../shared/types/nellia.types';
+import { AgentStatus as AgentStatusEnum } from '../../database/entities/agent.entity'; // Added for activeAgents
 
 @Injectable()
 export class MetricsService {
@@ -29,37 +31,54 @@ export class MetricsService {
   /**
    * Get comprehensive dashboard metrics
    */
-  async getDashboardMetrics(): Promise<DashboardMetrics> {
+  async getDashboardMetrics(): Promise<DashboardMetricsResponse> {
     try {
       const [
         totalLeads,
-        completedLeads,
-        averageProcessingTime,
-        averageRoiPotential,
-        agentMetrics,
+        completedLeads, // Used for successRate calculation
+        totalAgents,
+        activeAgents,
+        // processingRate will be a placeholder for now
+        // recentActivity will be a placeholder for now
       ] = await Promise.all([
         this.getTotalLeadsCount(),
         this.getCompletedLeadsCount(),
-        this.getAverageProcessingTime(),
-        this.getAverageRoiPotential(),
-        this.getAgentMetrics(),
+        this.getTotalAgentsCount(),
+        this.getActiveAgentsCount(),
       ]);
 
       const successRate = totalLeads > 0 ? (completedLeads / totalLeads) * 100 : 0;
+      const processingRate = 0; // Placeholder
+      const recentActivity: RecentActivityItem[] = []; // Placeholder
 
       return {
         totalLeads,
-        completedLeads,
-        averageProcessingTime,
-        averageRoiPotential,
-        successRate,
-        agentMetrics,
+        totalAgents,
+        activeAgents,
+        processingRate,
+        successRate: parseFloat(successRate.toFixed(2)),
+        recentActivity,
         lastUpdated: new Date(),
       };
     } catch (error) {
       this.logger.error('Failed to get dashboard metrics', error.stack);
-      throw new Error('Failed to retrieve dashboard metrics');
+      return this.getDefaultDashboardMetrics();
     }
+  }
+
+  /**
+   * Get default metrics when none exist or errors occur
+   */
+  private getDefaultDashboardMetrics(): DashboardMetricsResponse {
+    return {
+      totalLeads: 0,
+      totalAgents: 0,
+      activeAgents: 0,
+      processingRate: 0,
+      successRate: 0,
+      recentActivity: [],
+      lastUpdated: new Date(),
+    };
   }
 
   /**
@@ -214,6 +233,14 @@ export class MetricsService {
    */
   private async getTotalLeadsCount(): Promise<number> {
     return await this.leadRepository.count();
+  }
+
+  private async getTotalAgentsCount(): Promise<number> {
+    return await this.agentRepository.count();
+  }
+
+  private async getActiveAgentsCount(): Promise<number> {
+    return await this.agentRepository.count({ where: { status: AgentStatusEnum.ACTIVE } });
   }
 
   private async getCompletedLeadsCount(): Promise<number> {

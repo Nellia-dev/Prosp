@@ -187,3 +187,30 @@ export interface PerformanceDataPoint {
 }
 
 export type MetricsPeriod = '24h' | '7d' | '30d' | '90d';
+
+// As per FRONTEND_EMPTY_STATE_FIX_PLAN.md for Metrics
+export interface RecentActivityItem {
+  id: string;
+  type: 'lead_created' | 'agent_status_change' | 'prospect_job_started' | 'prospect_job_completed';
+  description: string;
+  timestamp: string;
+  metadata?: Record<string, any>;
+}
+
+export interface DashboardMetricsResponse {
+  totalLeads: number;
+  totalAgents: number;
+  activeAgents: number;
+  processingRate: number; // Placeholder, to be defined more clearly
+  successRate: number;
+  recentActivity: RecentActivityItem[];
+  lastUpdated: Date; // Keeping this as it's generally useful
+}
+
+// Generic paginated response for API list endpoints
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+}

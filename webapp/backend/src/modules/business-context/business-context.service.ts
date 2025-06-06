@@ -86,32 +86,57 @@ export class BusinessContextService {
     return true;
   }
 
-  async validateContext(context: BusinessContextType): Promise<{ valid: boolean; errors: string[] }> {
-    const errors: string[] = [];
+  async validateContext(context: BusinessContextType): Promise<{ valid: boolean; invalidFields: string[] }> {
+    const invalidFields: string[] = [];
 
     if (!context.business_description || context.business_description.trim().length < 10) {
-      errors.push('Business description must be at least 10 characters long');
+      invalidFields.push('business_description');
     }
 
     if (!context.target_market || context.target_market.trim().length < 5) {
-      errors.push('Target market must be specified');
+      invalidFields.push('target_market');
     }
 
     if (!context.value_proposition || context.value_proposition.trim().length < 10) {
-      errors.push('Value proposition must be at least 10 characters long');
+      invalidFields.push('value_proposition');
     }
 
     if (!context.pain_points || context.pain_points.length === 0) {
-      errors.push('At least one pain point must be specified');
+      invalidFields.push('pain_points');
     }
 
     if (!context.industry_focus || context.industry_focus.length === 0) {
-      errors.push('At least one industry focus must be specified');
+      invalidFields.push('industry_focus');
     }
 
     return {
-      valid: errors.length === 0,
-      errors,
+      valid: invalidFields.length === 0,
+      invalidFields,
+    };
+  }
+
+  async isReadyForProspecting(): Promise<{
+    ready: boolean;
+    missingFields: string[];
+    contextExists: boolean;
+  }> {
+    const contextEntity = await this.findOne();
+    
+    if (!contextEntity) {
+      return {
+        ready: false,
+        missingFields: ['business_description', 'target_market', 'value_proposition'], // Core fields as per plan
+        contextExists: false
+      };
+    }
+  
+    const contextDto = this.entityToDto(contextEntity);
+    const validation = await this.validateContext(contextDto);
+    
+    return {
+      ready: validation.valid,
+      missingFields: validation.invalidFields, // Use the field names from validateContext
+      contextExists: true
     };
   }
 

@@ -18,59 +18,64 @@ export class LeadsService {
   ) {}
 
   async findAll(filters?: LeadFilters): Promise<{ data: LeadData[], total: number }> {
-    const query = this.leadRepository.createQueryBuilder('lead');
+    try {
+      const query = this.leadRepository.createQueryBuilder('lead');
 
-    // Apply filters
-    if (filters) {
-      if (filters.search) {
-        query.andWhere(
-          '(lead.company_name ILIKE :search OR lead.website ILIKE :search OR lead.company_sector ILIKE :search)',
-          { search: `%${filters.search}%` }
-        );
-      }
+      // Apply filters
+      if (filters) {
+        if (filters.search) {
+          query.andWhere(
+            '(lead.company_name ILIKE :search OR lead.website ILIKE :search OR lead.company_sector ILIKE :search)',
+            { search: `%${filters.search}%` }
+          );
+        }
 
-      if (filters.company_sector) {
-        query.andWhere('lead.company_sector = :sector', { sector: filters.company_sector });
-      }
+        if (filters.company_sector) {
+          query.andWhere('lead.company_sector = :sector', { sector: filters.company_sector });
+        }
 
-      if (filters.qualification_tier) {
-        query.andWhere('lead.qualification_tier = :tier', { tier: filters.qualification_tier });
-      }
+        if (filters.qualification_tier) {
+          query.andWhere('lead.qualification_tier = :tier', { tier: filters.qualification_tier });
+        }
 
-      if (filters.processing_stage) {
-        query.andWhere('lead.processing_stage = :stage', { stage: filters.processing_stage });
-      }
+        if (filters.processing_stage) {
+          query.andWhere('lead.processing_stage = :stage', { stage: filters.processing_stage });
+        }
 
-      if (filters.score_range) {
-        query.andWhere('lead.relevance_score BETWEEN :min AND :max', {
-          min: filters.score_range.min,
-          max: filters.score_range.max,
-        });
-      }
+        if (filters.score_range) {
+          query.andWhere('lead.relevance_score BETWEEN :min AND :max', {
+            min: filters.score_range.min,
+            max: filters.score_range.max,
+          });
+        }
 
-      // Sorting
-      if (filters.sort_by) {
-        const order = filters.sort_order?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
-        query.orderBy(`lead.${filters.sort_by}`, order);
+        // Sorting
+        if (filters.sort_by) {
+          const order = filters.sort_order?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+          query.orderBy(`lead.${filters.sort_by}`, order);
+        } else {
+          query.orderBy('lead.created_at', 'DESC');
+        }
+
+        // Pagination
+        if (filters.limit) {
+          query.take(filters.limit);
+        }
+        if (filters.offset) {
+          query.skip(filters.offset);
+        }
       } else {
         query.orderBy('lead.created_at', 'DESC');
       }
 
-      // Pagination
-      if (filters.limit) {
-        query.take(filters.limit);
-      }
-      if (filters.offset) {
-        query.skip(filters.offset);
-      }
-    } else {
-      query.orderBy('lead.created_at', 'DESC');
+      const [leads, total] = await query.getManyAndCount();
+      const data = leads.map(lead => this.convertToLeadData(lead));
+
+      return { data: data || [], total: total || 0 };
+    } catch (error) {
+      console.error('Error fetching leads:', error);
+      return { data: [], total: 0 }; // Always return structured response, never undefined
     }
-
-    const [leads, total] = await query.getManyAndCount();
-    const data = leads.map(lead => this.convertToLeadData(lead));
-
-    return { data, total };
   }
 
   async findOne(id: string): Promise<LeadData> {

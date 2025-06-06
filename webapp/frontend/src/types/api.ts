@@ -58,6 +58,9 @@ export interface AgentResponse {
   llmTokenLimit: number;
   createdAt: string;
   updatedAt: string;
+  description?: string; // Added optional description
+  category?: string;    // Added optional category
+  displayName?: string; // Added optional displayName
 }
 
 export interface StartAgentRequest {
