@@ -1,6 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
-import { WebSocketMessage, WebSocketMessageType, RealTimeUpdate } from './dto/websocket.dto';
+import { 
+  WebSocketMessage, 
+  WebSocketMessageType, 
+  RealTimeUpdate,
+  QuotaUpdateData,
+  JobProgressData,
+  JobCompletedData,
+  JobFailedData
+} from './dto/websocket.dto';
 
 @Injectable()
 export class WebSocketService {
@@ -118,6 +126,88 @@ export class WebSocketService {
   broadcastConnectionStats() {
     const stats = this.getConnectionStats();
     this.broadcast('connection-stats', stats);
+  }
+
+  // User-specific room management
+  joinUserRoom(client: Socket, userId: string) {
+    const roomName = `user-${userId}`;
+    client.join(roomName);
+    this.logger.debug(`Client ${client.id} joined user room: ${roomName}`);
+    
+    // Confirm room join
+    client.emit('user-room-joined', {
+      userId,
+      roomName,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  leaveUserRoom(client: Socket, userId: string) {
+    const roomName = `user-${userId}`;
+    client.leave(roomName);
+    this.logger.debug(`Client ${client.id} left user room: ${roomName}`);
+  }
+
+  // Send message to specific user room
+  sendToUserRoom(userId: string, event: string, data: any) {
+    if (!this.server) {
+      this.logger.warn('WebSocket server not initialized');
+      return;
+    }
+
+    const roomName = `user-${userId}`;
+    this.server.to(roomName).emit(event, data);
+    this.logger.debug(`Sent ${event} to user room: ${roomName}`);
+  }
+
+  // New methods for quota and job updates
+  emitQuotaUpdate(userId: string, quotaData: QuotaUpdateData) {
+    const message: WebSocketMessage = {
+      type: WebSocketMessageType.QUOTA_UPDATE,
+      data: quotaData,
+      timestamp: new Date().toISOString(),
+    };
+    
+    this.sendToUserRoom(userId, 'quota-updated', message);
+    this.logger.debug(`Sent quota update to user: ${userId}`);
+  }
+
+  emitJobProgress(userId: string, progressData: JobProgressData) {
+    const message: WebSocketMessage = {
+      type: WebSocketMessageType.JOB_PROGRESS,
+      data: progressData,
+      timestamp: new Date().toISOString(),
+    };
+    
+    this.sendToUserRoom(userId, 'job-progress', message);
+    this.logger.debug(`Sent job progress to user: ${userId}, job: ${progressData.jobId}`);
+  }
+
+  emitJobCompleted(userId: string, completedData: JobCompletedData) {
+    const message: WebSocketMessage = {
+      type: WebSocketMessageType.JOB_COMPLETED,
+      data: completedData,
+      timestamp: new Date().toISOString(),
+    };
+    
+    this.sendToUserRoom(userId, 'job-completed', message);
+    this.logger.debug(`Sent job completed to user: ${userId}, job: ${completedData.jobId}`);
+    
+    // Also emit quota update if included
+    if (completedData.quotaUpdate) {
+      this.emitQuotaUpdate(userId, completedData.quotaUpdate);
+    }
+  }
+
+  emitJobFailed(userId: string, failedData: JobFailedData) {
+    const message: WebSocketMessage = {
+      type: WebSocketMessageType.JOB_FAILED,
+      data: failedData,
+      timestamp: new Date().toISOString(),
+    };
+    
+    this.sendToUserRoom(userId, 'job-failed', message);
+    this.logger.debug(`Sent job failed to user: ${userId}, job: ${failedData.jobId}`);
   }
 
   // Health check for WebSocket service

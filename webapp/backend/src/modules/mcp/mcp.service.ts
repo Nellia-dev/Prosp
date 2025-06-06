@@ -589,29 +589,35 @@ export class McpService implements OnModuleInit {
   // =====================================
 
   /**
-   * Runs the harvester process via MCP.
+   * Runs the harvester process via MCP with quota-aware limits.
    * @param query The search query.
    * @param maxSites Maximum number of sites to process.
    * @param context The business context to use for harvesting.
+   * @param maxLeadsToReturn Maximum number of leads to return (quota-aware).
+   * @param userId User ID for logging and potential user-specific context.
    * @returns A promise resolving to an array of harvester results.
    */
   async runHarvester(
     query: string,
     maxSites: number,
     context: BusinessContextType,
+    maxLeadsToReturn?: number,
+    userId?: string,
   ): Promise<any[]> { // Replace 'any[]' with HarvesterResult[] once HarvesterResult is defined
-    this.logger.log(`Requesting MCP to run harvester. Query: "${query}", Max Sites: ${maxSites}`);
+    this.logger.log(`Requesting MCP to run harvester for user ${userId || 'unknown'}. Query: "${query}", Max Sites: ${maxSites}, Max Leads: ${maxLeadsToReturn || 'unlimited'}`);
     try {
       const payload = {
         query,
         max_sites: maxSites,
+        max_leads_to_return: maxLeadsToReturn,
+        user_id: userId,
         business_context: context,
       };
       const results: any[] = await this.makeRequest<any[]>('POST', '/api/harvester/run', payload);
-      this.logger.log(`MCP Harvester returned ${results.length} results.`);
+      this.logger.log(`MCP Harvester returned ${results.length} results for user ${userId || 'unknown'}.`);
       return results;
     } catch (error) {
-      this.logger.error(`MCP runHarvester failed: ${error.message}`, error.stack);
+      this.logger.error(`MCP runHarvester failed for user ${userId || 'unknown'}: ${error.message}`, error.stack);
       throw error;
     }
   }

@@ -105,6 +105,7 @@ export interface CreateLeadDto {
   market_region?: string;
   company_size?: string;
   annual_revenue?: number;
+  userId?: string; // Associated user for multi-tenant support
 }
 
 export interface UpdateLeadDto {

@@ -1,11 +1,11 @@
-import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ConflictException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue, Job } from 'bull';
 import { BusinessContextService } from '../business-context/business-context.service';
 import { McpService } from '../mcp/mcp.service';
-// Assuming these DTOs/types will be defined, possibly in shared/types or a local dtos file
-// For now, defining inline for clarity based on the plan.
-import { ApiProperty } from '@nestjs/swagger'; // Import for DTO class
+import { UsersService } from '../users/users.service';
+import { QuotaService } from '../quota/quota.service';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class StartProspectingDto {
   @ApiProperty({ example: 'tech companies in Brazil', description: 'The search query for prospecting' })
@@ -16,9 +16,11 @@ export class StartProspectingDto {
 }
 
 export interface HarvesterJobData {
+  userId: string; // ID of the user who initiated the job
   searchQuery: string;
   maxSites: number;
-  contextId: string | null; // Assuming contextId might be relevant
+  maxLeadsToReturn: number; // Calculated based on user's remaining quota
+  businessContextId?: string; // If business context becomes user-specific
   timestamp: string;
 }
 
@@ -41,12 +43,18 @@ export class ProspectService {
   constructor(
     @InjectQueue('prospect-processing') private prospectQueue: Queue<HarvesterJobData>,
     private businessContextService: BusinessContextService,
-    private mcpService: McpService, // Assuming McpService is available and configured
+    private mcpService: McpService,
+    private usersService: UsersService,
+    private quotaService: QuotaService,
   ) {}
 
-  async startProspectingProcess(dto: StartProspectingDto): Promise<Job<HarvesterJobData>> {
-    this.logger.log(`Attempting to start prospecting process with query: ${dto.searchQuery}`);
+  /**
+   * Start prospecting process for a specific user with quota and job checks
+   */
+  async startProspectingProcess(userId: string, dto: StartProspectingDto): Promise<Job<HarvesterJobData>> {
+    this.logger.log(`User ${userId} attempting to start prospecting process with query: ${dto.searchQuery}`);
 
+    // Step 1: Validate Business Context
     const contextReadiness = await this.businessContextService.isReadyForProspecting();
     if (!contextReadiness.ready) {
       this.logger.warn(`Business context not ready. Missing fields: ${contextReadiness.missingFields.join(', ')}`);
@@ -54,25 +62,43 @@ export class ProspectService {
         `Business context not ready for prospecting. Missing: ${contextReadiness.missingFields.join(', ')}`
       );
     }
-    
-    // Assuming 'default' or a specific ID if context exists and is relevant for the job.
-    // The plan uses `contextId: contextReady.contextExists ? 'default' : null`
-    // This implies the harvester job might need the context ID.
-    // For now, let's assume the business context itself is fetched within the processor if needed.
-    const context = await this.businessContextService.getContextForMcp();
-    if (!context && contextReadiness.contextExists) {
-        this.logger.error('Context exists but could not be fetched for MCP.');
-        throw new Error('Failed to fetch existing business context for prospecting job.');
+
+    // Step 2: Check User Quota & Concurrent Jobs
+    const user = await this.usersService.getUserById(userId);
+    if (user.prospectingJobId) {
+      // Check if a job is already running for this user
+      const existingJob = await this.prospectQueue.getJob(user.prospectingJobId);
+      if (existingJob && ['active', 'waiting', 'delayed'].includes(await existingJob.getState())) {
+        throw new ConflictException('A prospecting job is already running for your account.');
+      } else {
+        // Clear stale job ID
+        await this.usersService.clearProspectingJob(userId);
+      }
     }
 
+    const maxLeadsUserCanRequest = await this.quotaService.getMaxLeadsToRequest(userId);
+    if (maxLeadsUserCanRequest <= 0) {
+      throw new ForbiddenException('Lead generation quota exceeded or no quota remaining for this request.');
+    }
 
+    // Step 3: Get Business Context
+    const context = await this.businessContextService.getContextForMcp();
+    if (!context && contextReadiness.contextExists) {
+      this.logger.error('Context exists but could not be fetched for MCP.');
+      throw new Error('Failed to fetch existing business context for prospecting job.');
+    }
+
+    // Step 4: Prepare Job Data
     const jobData: HarvesterJobData = {
+      userId: userId,
       searchQuery: dto.searchQuery,
-      maxSites: dto.maxSites || 10, // Default to 10 as per plan
-      contextId: context ? context.id : null, // Pass context ID if available
+      maxSites: dto.maxSites || 10, // Default or user input
+      maxLeadsToReturn: maxLeadsUserCanRequest, // Key: limit for MCP
+      businessContextId: context ? context.id : undefined, // If context is specific
       timestamp: new Date().toISOString(),
     };
 
+    // Step 5: Add Job to Queue & Record Job ID on User
     const job = await this.prospectQueue.add('run-harvester', jobData, {
       attempts: 3,
       backoff: {
@@ -83,17 +109,27 @@ export class ProspectService {
       removeOnFail: 50, // Optional: keep some failed jobs for inspection
     });
 
-    this.logger.log(`Prospecting job added to queue. Job ID: ${job.id}`);
+    await this.usersService.recordProspectingJobStart(userId, job.id.toString());
+
+    this.logger.log(`Prospecting job added to queue for user ${userId}. Job ID: ${job.id}`);
     return job;
   }
 
-  async getJobStatus(jobId: string | number): Promise<ProspectJobStatus> {
-    this.logger.log(`Fetching status for job ID: ${jobId}`);
+  /**
+   * Get job status, ensuring job belongs to the user
+   */
+  async getJobStatus(jobId: string | number, userId: string): Promise<ProspectJobStatus> {
+    this.logger.log(`User ${userId} fetching status for job ID: ${jobId}`);
     const job = await this.prospectQueue.getJob(jobId);
 
     if (!job) {
       this.logger.warn(`Job with ID ${jobId} not found.`);
       throw new NotFoundException(`Job with ID ${jobId} not found`);
+    }
+
+    // Ensure job belongs to the user
+    if (job.data.userId !== userId) {
+      throw new ForbiddenException('You do not have permission to access this job');
     }
 
     const status = await job.getState();
@@ -112,20 +148,24 @@ export class ProspectService {
     };
   }
 
-  async getRecentJobs(count = 10): Promise<ProspectJobStatus[]> {
-    this.logger.log(`Fetching ${count} recent jobs.`);
-    // Bull typically returns jobs in specific states.
-    // To get "recent" jobs, we might fetch completed, failed, active, waiting.
+  /**
+   * Get recent jobs for a specific user
+   */
+  async getRecentJobs(userId: string, count = 10): Promise<ProspectJobStatus[]> {
+    this.logger.log(`Fetching ${count} recent jobs for user ${userId}.`);
+    
     const jobTypes: ('waiting' | 'active' | 'completed' | 'failed' | 'delayed')[] = 
       ['completed', 'failed', 'active', 'waiting', 'delayed'];
     
     let recentJobs: Job<HarvesterJobData>[] = [];
     for (const type of jobTypes) {
-      const jobs = await this.prospectQueue.getJobs([type], 0, count - 1, true); // true for ascending order (oldest first)
-      recentJobs.push(...jobs);
+      const jobs = await this.prospectQueue.getJobs([type], 0, 50, true); // Get more to filter by user
+      // Filter jobs by userId
+      const userJobs = jobs.filter(job => job.data.userId === userId);
+      recentJobs.push(...userJobs);
     }
 
-    // Sort by timestamp descending to get the most recent ones across all types
+    // Sort by timestamp descending to get the most recent ones
     recentJobs.sort((a, b) => b.timestamp - a.timestamp);
     
     // Slice to the desired count
@@ -144,7 +184,8 @@ export class ProspectService {
         finishedAt: job.finishedOn ? new Date(job.finishedOn) : null,
       })),
     );
-    this.logger.log(`Found ${jobStatuses.length} recent jobs.`);
+    
+    this.logger.log(`Found ${jobStatuses.length} recent jobs for user ${userId}.`);
     return jobStatuses;
   }
 }

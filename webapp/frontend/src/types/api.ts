@@ -220,3 +220,29 @@ export interface MetricsSummaryResponse {
   agentPerformance: AgentPerformanceResponse[];
   leadStats: LeadStatsResponse[];
 }
+
+// User Plan & Quota API types
+export type PlanId = 'free' | 'starter' | 'pro' | 'enterprise';
+
+export interface PlanDetails {
+  id: PlanId;
+  name: string;
+  quota: number;
+  period: 'day' | 'week' | 'month';
+  price: number | null;
+}
+
+export interface QuotaStatus {
+  total: number;
+  used: number;
+  remaining: number;
+  nextResetAt: string; // ISO date string
+}
+
+export interface UserPlanStatusResponse {
+  plan: PlanDetails;
+  quota: QuotaStatus;
+  canStartProspecting: boolean;
+  hasActiveJob: boolean;
+  activeJobId: string | null;
+}

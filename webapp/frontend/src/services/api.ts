@@ -23,6 +23,7 @@ import type {
   AgentPerformanceResponse,
   LeadStatsResponse,
   MetricsSummaryResponse,
+  UserPlanStatusResponse,
 } from '../types/api';
 
 // Export the apiClient for use in other parts of the application
@@ -284,5 +285,40 @@ export const prospectApi = {
     // Backend /prospect/status/:jobId returns ProspectJobStatus which should map to ProspectJobStatusDetailsResponse
     const response = await apiClient.get<ApiResponse<ProspectJobStatusDetailsResponse>>(`/prospect/status/${jobId}`);
     return response.data.data;
+  },
+};
+
+// User API
+export const userApi = {
+  getPlanStatus: async (): Promise<UserPlanStatusResponse> => {
+    try {
+      const response = await apiClient.get<ApiResponse<UserPlanStatusResponse>>('/users/me/plan-status');
+      if (response.data && response.data.data) {
+        return response.data.data;
+      }
+      console.warn('userApi.getPlanStatus: response.data.data was null or undefined. Returning default plan status.');
+    } catch (error) {
+      console.error('Error fetching user plan status from API:', error);
+      // Fallthrough to return default plan status on error
+    }
+    // Fallback default if API call fails or data is malformed
+    return {
+      plan: {
+        id: 'free',
+        name: 'Free',
+        quota: 10,
+        period: 'week',
+        price: 0,
+      },
+      quota: {
+        total: 10,
+        used: 0,
+        remaining: 10,
+        nextResetAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 1 week from now
+      },
+      canStartProspecting: true,
+      hasActiveJob: false,
+      activeJobId: null,
+    };
   },
 };

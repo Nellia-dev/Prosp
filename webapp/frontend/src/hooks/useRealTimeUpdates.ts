@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNelliaSocket } from './useSocketIO';
 import { useToast } from './use-toast';
 import { AgentStatus, LeadData, AgentMetrics } from '../types/nellia';
+import { useAuth } from '../contexts/AuthContext';
 
 // Define WebSocket event data types
 interface WebSocketEventData {
@@ -37,6 +38,53 @@ interface LeadProcessingUpdateEvent {
 
 interface LeadDeletedEvent {
   leadId: string;
+}
+
+// New interfaces for quota and job updates
+interface QuotaUpdateEvent {
+  userId: string;
+  planId: string;
+  planName: string;
+  quotaUsed: number;
+  quotaTotal: number;
+  quotaRemaining: number;
+  quotaUsagePercentage: number;
+  nextResetAt?: string;
+  leadsGenerated?: number;
+  timestamp: string;
+}
+
+interface JobProgressEvent {
+  jobId: string;
+  userId: string;
+  status: string;
+  progress: number;
+  currentStep?: string;
+  searchQuery?: string;
+  timestamp: string;
+}
+
+interface JobCompletedEvent {
+  jobId: string;
+  userId: string;
+  status: 'completed';
+  leadsGenerated: number;
+  searchQuery?: string;
+  quotaUpdate?: QuotaUpdateEvent;
+  startedAt: string;
+  completedAt: string;
+  timestamp: string;
+}
+
+interface JobFailedEvent {
+  jobId: string;
+  userId: string;
+  status: 'failed';
+  error: string;
+  searchQuery?: string;
+  startedAt: string;
+  failedAt: string;
+  timestamp: string;
 }
 
 export const useRealTimeAgentUpdates = () => {
@@ -248,11 +296,167 @@ export const useRealTimeMetricsUpdates = () => {
   }, [socket.isConnected, socket, queryClient]);
 };
 
+// New hooks for quota and job updates
+export const useRealTimeQuotaUpdates = () => {
+  const socket = useNelliaSocket();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!socket.isConnected || !user) return;
+
+    // Join user-specific room for quota updates
+    socket.emit('join-user-room', { userId: user.id });
+
+    // Listen for quota updates through lastMessage
+    if (socket.lastMessage?.type === 'quota-updated') {
+      const quotaData = socket.lastMessage.data as QuotaUpdateEvent;
+      
+      // Only process updates for the current user
+      if (quotaData.userId !== user.id) return;
+
+      // Update user plan status cache
+      queryClient.setQueryData(['user-plan-status'], (oldData: Record<string, unknown> | undefined) => {
+        if (!oldData) return oldData;
+        
+        return {
+          ...oldData,
+          quotaUsed: quotaData.quotaUsed,
+          quotaTotal: quotaData.quotaTotal,
+          quotaRemaining: quotaData.quotaRemaining,
+          quotaUsagePercentage: quotaData.quotaUsagePercentage,
+          lastUpdated: quotaData.timestamp,
+        };
+      });
+
+      // Show notification for quota updates
+      if (quotaData.leadsGenerated && quotaData.leadsGenerated > 0) {
+        toast({
+          title: "Quota Updated",
+          description: `Generated ${quotaData.leadsGenerated} new leads. ${quotaData.quotaRemaining} leads remaining.`,
+          duration: 5000,
+        });
+      }
+
+      // Warning for low quota
+      if (quotaData.quotaUsagePercentage >= 90) {
+        toast({
+          title: "Quota Nearly Exhausted",
+          description: `You've used ${quotaData.quotaUsagePercentage}% of your quota. Consider upgrading your plan.`,
+          variant: "destructive",
+          duration: 8000,
+        });
+      }
+    }
+  }, [socket.lastMessage, socket.isConnected, queryClient, toast, user]);
+};
+
+export const useRealTimeJobUpdates = () => {
+  const socket = useNelliaSocket();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!socket.isConnected || !user) return;
+
+    // Join user-specific room for job updates
+    socket.emit('join-user-room', { userId: user.id });
+
+    // Listen for job updates through lastMessage
+    if (socket.lastMessage?.type === 'job-progress') {
+      const jobData = socket.lastMessage.data as JobProgressEvent;
+      
+      // Only process updates for the current user
+      if (jobData.userId !== user.id) return;
+
+      // Update prospect job status cache
+      queryClient.setQueryData(['prospect-job-status'], (oldData: Record<string, unknown> | undefined) => {
+        return {
+          ...oldData,
+          jobId: jobData.jobId,
+          status: jobData.status,
+          progress: jobData.progress,
+          currentStep: jobData.currentStep,
+          searchQuery: jobData.searchQuery,
+          lastUpdated: jobData.timestamp,
+        };
+      });
+
+      // Show progress notification
+      toast({
+        title: "Job Progress",
+        description: `${jobData.currentStep || 'Processing'}: ${jobData.progress}% complete`,
+        duration: 3000,
+      });
+    }
+
+    if (socket.lastMessage?.type === 'job-completed') {
+      const jobData = socket.lastMessage.data as JobCompletedEvent;
+      
+      // Only process updates for the current user
+      if (jobData.userId !== user.id) return;
+
+      // Clear job status
+      queryClient.setQueryData(['prospect-job-status'], null);
+
+      // Invalidate related queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['user-plan-status'] });
+
+      // Show success notification
+      toast({
+        title: "Job Completed Successfully",
+        description: `Generated ${jobData.leadsGenerated} new leads for "${jobData.searchQuery}"`,
+        duration: 6000,
+      });
+
+      // Handle quota update if included
+      if (jobData.quotaUpdate) {
+        queryClient.setQueryData(['user-plan-status'], (oldData: Record<string, unknown> | undefined) => {
+          if (!oldData) return oldData;
+          
+          return {
+            ...oldData,
+            quotaUsed: jobData.quotaUpdate!.quotaUsed,
+            quotaTotal: jobData.quotaUpdate!.quotaTotal,
+            quotaRemaining: jobData.quotaUpdate!.quotaRemaining,
+            quotaUsagePercentage: jobData.quotaUpdate!.quotaUsagePercentage,
+            lastUpdated: jobData.quotaUpdate!.timestamp,
+          };
+        });
+      }
+    }
+
+    if (socket.lastMessage?.type === 'job-failed') {
+      const jobData = socket.lastMessage.data as JobFailedEvent;
+      
+      // Only process updates for the current user
+      if (jobData.userId !== user.id) return;
+
+      // Clear job status
+      queryClient.setQueryData(['prospect-job-status'], null);
+
+      // Show error notification
+      toast({
+        title: "Job Failed",
+        description: `Failed to process "${jobData.searchQuery}": ${jobData.error}`,
+        variant: "destructive",
+        duration: 8000,
+      });
+    }
+  }, [socket.lastMessage, socket.isConnected, queryClient, toast, user]);
+};
+
 // Combined hook for all real-time updates
 export const useRealTimeUpdates = () => {
   useRealTimeAgentUpdates();
   useRealTimeLeadUpdates();
   useRealTimeMetricsUpdates();
+  useRealTimeQuotaUpdates();
+  useRealTimeJobUpdates();
 };
 
 // Hook for subscribing to custom events

@@ -1,10 +1,19 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { ProcessingStage, QualificationTier } from '../../shared/enums/nellia.enums';
+import { User } from './user.entity';
 
 @Entity('leads')
 export class Lead {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  // User relationship - lead ownership
+  @Column({ type: 'uuid' })
+  userId: string;
+
+  @ManyToOne(() => User, (user) => user.leads, { nullable: false })
+  @JoinColumn({ name: 'userId' })
+  user: User;
 
   @Column()
   company_name: string;

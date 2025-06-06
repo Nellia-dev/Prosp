@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import { useProspectJobs, useStartProspecting, ProspectJob, StartProspectingRequest } from '../hooks/api/useProspect';
+import { usePlanInfo } from '../hooks/api/useUserPlanStatus';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
@@ -9,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress"; // For job progress
 import { Badge } from "@/components/ui/badge"; // For job status
 import { ScrollArea } from "@/components/ui/scroll-area"; // For job lists
-import { AlertCircle, CheckCircle, Hourglass, PlayCircle, ListChecks } from 'lucide-react';
+import { AlertCircle, CheckCircle, Hourglass, PlayCircle, ListChecks, Crown, Zap, TrendingUp } from 'lucide-react';
 
 // Placeholder for toast notifications
 const toast = {
@@ -110,6 +111,122 @@ const RecentJobsList = ({ jobs }: { jobs: ProspectJob[] }) => {
   );
 };
 
+// Child Component: PlanStatusCard
+const PlanStatusCard = () => {
+  const { t } = useTranslation();
+  const { 
+    plan, 
+    quota, 
+    quotaUsagePercentage, 
+    isQuotaExhausted, 
+    quotaDisplay, 
+    nextResetFormatted,
+    isLoading,
+    error 
+  } = usePlanInfo();
+
+  if (isLoading) {
+    return (
+      <Card className="bg-slate-800/80 border-slate-700 shadow-xl">
+        <CardContent className="p-6">
+          <div className="animate-pulse">
+            <div className="h-4 bg-slate-600 rounded w-1/3 mb-2"></div>
+            <div className="h-8 bg-slate-600 rounded w-1/2"></div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error || !plan || !quota) {
+    return (
+      <Card className="bg-slate-800/80 border-slate-700 shadow-xl">
+        <CardContent className="p-6">
+          <div className="flex items-center text-amber-400">
+            <AlertCircle className="w-4 h-4 mr-2" />
+            <span className="text-sm">{t('planStatus.loadError')}</span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const getPlanIcon = (planId: string) => {
+    switch (planId) {
+      case 'free': return <Zap className="w-5 h-5 text-slate-400" />;
+      case 'starter': return <TrendingUp className="w-5 h-5 text-blue-400" />;
+      case 'pro': return <Crown className="w-5 h-5 text-purple-400" />;
+      case 'enterprise': return <Crown className="w-5 h-5 text-gold-400" />;
+      default: return <Zap className="w-5 h-5 text-slate-400" />;
+    }
+  };
+
+  const getQuotaColor = () => {
+    if (quotaUsagePercentage >= 90) return 'text-red-400';
+    if (quotaUsagePercentage >= 70) return 'text-amber-400';
+    return 'text-green-400';
+  };
+
+  const getProgressColor = () => {
+    if (quotaUsagePercentage >= 90) return '[&>div]:bg-red-500';
+    if (quotaUsagePercentage >= 70) return '[&>div]:bg-amber-500';
+    return '[&>div]:bg-green-500';
+  };
+
+  return (
+    <Card className="bg-slate-800/80 border-slate-700 shadow-xl">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center text-slate-100 text-lg">
+          {getPlanIcon(plan.id)}
+          <span className="ml-2">{plan.name} {t('planStatus.plan')}</span>
+          {isQuotaExhausted && (
+            <Badge variant="destructive" className="ml-auto">
+              {t('planStatus.quotaExhausted')}
+            </Badge>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm text-slate-300">{t('planStatus.quotaUsage')}</span>
+            <span className={`text-sm font-medium ${getQuotaColor()}`}>
+              {quotaDisplay}
+            </span>
+          </div>
+          <Progress 
+            value={quotaUsagePercentage} 
+            className={`w-full ${getProgressColor()}`}
+          />
+          <div className="flex justify-between items-center mt-1">
+            <span className="text-xs text-slate-500">
+              {quota.remaining} {t('planStatus.remaining')}
+            </span>
+            {nextResetFormatted && (
+              <span className="text-xs text-slate-500">
+                {t('planStatus.resetDate')}: {nextResetFormatted}
+              </span>
+            )}
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <span className="text-slate-400">{t('planStatus.period')}</span>
+            <p className="text-slate-200 font-medium capitalize">{plan.period}</p>
+          </div>
+          <div>
+            <span className="text-slate-400">{t('planStatus.totalQuota')}</span>
+            <p className="text-slate-200 font-medium">
+              {plan.quota === Infinity ? '∞' : plan.quota}
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 // Child Component: StartProspectingModal (Placeholder)
 interface StartProspectingModalProps {
   open: boolean;
@@ -185,7 +302,8 @@ export const ProspectDashboard = () => {
   const { t } = useTranslation();
   const [showStartModal, setShowStartModal] = useState(false);
   const { data: jobsData = [], isLoading: jobsLoading, error: jobsError } = useProspectJobs();
-  const { mutate: startProspecting, isPending: startProspectingLoading } = useStartProspecting(); // Changed isLoading to isPending
+  const { mutate: startProspecting, isPending: startProspectingLoading } = useStartProspecting();
+  const { canStartProspecting, hasActiveJob, isQuotaExhausted, isLoading: planLoading } = usePlanInfo();
 
   // Ensure jobsData is always an array, even if API returns null/undefined initially
   const jobs: ProspectJob[] = Array.isArray(jobsData) ? jobsData : [];
@@ -201,6 +319,29 @@ export const ProspectDashboard = () => {
       // onError is handled by the hook itself
     });
   };
+
+  // Determine if prospecting should be disabled
+  const isProspectingDisabled = () => {
+    if (planLoading) return true;
+    if (activeJobs.length > 0 || hasActiveJob) return true;
+    if (!canStartProspecting || isQuotaExhausted) return true;
+    if (startProspectingLoading) return true;
+    return false;
+  };
+
+  // Get the appropriate button text and tooltip
+  const getButtonText = () => {
+    if (activeJobs.length > 0 || hasActiveJob) {
+      return t('prospectDashboard.processRunningButton');
+    }
+    if (isQuotaExhausted) {
+      return t('prospectDashboard.quotaExhaustedButton');
+    }
+    if (!canStartProspecting) {
+      return t('prospectDashboard.cannotStartButton');
+    }
+    return t('prospectDashboard.startProspectingButton');
+  };
   
   if (jobsLoading) {
     return <p className="text-slate-300 p-4">{t('common.loading')}...</p>;
@@ -212,16 +353,24 @@ export const ProspectDashboard = () => {
 
   return (
     <div className="space-y-6 p-4">
+      {/* Plan Status Card */}
+      <PlanStatusCard />
+
+      {/* Main Prospecting Card */}
       <Card className="bg-slate-800/80 border-slate-700 shadow-xl">
         <CardHeader>
           <CardTitle className="flex items-center justify-between text-slate-100">
             {t('prospectDashboard.title')}
             <Button 
               onClick={() => setShowStartModal(true)}
-              disabled={activeJobs.length > 0 || startProspectingLoading}
-              className="bg-green-600 hover:bg-green-700"
+              disabled={isProspectingDisabled()}
+              className={`${
+                isQuotaExhausted 
+                  ? 'bg-red-600 hover:bg-red-700' 
+                  : 'bg-green-600 hover:bg-green-700'
+              }`}
             >
-              {activeJobs.length > 0 ? t('prospectDashboard.processRunningButton') : t('prospectDashboard.startProspectingButton')}
+              {getButtonText()}
             </Button>
           </CardTitle>
           <CardDescription className="text-slate-400">
@@ -237,6 +386,7 @@ export const ProspectDashboard = () => {
         </CardContent>
       </Card>
 
+      {/* Recent Jobs Card */}
       {recentJobs.length > 0 && (
         <Card className="bg-slate-800/80 border-slate-700 shadow-xl">
           <CardHeader>

@@ -1,10 +1,14 @@
-import { Controller, Post, Get, Body, Param, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, Logger, HttpException, HttpStatus, Req } from '@nestjs/common';
+import { Request } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam } from '@nestjs/swagger';
 import { ProspectService, StartProspectingDto, ProspectJobStatus } from './prospect.service';
-// QueueService is listed in the plan's constructor, but not directly used by controller methods.
-// ProspectService encapsulates queue interactions. If QueueService is truly needed here,
-// it would imply direct queue management from controller, which is less common.
-// For now, omitting QueueService injection directly into controller as per typical patterns.
+
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string;
+    email: string;
+  };
+}
 
 @ApiTags('prospect')
 @Controller('prospect')
@@ -13,22 +17,30 @@ export class ProspectController {
 
   constructor(
     private prospectService: ProspectService,
-    // private queueService: QueueService // As per plan, but ProspectService handles queue.
   ) {}
 
   @Post('start')
   @ApiOperation({ summary: 'Start a new prospecting process' })
   @ApiBody({ type: StartProspectingDto, description: 'Parameters for starting the prospecting process' })
-  @ApiResponse({ status: 201, description: 'Prospecting process started successfully', type: Object }) // Adjust type if a specific Job DTO is returned
+  @ApiResponse({ status: 201, description: 'Prospecting process started successfully', type: Object })
   @ApiResponse({ status: 400, description: 'Bad Request, e.g., business context not ready' })
-  async startProspecting(@Body() dto: StartProspectingDto): Promise<{ jobId: string | number; status: string }> {
-    this.logger.log(`Received request to start prospecting with query: ${dto.searchQuery}`);
+  @ApiResponse({ status:403, description: 'Quota exceeded or insufficient permissions' })
+  @ApiResponse({ status: 409, description: 'Another prospecting job is already running for this user' })
+  async startProspecting(
+    @Body() dto: StartProspectingDto,
+    @Req() request: AuthenticatedRequest
+  ): Promise<{ jobId: string | number; status: string }> {
+    // For now, use a mock user ID - replace with real auth when available
+    const userId = request.user?.id || 'mock-user-id';
+    
+    this.logger.log(`User ${userId} received request to start prospecting with query: ${dto.searchQuery}`);
+    
     try {
-      const job = await this.prospectService.startProspectingProcess(dto);
-      this.logger.log(`Prospecting job created with ID: ${job.id}`);
-      return { jobId: job.id, status: 'started' }; // Or await job.getState() for a more precise initial status
+      const job = await this.prospectService.startProspectingProcess(userId, dto);
+      this.logger.log(`Prospecting job created for user ${userId} with ID: ${job.id}`);
+      return { jobId: job.id, status: 'started' };
     } catch (error) {
-      this.logger.error(`Failed to start prospecting process: ${error.message}`, error.stack);
+      this.logger.error(`Failed to start prospecting process for user ${userId}: ${error.message}`, error.stack);
       if (error instanceof HttpException) {
         throw error;
       }
@@ -41,17 +53,23 @@ export class ProspectController {
 
   @Get('status/:jobId')
   @ApiOperation({ summary: 'Get the status of a specific prospecting job' })
-  @ApiParam({ name: 'jobId', description: 'The ID of the prospecting job', type: String }) // Bull job IDs can be numbers or strings
-  @ApiResponse({ status: 200, description: 'Job status retrieved successfully', type: Object }) // Define a ProspectJobStatus DTO for Swagger
+  @ApiParam({ name: 'jobId', description: 'The ID of the prospecting job', type: String })
+  @ApiResponse({ status: 200, description: 'Job status retrieved successfully', type: Object })
+  @ApiResponse({ status: 403, description: 'Access denied - job does not belong to user' })
   @ApiResponse({ status: 404, description: 'Job not found' })
-  async getProspectStatus(@Param('jobId') jobId: string): Promise<ProspectJobStatus> {
-    this.logger.log(`Received request for status of job ID: ${jobId}`);
+  async getProspectStatus(
+    @Param('jobId') jobId: string,
+    @Req() request: AuthenticatedRequest
+  ): Promise<ProspectJobStatus> {
+    // For now, use a mock user ID - replace with real auth when available
+    const userId = request.user?.id || 'mock-user-id';
+    
+    this.logger.log(`User ${userId} received request for status of job ID: ${jobId}`);
+    
     try {
-      // Bull job IDs can be numbers, ensure service handles this or cast appropriately.
-      // The service method getJobStatus already accepts string | number.
-      return await this.prospectService.getJobStatus(jobId);
+      return await this.prospectService.getJobStatus(jobId, userId);
     } catch (error) {
-      this.logger.error(`Failed to get status for job ${jobId}: ${error.message}`, error.stack);
+      this.logger.error(`Failed to get status for job ${jobId} for user ${userId}: ${error.message}`, error.stack);
       if (error instanceof HttpException) {
         throw error;
       }
@@ -63,14 +81,18 @@ export class ProspectController {
   }
 
   @Get('jobs')
-  @ApiOperation({ summary: 'Get a list of recent prospecting jobs' })
-  @ApiResponse({ status: 200, description: 'List of recent jobs retrieved successfully', type: [Object] }) // Define ProspectJobStatus DTO
-  async getProspectJobs(): Promise<ProspectJobStatus[]> {
-    this.logger.log('Received request to get recent prospect jobs');
+  @ApiOperation({ summary: 'Get a list of recent prospecting jobs for the current user' })
+  @ApiResponse({ status: 200, description: 'List of recent jobs retrieved successfully', type: [Object] })
+  async getProspectJobs(@Req() request: AuthenticatedRequest): Promise<ProspectJobStatus[]> {
+    // For now, use a mock user ID - replace with real auth when available
+    const userId = request.user?.id || 'mock-user-id';
+    
+    this.logger.log(`User ${userId} received request to get recent prospect jobs`);
+    
     try {
-      return await this.prospectService.getRecentJobs();
+      return await this.prospectService.getRecentJobs(userId);
     } catch (error) {
-      this.logger.error(`Failed to get recent jobs: ${error.message}`, error.stack);
+      this.logger.error(`Failed to get recent jobs for user ${userId}: ${error.message}`, error.stack);
       throw new HttpException(
         error.message || 'Failed to retrieve recent jobs',
         HttpStatus.INTERNAL_SERVER_ERROR
