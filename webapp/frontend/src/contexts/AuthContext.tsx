@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import Cookies from 'js-cookie';
 import { 
   AuthState, 
   AuthContextType, 
@@ -118,8 +117,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     const checkExistingSession = () => {
       try {
-        const token = Cookies.get(TOKEN_KEY);
-        const userStr = Cookies.get(USER_KEY);
+        const token = localStorage.getItem(TOKEN_KEY);
+        const userStr = localStorage.getItem(USER_KEY);
         
         if (token && userStr) {
           const user = JSON.parse(userStr);
@@ -154,11 +153,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const expiryDays = expires_in ? expires_in / (24 * 60 * 60) : 1;
     
     // Store in cookies
-    Cookies.set(TOKEN_KEY, access_token, { expires: expiryDays, secure: true, sameSite: 'strict' });
+    localStorage.setItem(TOKEN_KEY, access_token);
     if (refresh_token) {
-      Cookies.set(REFRESH_TOKEN_KEY, refresh_token, { expires: expiryDays * 2, secure: true, sameSite: 'strict' });
+      localStorage.setItem(REFRESH_TOKEN_KEY, refresh_token);
     }
-    Cookies.set(USER_KEY, JSON.stringify(user), { expires: expiryDays, secure: true, sameSite: 'strict' });
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
     
     // Set token in API client
     apiClient.setAuthToken(access_token);
@@ -166,9 +165,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Helper function to clear stored auth data
   const clearStoredAuth = () => {
-    Cookies.remove(TOKEN_KEY);
-    Cookies.remove(REFRESH_TOKEN_KEY);
-    Cookies.remove(USER_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
     apiClient.setAuthToken(null);
   };
 
@@ -269,7 +268,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Refresh token function
   const refreshToken = async (): Promise<void> => {
     try {
-      const refreshTokenValue = Cookies.get(REFRESH_TOKEN_KEY);
+      const refreshTokenValue = localStorage.getItem(REFRESH_TOKEN_KEY);
       
       if (!refreshTokenValue) {
         throw new Error('No refresh token available');
@@ -283,7 +282,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       // Update stored token
       const expiryDays = expires_in / (24 * 60 * 60);
-      Cookies.set(TOKEN_KEY, access_token, { expires: expiryDays, secure: true, sameSite: 'strict' });
+      localStorage.setItem(TOKEN_KEY, access_token);
       
       // Set token in API client
       apiClient.setAuthToken(access_token);

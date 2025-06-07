@@ -11,6 +11,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
+import { UserId } from '../auth/user-id.decorator';
 import { AuthGuard } from '@nestjs/passport';
 import { BusinessContextService } from './business-context.service';
 import {
@@ -34,8 +35,8 @@ export class BusinessContextController {
     description: 'Business context retrieved successfully.',
   })
   @ApiResponse({ status: 404, description: 'Business context not found.' })
-  async getBusinessContext(@Req() req): Promise<BusinessContextType | null> {
-    const entity = await this.businessContextService.findOneByUserId(req.user.userId);
+  async getBusinessContext(@UserId() userId: string): Promise<BusinessContextType | null> {
+    const entity = await this.businessContextService.findOneByUserId(userId);
     if (!entity) {
       return null;
     }
@@ -51,10 +52,14 @@ export class BusinessContextController {
   })
   @ApiResponse({ status: 400, description: 'Invalid business context data.' })
   async createOrUpdateBusinessContext(
-    @Req() req,
+    @UserId() userId: string,
     @Body() createDto: CreateBusinessContextDto,
   ): Promise<BusinessContextType> {
+    console.log('Creating or updating business context for user:', userId);
+    console.log('Received DTO:', createDto);
     const validation = await this.businessContextService.validateContext(createDto as BusinessContextType);
+    console.log('Validation result:', validation);
+    // If validation fails, throw an exception with the invalid fields
     if (!validation.valid) {
       throw new HttpException(
         {
@@ -65,7 +70,7 @@ export class BusinessContextController {
         HttpStatus.BAD_REQUEST,
       );
     }
-    const entity = await this.businessContextService.create(req.user.userId, createDto);
+    const entity = await this.businessContextService.create(userId, createDto);
     return this.entityToDto(entity);
   }
 
@@ -77,10 +82,10 @@ export class BusinessContextController {
     description: 'Business context updated successfully.',
   })
   async updateBusinessContext(
-    @Req() req,
+    @UserId() userId: string,
     @Body() updateDto: UpdateBusinessContextDto,
   ): Promise<BusinessContextType> {
-    const entity = await this.businessContextService.update(req.user.userId, updateDto);
+    const entity = await this.businessContextService.update(userId, updateDto);
     return this.entityToDto(entity);
   }
 
@@ -90,8 +95,8 @@ export class BusinessContextController {
     status: 200,
     description: 'Business context deleted successfully.',
   })
-  async deleteBusinessContext(@Req() req): Promise<{ success: boolean }> {
-    const success = await this.businessContextService.remove(req.user.userId);
+  async deleteBusinessContext(@UserId() userId: string): Promise<{ success: boolean }> {
+    const success = await this.businessContextService.remove(userId);
     return { success };
   }
 
@@ -114,12 +119,12 @@ export class BusinessContextController {
     status: 200,
     description: 'Readiness status retrieved successfully.',
   })
-  async isReadyForProspecting(@Req() req): Promise<{
+  async isReadyForProspecting(@UserId() userId: string): Promise<{
     ready: boolean;
     missingFields: string[];
     contextExists: boolean;
   }> {
-    return this.businessContextService.isReadyForProspecting(req.user.userId);
+    return this.businessContextService.isReadyForProspecting(userId);
   }
 
   private entityToDto(entity: BusinessContextEntity): BusinessContextType {

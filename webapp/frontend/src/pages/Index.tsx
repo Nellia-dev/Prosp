@@ -266,18 +266,7 @@ const DashboardContent = () => {
   const { data: agentsData, isLoading: agentsLoading, error: agentsError } = useAgents();
   const { data: leadsResponse, isLoading: leadsLoading, error: leadsError } = useLeads();
   const { data: metricsData, isLoading: metricsLoading, error: metricsError } = useDashboardMetrics();
-  const { data: businessContext, isLoading: businessContextLoading, error: businessContextError } = useBusinessContext();
-
-  const agents: AgentStatus[] = Array.isArray(agentsData) ? agentsData.map(transformAgentResponse) : [];
-  const leads: LeadData[] = leadsResponse?.data ? leadsResponse.data.map(transformLeadResponse) : [];
-  const metrics: DashboardMetricsResponse = metricsData || getDefaultFrontendMetrics();
-
-  // Determine if the user needs to go through onboarding.
-  const isNewUser = !businessContext && !businessContextLoading;
-
-  const handleLeadUpdate = (updatedLead: LeadData) => {
-    console.log('Lead updated:', updatedLead);
-  };
+  const { data: businessContext, isLoading: businessContextLoading, isError: businessContextError, isSuccess: businessContextSuccess } = useBusinessContext();
 
   const handleContextSetupComplete = () => {
     setShowBusinessContextForm(false);
@@ -294,7 +283,7 @@ const DashboardContent = () => {
   }
 
   // Show error state
-  if (agentsError || leadsError || metricsError) {
+  if (agentsError || leadsError || metricsError || businessContextError) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950 flex items-center justify-center">
         <div className="text-red-400 text-xl">Error loading data. Please try again later.</div>
@@ -302,8 +291,8 @@ const DashboardContent = () => {
     );
   }
 
-  // Onboarding Flow for new users
-  if (isNewUser) {
+  // Onboarding Flow for new users: show if the context query is successful but there's no context.
+  if (businessContextSuccess && !businessContext) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950 flex items-center justify-center">
         <Card className="p-8 bg-slate-800 border-slate-700 text-white text-center max-w-lg">
@@ -328,10 +317,19 @@ const DashboardContent = () => {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950">
-      {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm">
+  if (businessContextSuccess && businessContext) {
+    const agents: AgentStatus[] = Array.isArray(agentsData) ? agentsData.map(transformAgentResponse) : [];
+    const leads: LeadData[] = leadsResponse?.data ? leadsResponse.data.map(transformLeadResponse) : [];
+    const metrics: DashboardMetricsResponse = metricsData || getDefaultFrontendMetrics();
+
+    const handleLeadUpdate = (updatedLead: LeadData) => {
+      console.log('Lead updated:', updatedLead);
+    };
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950">
+        {/* Header */}
+        <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -497,6 +495,7 @@ const DashboardContent = () => {
     </div>
   );
 };
+}
 
 const Index = () => {
   return (

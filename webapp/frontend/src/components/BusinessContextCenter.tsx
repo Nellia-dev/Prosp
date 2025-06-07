@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +31,6 @@ export const BusinessContextCenter = () => {
 
   const [newPainPoint, setNewPainPoint] = useState('');
   const [newIndustry, setNewIndustry] = useState('');
-  const [hasChanges, setHasChanges] = useState(false);
 
   // Adapter functions to convert between API and unified types
   const adaptApiToUnified = (apiContext: BusinessContextResponse): BusinessContext => ({
@@ -58,10 +57,10 @@ export const BusinessContextCenter = () => {
     value_proposition: unifiedContext.value_proposition,
     ideal_customer: unifiedContext.ideal_customer || '',
     pain_points: unifiedContext.pain_points,
-    competitive_advantage: unifiedContext.competitive_advantage,
-    competitors: unifiedContext.competitors,
+    competitive_advantage: unifiedContext.competitive_advantage || '',
+    competitors: unifiedContext.competitors || [],
     industry_focus: unifiedContext.industry_focus,
-    geographic_focus: unifiedContext.geographic_focus,
+    geographic_focus: unifiedContext.geographic_focus || [],
   });
 
   // Load existing context when data is available
@@ -69,17 +68,16 @@ export const BusinessContextCenter = () => {
     if (existingContext) {
       const adaptedContext = adaptApiToUnified(existingContext);
       setContext(adaptedContext);
-      setHasChanges(false);
     }
   }, [existingContext]);
 
   // Track changes
-  useEffect(() => {
-    if (existingContext) {
-      const adaptedExisting = adaptApiToUnified(existingContext);
-      const hasChanged = JSON.stringify(context) !== JSON.stringify(adaptedExisting);
-      setHasChanges(hasChanged);
+  const hasChanges = useMemo(() => {
+    if (!existingContext) {
+      return false;
     }
+    const adaptedExisting = adaptApiToUnified(existingContext);
+    return JSON.stringify(context) !== JSON.stringify(adaptedExisting);
   }, [context, existingContext]);
 
   const addPainPoint = () => {
@@ -120,7 +118,6 @@ export const BusinessContextCenter = () => {
     try {
       const updateData = adaptUnifiedToApi(context);
       await updateContextMutation.mutateAsync(updateData);
-      setHasChanges(false);
     } catch (error) {
       console.error('Failed to save business context:', error);
     }
@@ -130,7 +127,6 @@ export const BusinessContextCenter = () => {
     if (existingContext) {
       const adaptedContext = adaptApiToUnified(existingContext);
       setContext(adaptedContext);
-      setHasChanges(false);
     }
   };
 

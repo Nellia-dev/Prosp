@@ -186,13 +186,22 @@ export interface ChatMessageResponse {
 }
 
 // Metrics API types
+export interface RecentActivityItem {
+  id: string;
+  type: 'lead_created' | 'agent_status_change' | 'prospect_job_started' | 'prospect_job_completed';
+  description: string;
+  timestamp: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface DashboardMetricsResponse {
   totalLeads: number;
-  processedLeads: number;
-  averageROI: number;
-  successRate: number;
+  totalAgents: number;
   activeAgents: number;
-  averageProcessingTime: number;
+  processingRate: number;
+  successRate: number;
+  recentActivity: RecentActivityItem[];
+  lastUpdated: string;
 }
 
 export interface PerformanceMetricsResponse {

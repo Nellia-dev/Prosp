@@ -31,8 +31,15 @@ export class BusinessContextService {
       return this.update(userId, createBusinessContextDto);
     }
 
+    const contextData = { ...createBusinessContextDto };
+    for (const key in contextData) {
+      if (contextData[key] === undefined) {
+        contextData[key] = null;
+      }
+    }
+
     const businessContext = this.businessContextRepository.create({
-      ...createBusinessContextDto,
+      ...contextData,
       userId,
     });
     const saved = await this.businessContextRepository.save(businessContext);
@@ -55,7 +62,13 @@ export class BusinessContextService {
         userId,
       });
     } else {
-      Object.assign(businessContext, updateBusinessContextDto);
+      const updateData = { ...updateBusinessContextDto };
+      for (const key in updateData) {
+        if (updateData[key] === undefined) {
+          delete updateData[key];
+        }
+      }
+      Object.assign(businessContext, updateData);
       businessContext.updated_at = new Date();
     }
 

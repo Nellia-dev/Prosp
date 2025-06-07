@@ -1,4 +1,5 @@
 import { apiClient } from '../config/api';
+import axios from 'axios';
 import type {
   ApiResponse,
   PaginatedResponse,
@@ -159,9 +160,21 @@ export const leadsApi = {
 
 // Business Context API
 export const businessContextApi = {
-  get: async (): Promise<BusinessContextResponse> => {
-    const response = await apiClient.get<ApiResponse<BusinessContextResponse>>('/business-context');
-    return response.data.data;
+  get: async (): Promise<BusinessContextResponse | null> => {
+    try {
+      const response = await apiClient.get<ApiResponse<BusinessContextResponse | null>>('/business-context');
+      // The backend returns a response where the `data` property on the response body
+      // can be null if no business context is found.
+      // We must return null in this case for react-query, not undefined.
+      return response.data?.data ?? null;
+    } catch (error) {
+      // A 404 Not Found error also indicates that the context doesn't exist.
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        return null;
+      }
+      // For any other errors, we re-throw them to be handled by react-query's error state.
+      throw error;
+    }
   },
 
   create: async (data: BusinessContextRequest): Promise<BusinessContextResponse> => {
