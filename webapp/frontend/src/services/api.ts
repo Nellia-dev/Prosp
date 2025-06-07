@@ -162,11 +162,10 @@ export const leadsApi = {
 export const businessContextApi = {
   get: async (): Promise<BusinessContextResponse | null> => {
     try {
-      const response = await apiClient.get<ApiResponse<BusinessContextResponse | null>>('/business-context');
-      // The backend returns a response where the `data` property on the response body
-      // can be null if no business context is found.
-      // We must return null in this case for react-query, not undefined.
-      return response.data?.data ?? null;
+      const response = await apiClient.get<BusinessContextResponse | null>('/business-context');
+      // The backend returns the business context object directly, or a 200 with null.
+      // We return the data, or null if it's falsy.
+      return response.data || null;
     } catch (error) {
       // A 404 Not Found error also indicates that the context doesn't exist.
       if (axios.isAxiosError(error) && error.response?.status === 404) {
