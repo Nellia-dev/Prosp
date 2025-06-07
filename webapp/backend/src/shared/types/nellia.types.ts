@@ -43,6 +43,8 @@ export interface LeadData {
   processing_stage: ProcessingStage;
   created_at: string;
   updated_at: string;
+  status: LeadStatus;
+  enrichment_data?: any;
 }
 
 export interface BusinessContext {

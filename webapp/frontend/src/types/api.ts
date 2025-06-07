@@ -127,6 +127,8 @@ export interface LeadResponse {
   decisionMakerProbability?: number;
   createdAt: string;
   updatedAt: string;
+  status: string;
+  enrichmentData?: unknown;
 }
 
 export interface LeadsByStageResponse {

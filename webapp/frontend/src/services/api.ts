@@ -236,7 +236,7 @@ export const metricsApi = {
     const response = await apiClient.get<ApiResponse<PerformanceMetricsResponse>>(
       `/metrics/performance?timeRange=${timeRange}`
     );
-    return response.data.data;
+    return response.data.data || { timeRange, throughputData: [], processingTimeData: [] };
   },
 
   getAgentPerformance: async (): Promise<AgentPerformanceResponse[]> => {

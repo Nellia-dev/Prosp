@@ -86,6 +86,8 @@ export interface LeadData {
   processing_stage: 'lead_qualification' | 'analyzing_refining' | 'possibly_qualified' | 'prospecting' | 'revisando' | 'primeiras_mensagens' | 'negociando' | 'desqualificado' | 'reuniao_agendada';
   created_at: string;
   updated_at: string;
+  status: string;
+  enrichment_data?: unknown;
 }
 
 export interface BusinessContext {

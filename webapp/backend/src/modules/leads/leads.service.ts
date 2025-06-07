@@ -18,6 +18,7 @@ export class LeadsService {
   ) {}
 
   async findAll(filters?: LeadFilters): Promise<{ data: LeadData[], total: number }> {
+    console.log('Finding all leads with filters:', filters);
     try {
       const query = this.leadRepository.createQueryBuilder('lead');
 
@@ -276,7 +277,8 @@ export class LeadsService {
 
   // Convert Lead entity to LeadData for API responses
   private convertToLeadData(lead: Lead): LeadData {
-    return {
+    console.log(`Converting lead entity to DTO: ${lead.id}`);
+    const leadData = {
       id: lead.id,
       company_name: lead.company_name,
       website: lead.website,
@@ -292,8 +294,12 @@ export class LeadsService {
       pain_point_analysis: lead.pain_point_analysis,
       purchase_triggers: lead.purchase_triggers,
       processing_stage: lead.processing_stage as any,
+      status: lead.status,
+      enrichment_data: lead.enrichment_data,
       created_at: lead.created_at.toISOString(),
       updated_at: lead.updated_at.toISOString(),
     };
+    console.log(`Converted DTO:`, leadData);
+    return leadData;
   }
 }

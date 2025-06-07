@@ -87,35 +87,24 @@ export class MetricsService {
   async getPerformanceData(period: MetricsPeriod = '7d'): Promise<PerformanceDataPoint[]> {
     try {
       const days = this.getPeriodDays(period);
-      const endDate = new Date();
       const startDate = new Date();
-      startDate.setDate(endDate.getDate() - days);
+      startDate.setDate(startDate.getDate() - days);
 
-      const performanceData: PerformanceDataPoint[] = [];
+      const query = this.leadRepository.createQueryBuilder('lead')
+        .select("DATE(lead.created_at)", "date")
+        .addSelect("COUNT(*)", "throughput")
+        .addSelect("AVG(EXTRACT(EPOCH FROM (lead.updated_at - lead.created_at)))", "avgProcessingTime")
+        .where("lead.created_at >= :startDate", { startDate })
+        .groupBy("DATE(lead.created_at)")
+        .orderBy("date", "ASC");
 
-      for (let i = 0; i < days; i++) {
-        const date = new Date(startDate);
-        date.setDate(startDate.getDate() + i);
-        
-        const dayStart = new Date(date);
-        dayStart.setHours(0, 0, 0, 0);
-        
-        const dayEnd = new Date(date);
-        dayEnd.setHours(23, 59, 59, 999);
+      const rawData = await query.getRawMany();
 
-        const [throughput, avgProcessingTime] = await Promise.all([
-          this.getDailyThroughput(dayStart, dayEnd),
-          this.getDailyAverageProcessingTime(dayStart, dayEnd),
-        ]);
-
-        performanceData.push({
-          date: date.toISOString().split('T')[0],
-          throughput,
-          processingTime: avgProcessingTime,
-        });
-      }
-
-      return performanceData;
+      return rawData.map(item => ({
+        date: new Date(item.date).toISOString().split('T')[0],
+        throughput: parseInt(item.throughput, 10),
+        processingTime: parseFloat(item.avgProcessingTime) || 0,
+      }));
     } catch (error) {
       this.logger.error('Failed to get performance data', error.stack);
       throw new Error('Failed to retrieve performance data');

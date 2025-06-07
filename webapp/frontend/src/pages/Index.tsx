@@ -105,7 +105,9 @@ const transformLeadResponse = (apiLead: LeadResponse): LeadData => ({
   purchase_triggers: apiLead.triggers,
   processing_stage: apiLead.processingStage as LeadData['processing_stage'],
   created_at: apiLead.createdAt,
-  updated_at: apiLead.updatedAt
+  updated_at: apiLead.updatedAt,
+  status: apiLead.status,
+  enrichment_data: apiLead.enrichmentData
 });
 
 // Helper function to transform Agent API response to frontend types
@@ -215,6 +217,7 @@ const mockLeads: LeadData[] = [
     pain_point_analysis: ['Escalabilidade', 'Integração de sistemas', 'Automação de processos'],
     purchase_triggers: ['Crescimento de 200%', 'Expansão para novos mercados'],
       processing_stage: 'prospecting',
+    status: 'new',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   },
@@ -232,6 +235,7 @@ const mockLeads: LeadData[] = [
       decision_maker_probability: 0.64
     },
     processing_stage: 'analyzing_refining',
+    status: 'new',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   },
@@ -249,6 +253,7 @@ const mockLeads: LeadData[] = [
       decision_maker_probability: 0.95
     },
     processing_stage: 'reuniao_agendada',
+    status: 'new',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   }
