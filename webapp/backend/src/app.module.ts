@@ -20,6 +20,8 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './modules/health/health.module';
 import { QueueModule } from './modules/queue/queue.module';
 import { WebSocketModule } from './modules/websocket/websocket.module';
+import { UsersModule } from './modules/users/users.module';
+import { QuotaModule } from './modules/quota/quota.module';
 
 @Module({
   imports: [
@@ -63,6 +65,8 @@ import { WebSocketModule } from './modules/websocket/websocket.module';
     HealthModule,
     QueueModule,
     WebSocketModule,
+    UsersModule,
+    QuotaModule,
   ],
   controllers: [],
   providers: [],

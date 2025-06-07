@@ -15,22 +15,22 @@ export class QueueController {
     return this.queueService.getQueueStats();
   }
 
-  @Post('lead-processing')
-  @ApiOperation({ summary: 'Add lead processing job' })
-  @ApiResponse({ status: 201, description: 'Lead processing job added successfully' })
-  async addLeadProcessingJob(@Body() body: { leadId: string; stage: ProcessingStage; priority?: number }) {
+  @Post('prospect-processing')
+  @ApiOperation({ summary: 'Add prospect processing job' })
+  @ApiResponse({ status: 201, description: 'Prospect processing job added successfully' })
+  async addProspectProcessingJob(@Body() body: { leadId: string; stage: ProcessingStage; priority?: number }) {
     const { leadId, stage, priority = 0 } = body;
-    await this.queueService.addLeadProcessingJob(leadId, stage, priority);
-    return { message: 'Lead processing job added successfully', leadId, stage };
+    await this.queueService.addProspectProcessingJob(leadId, stage, priority);
+    return { message: 'Prospect processing job added successfully', leadId, stage };
   }
 
-  @Post('bulk-lead-processing')
-  @ApiOperation({ summary: 'Add bulk lead processing job' })
-  @ApiResponse({ status: 201, description: 'Bulk lead processing job added successfully' })
-  async addBulkLeadProcessingJob(@Body() body: { leadIds: string[]; priority?: number }) {
+  @Post('bulk-prospect-processing')
+  @ApiOperation({ summary: 'Add bulk prospect processing job' })
+  @ApiResponse({ status: 201, description: 'Bulk prospect processing job added successfully' })
+  async addBulkProspectProcessingJob(@Body() body: { leadIds: string[]; priority?: number }) {
     const { leadIds, priority = 0 } = body;
-    await this.queueService.addBulkLeadProcessingJob(leadIds, priority);
-    return { message: 'Bulk lead processing job added successfully', leadCount: leadIds.length };
+    await this.queueService.addBulkProspectProcessingJob(leadIds, priority);
+    return { message: 'Bulk prospect processing job added successfully', leadCount: leadIds.length };
   }
 
   @Post('metrics-collection/agent')

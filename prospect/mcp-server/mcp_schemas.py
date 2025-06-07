@@ -3,6 +3,48 @@ from datetime import datetime
 import enum # Added import for enum
 from pydantic import BaseModel, Field
 
+# =============================================================================
+# NEW SCHEMAS FOR AGENTIC HARVESTER
+# =============================================================================
+
+class HarvesterJobData(BaseModel):
+    """Schema for harvester job data sent from NestJS backend"""
+    user_id: str = Field(description="ID of the user who initiated the job")
+    initial_query: str = Field(description="User's initial search query")
+    business_context: Dict[str, Any] = Field(description="User's business context")
+    max_leads_to_generate: int = Field(description="Maximum number of leads to generate")
+    max_sites_to_scrape: Optional[int] = Field(default=3, description="Maximum sites to scrape")
+    job_id: Optional[str] = Field(None, description="Job identifier for tracking")
+    timestamp: str = Field(description="Timestamp when job was initiated")
+
+class AgenticHarvesterResponse(BaseModel):
+    """Response schema for agentic harvester execution"""
+    success: bool
+    job_id: str
+    user_id: str
+    total_leads_generated: int
+    execution_time_seconds: float
+    error_message: Optional[str] = None
+    leads_data: Optional[List[Dict[str, Any]]] = None
+
+class StreamingEventResponse(BaseModel):
+    """Schema for streaming event responses"""
+    event_type: str
+    timestamp: str
+    job_id: Optional[str] = None
+    user_id: Optional[str] = None
+    data: Dict[str, Any]
+
+class EnrichmentJobData(BaseModel):
+    """Schema for enrichment job data sent from NestJS backend"""
+    user_id: str = Field(description="ID of the user who initiated the job")
+    job_id: str = Field(description="Job identifier for tracking")
+    # The entire AnalyzedLead object will be sent as a dict
+    analyzed_lead_data: Dict[str, Any] = Field(description="The analyzed lead data to be enriched")
+    product_service_context: str = Field(description="The user's product/service context")
+    competitors_list: Optional[str] = Field(None, description="A string of known competitors")
+    timestamp: str = Field(description="Timestamp when job was initiated")
+
 class LeadProcessingStatusEnum(str, enum.Enum):
     PENDING = "PENDING"
     ACTIVE = "ACTIVE"

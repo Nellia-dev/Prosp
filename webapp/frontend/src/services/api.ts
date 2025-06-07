@@ -1,4 +1,5 @@
 import { apiClient } from '../config/api';
+import axios from 'axios';
 import type {
   ApiResponse,
   PaginatedResponse,
@@ -18,11 +19,12 @@ import type {
   BusinessContextResponse,
   ChatMessageRequest,
   ChatMessageResponse,
-  DashboardMetricsResponse,
+  // DashboardMetricsResponse is now imported from nellia.types for metricsApi
   PerformanceMetricsResponse,
   AgentPerformanceResponse,
   LeadStatsResponse,
   MetricsSummaryResponse,
+  UserPlanStatusResponse,
 } from '../types/api';
 
 // Export the apiClient for use in other parts of the application
@@ -53,8 +55,17 @@ export const authApi = {
 // Agents API
 export const agentsApi = {
   getAll: async (): Promise<AgentResponse[]> => {
-    const response = await apiClient.get<ApiResponse<AgentResponse[]>>('/agents');
-    return response.data.data;
+    try {
+      const response = await apiClient.get<ApiResponse<AgentResponse[]>>('/agents');
+      if (response.data && response.data.data) {
+        return response.data.data;
+      }
+      console.warn('agentsApi.getAll: response.data.data was null or undefined. Returning empty array.');
+    } catch (error) {
+      console.error('Error fetching all agents from API:', error);
+      // Fallthrough to return empty array on error
+    }
+    return []; // Fallback default
   },
 
   getById: async (id: string): Promise<AgentResponse> => {
@@ -87,10 +98,26 @@ export const leadsApi = {
         }
       });
     }
-    const response = await apiClient.get<ApiResponse<PaginatedResponse<LeadResponse>>>(
-      `/leads?${params.toString()}`
-    );
-    return response.data.data;
+    try {
+      const response = await apiClient.get<ApiResponse<PaginatedResponse<LeadResponse>>>(
+        `/leads?${params.toString()}`
+      );
+      if (response.data && response.data.data) {
+        // Ensure data array exists, even if empty, and pagination fields have defaults
+        return {
+          data: response.data.data.data || [],
+          total: response.data.data.total || 0,
+          page: response.data.data.page || 1,
+          limit: response.data.data.limit || 10,
+          totalPages: response.data.data.totalPages || 0,
+        };
+      }
+      console.warn('leadsApi.getAll: response.data.data was null or undefined. Returning default paginated response.');
+    } catch (error) {
+      console.error('Error fetching all leads from API:', error);
+      // Fallthrough to return default paginated response on error
+    }
+    return { data: [], total: 0, page: 1, limit: 10, totalPages: 0 }; // Fallback default
   },
 
   getById: async (id: string): Promise<LeadResponse> => {
@@ -133,9 +160,20 @@ export const leadsApi = {
 
 // Business Context API
 export const businessContextApi = {
-  get: async (): Promise<BusinessContextResponse> => {
-    const response = await apiClient.get<ApiResponse<BusinessContextResponse>>('/business-context');
-    return response.data.data;
+  get: async (): Promise<BusinessContextResponse | null> => {
+    try {
+      const response = await apiClient.get<BusinessContextResponse | null>('/business-context');
+      // The backend returns the business context object directly, or a 200 with null.
+      // We return the data, or null if it's falsy.
+      return response.data || null;
+    } catch (error) {
+      // A 404 Not Found error also indicates that the context doesn't exist.
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        return null;
+      }
+      // For any other errors, we re-throw them to be handled by react-query's error state.
+      throw error;
+    }
   },
 
   create: async (data: BusinessContextRequest): Promise<BusinessContextResponse> => {
@@ -162,18 +200,43 @@ export const chatApi = {
   },
 };
 
+import type { DashboardMetricsResponse as NelliaDashboardMetricsResponse } from '../types/nellia'; // Corrected import path
+
 // Metrics API
 export const metricsApi = {
-  getDashboard: async (): Promise<DashboardMetricsResponse> => {
-    const response = await apiClient.get<ApiResponse<DashboardMetricsResponse>>('/metrics/dashboard');
-    return response.data.data;
+  getDashboard: async (): Promise<NelliaDashboardMetricsResponse> => { // Use the new type
+    try {
+      const response = await apiClient.get<ApiResponse<NelliaDashboardMetricsResponse>>('/metrics/dashboard');
+      if (response.data && response.data.data) {
+        // Ensure lastUpdated is a string, as expected by NelliaDashboardMetricsResponse on frontend
+        const metrics = response.data.data;
+        if (metrics.lastUpdated && typeof metrics.lastUpdated !== 'string') {
+          metrics.lastUpdated = new Date(metrics.lastUpdated).toISOString();
+        }
+        return metrics;
+      }
+      console.warn('metricsApi.getDashboard: response.data.data was null or undefined. Returning default metrics.');
+    } catch (error) {
+      console.error('Error fetching dashboard metrics from API:', error);
+      // Fallthrough to return default metrics on error
+    }
+    // Fallback default if API call fails or data is malformed
+    return {
+      totalLeads: 0,
+      totalAgents: 0,
+      activeAgents: 0,
+      processingRate: 0,
+      successRate: 0,
+      recentActivity: [],
+      lastUpdated: new Date().toISOString(),
+    };
   },
 
   getPerformance: async (timeRange = '24h'): Promise<PerformanceMetricsResponse> => {
     const response = await apiClient.get<ApiResponse<PerformanceMetricsResponse>>(
       `/metrics/performance?timeRange=${timeRange}`
     );
-    return response.data.data;
+    return response.data.data || { timeRange, throughputData: [], processingTimeData: [] };
   },
 
   getAgentPerformance: async (): Promise<AgentPerformanceResponse[]> => {
@@ -189,5 +252,85 @@ export const metricsApi = {
   getSummary: async (): Promise<MetricsSummaryResponse> => {
     const response = await apiClient.get<ApiResponse<MetricsSummaryResponse>>('/metrics/summary');
     return response.data.data;
+  },
+};
+
+// Prospect API
+// Types for ProspectAPI (should match types in useProspect.ts or a shared types file)
+// These types are placeholders and should align with the actual DTOs/interfaces
+// used in useProspect.ts and the backend ProspectController/ProspectService.
+interface StartProspectingRequestDto {
+  searchQuery: string;
+  maxSites?: number;
+}
+
+interface ProspectJobResponse {
+  jobId: string | number;
+  status: string;
+  progress?: number | object;
+  createdAt?: string; // ISO Date string
+  finishedAt?: string | null; // ISO Date string
+  error?: string | null;
+  leadsCreated?: number;
+  // Add other fields from backend's ProspectJobStatus if needed
+}
+
+interface ProspectJobStatusDetailsResponse extends ProspectJobResponse {
+  data?: unknown; // Raw job data from Bull
+  result?: unknown; // Job result if completed
+  processedAt?: string | null; // ISO Date string
+  // Add other fields from backend's ProspectJobStatus
+}
+
+export const prospectApi = {
+  start: async (data: StartProspectingRequestDto): Promise<{ jobId: string | number; status: string }> => {
+    // Backend /prospect/start returns { jobId: job.id, status: 'started' } directly.
+    const response = await apiClient.post<{ jobId: string | number; status: string }>('/prospect/start', data);
+    return response.data; 
+  },
+  getJobs: async (): Promise<ProspectJobResponse[]> => {
+    // Backend /prospect/jobs returns ProspectJobStatus[] which should map to ProspectJobResponse[]
+    const response = await apiClient.get<ApiResponse<ProspectJobResponse[]>>('/prospect/jobs');
+    return response.data.data || [];
+  },
+  getJobStatus: async (jobId: string): Promise<ProspectJobStatusDetailsResponse> => {
+    // Backend /prospect/status/:jobId returns ProspectJobStatus which should map to ProspectJobStatusDetailsResponse
+    const response = await apiClient.get<ApiResponse<ProspectJobStatusDetailsResponse>>(`/prospect/status/${jobId}`);
+    return response.data.data;
+  },
+};
+
+// User API
+export const userApi = {
+  getPlanStatus: async (): Promise<UserPlanStatusResponse> => {
+    try {
+      const response = await apiClient.get<ApiResponse<UserPlanStatusResponse>>('/users/me/plan-status');
+      if (response.data && response.data.data) {
+        return response.data.data;
+      }
+      console.warn('userApi.getPlanStatus: response.data.data was null or undefined. Returning default plan status.');
+    } catch (error) {
+      console.error('Error fetching user plan status from API:', error);
+      // Fallthrough to return default plan status on error
+    }
+    // Fallback default if API call fails or data is malformed
+    return {
+      plan: {
+        id: 'free',
+        name: 'Free',
+        quota: 10,
+        period: 'week',
+        price: 0,
+      },
+      quota: {
+        total: 10,
+        used: 0,
+        remaining: 10,
+        nextResetAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 1 week from now
+      },
+      canStartProspecting: true,
+      hasActiveJob: false,
+      activeJobId: null,
+    };
   },
 };

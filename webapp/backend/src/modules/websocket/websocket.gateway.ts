@@ -16,6 +16,7 @@ import {
   SubscribeToUpdatesMessage,
   UnsubscribeFromUpdatesMessage,
   RealTimeEntity,
+  JoinUserRoomMessage,
 } from './dto/websocket.dto';
 
 @WebSocketGateway({
@@ -159,6 +160,26 @@ export class NelliaWebSocketGateway implements OnGatewayInit, OnGatewayConnectio
       timestamp: new Date().toISOString(),
       clientId: client.id,
     });
+  }
+
+  @SubscribeMessage('join-user-room')
+  handleJoinUserRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: JoinUserRoomMessage,
+  ): void {
+    this.logger.debug(`Client ${client.id} joining user room for user: ${data.userId}`);
+    
+    try {
+      this.webSocketService.joinUserRoom(client, data.userId);
+      this.logger.log(`Client ${client.id} successfully joined user room for user: ${data.userId}`);
+    } catch (error) {
+      this.logger.error(`Error joining user room for client ${client.id}:`, error);
+      client.emit('user-room-join-error', {
+        error: 'Failed to join user room',
+        userId: data.userId,
+        timestamp: new Date().toISOString(),
+      });
+    }
   }
 
   // Method to broadcast to subscribed clients only

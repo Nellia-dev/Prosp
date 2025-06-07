@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TranslationProvider, useTranslation } from '../hooks/useTranslation';
-import { useAgents, useLeads, useDashboardMetrics } from '../hooks/api';
+import { useAgents, useLeads, useDashboardMetrics, useBusinessContext } from '../hooks/api';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,16 +23,70 @@ import {
 import { AgentStatusCard } from '../components/AgentStatusCard';
 import { LeadCard } from '../components/LeadCard';
 import { ChatInterface } from '../components/ChatInterface';
+import { BusinessContextForm } from '../components/BusinessContextForm';
 import { BusinessContextCenter } from '../components/BusinessContextCenter';
 import { MetricsVisualization } from '../components/MetricsVisualization';
 import { CRMBoard } from '../components/CRMBoard';
 import { ConnectionStatus } from '../components/ConnectionStatus';
+import { AgentsEmptyState } from '../components/EmptyStates/AgentsEmptyState';
+import { LeadsEmptyState } from '../components/EmptyStates/LeadsEmptyState';
+// Placeholder for OnboardingFlow, to be created in Phase 2
+// import { OnboardingFlow } from '../components/OnboardingFlow'; 
 
-import { AgentStatus, LeadData } from '../types/nellia';
+import { 
+  AgentStatus, 
+  LeadData, 
+  // DashboardMetricsData, // Will be replaced by DashboardMetricsResponse from nellia
+  AgentName,
+  AgentCategory,
+  AgentStatusType,
+  DashboardMetricsResponse, // Import the new structure from nellia.ts
+  RecentActivityItem // Import if needed by new metrics structure
+} from '../types/nellia'; 
 import { Language } from '../i18n/translations';
-import { LeadResponse, AgentResponse } from '../types/api';
+import { LeadResponse, AgentResponse } from '../types/api'; // Restored LeadResponse and AgentResponse for transformers
+
+// Helper function to provide default metrics structure, matching new DashboardMetricsResponse
+const getDefaultFrontendMetrics = (): DashboardMetricsResponse => ({
+  totalLeads: 0,
+  totalAgents: 0,
+  activeAgents: 0,
+  processingRate: 0,
+  successRate: 0,
+  recentActivity: [],
+  lastUpdated: new Date().toISOString(),
+});
 
 // Helper function to transform API response to frontend types
+
+// Copied from unified.ts for AGENT_DISPLAY_NAMES
+export const AGENT_DISPLAY_NAMES: Record<AgentName, string> = {
+  'lead_intake_agent': 'Lead Intake Agent',
+  'lead_analysis_agent': 'Lead Analysis Agent',
+  'enhanced_lead_processor': 'Enhanced Lead Processor',
+  'tavily_enrichment_agent': 'Web Research Agent',
+  'contact_extraction_agent': 'Contact Extraction Agent',
+  'pain_point_deepening_agent': 'Pain Point Analysis Agent',
+  'lead_qualification_agent': 'Lead Qualification Agent',
+  'competitor_identification_agent': 'Competitor Analysis Agent',
+  'strategic_question_generation_agent': 'Strategic Questions Agent',
+  'buying_trigger_identification_agent': 'Buying Triggers Agent',
+  'tot_strategy_generation_agent': 'Strategy Generation Agent',
+  'tot_strategy_evaluation_agent': 'Strategy Evaluation Agent',
+  'tot_action_plan_synthesis_agent': 'Action Plan Synthesis Agent',
+  'detailed_approach_plan_agent': 'Approach Planning Agent',
+  'objection_handling_agent': 'Objection Handling Agent',
+  'value_proposition_customization_agent': 'Value Proposition Agent',
+  'b2b_personalized_message_agent': 'Message Personalization Agent',
+  'internal_briefing_summary_agent': 'Internal Briefing Agent',
+  'approach_strategy_agent': 'Approach Strategy Agent',
+  'b2b_persona_creation_agent': 'B2B Persona Agent',
+  'message_crafting_agent': 'Message Crafting Agent',
+  'persona_creation_agent': 'Persona Creation Agent',
+  'lead_analysis_generation_agent': 'Analysis Generation Agent'
+};
+// End copied AGENT_DISPLAY_NAMES
+
 const transformLeadResponse = (apiLead: LeadResponse): LeadData => ({
   id: apiLead.id,
   company_name: apiLead.companyName,
@@ -51,100 +105,98 @@ const transformLeadResponse = (apiLead: LeadResponse): LeadData => ({
   purchase_triggers: apiLead.triggers,
   processing_stage: apiLead.processingStage as LeadData['processing_stage'],
   created_at: apiLead.createdAt,
-  updated_at: apiLead.updatedAt
+  updated_at: apiLead.updatedAt,
+  status: apiLead.status,
+  enrichment_data: apiLead.enrichmentData
 });
 
 // Helper function to transform Agent API response to frontend types
-const transformAgentResponse = (apiAgent: AgentResponse): AgentStatus => ({
-  id: apiAgent.id,
-  name: apiAgent.name,
-  status: apiAgent.status,
-  current_task: apiAgent.currentTask,
-  metrics: {
-    processing_time_seconds: apiAgent.processingTime,
-    llm_usage: {
-      total_tokens: apiAgent.llmTokenUsage,
-      prompt_tokens: Math.floor(apiAgent.llmTokenUsage * 0.5), // Estimated
-      completion_tokens: Math.floor(apiAgent.llmTokenUsage * 0.5) // Estimated
-    },
-    success_rate: apiAgent.successRate,
-    queue_depth: apiAgent.queueDepth,
-    throughput_per_hour: apiAgent.throughput
-  },
-  last_updated: apiAgent.updatedAt
-});
+const transformAgentResponse = (apiAgent: AgentResponse): AgentStatus => {
+  // Assuming apiAgent.name is a string that should match one of AgentName
+  // and apiAgent.category is a string that should match one of AgentCategory
+  // The AgentResponse type from types/api.ts should ideally reflect this.
+  const agentName = apiAgent.name as AgentName; // Cast, assuming API provides valid names
+  const agentCategory = (apiAgent.category || 'specialized') as AgentCategory; // Default category if undefined
 
-// Mock data
+  return {
+    id: apiAgent.id,
+    name: agentName,
+    status: apiAgent.status as AgentStatusType, // Cast status
+    displayName: AGENT_DISPLAY_NAMES[agentName] || apiAgent.name, // Use display name map or fallback to name
+    description: apiAgent.description || `Details for ${apiAgent.name}`, // Fallback description
+    category: agentCategory,
+    current_task: apiAgent.currentTask,
+    metrics: {
+      processing_time_seconds: apiAgent.processingTime ?? 0,
+      llm_usage: {
+        total_tokens: apiAgent.llmTokenUsage ?? 0,
+        prompt_tokens: Math.floor((apiAgent.llmTokenUsage ?? 0) * 0.5),
+        completion_tokens: Math.floor((apiAgent.llmTokenUsage ?? 0) * 0.5)
+      },
+      success_rate: apiAgent.successRate ?? 0,
+      queue_depth: apiAgent.queueDepth ?? 0,
+      throughput_per_hour: apiAgent.throughput ?? 0
+    },
+    last_updated: apiAgent.updatedAt || new Date().toISOString()
+  };
+};
+
+// Mock data - updated to conform to AgentStatus type
 const mockAgents: AgentStatus[] = [
   {
     id: '1',
-    name: 'lead_intake',
+    name: 'lead_intake_agent', // Valid AgentName
+    displayName: AGENT_DISPLAY_NAMES['lead_intake_agent'],
+    category: 'initial_processing', // Valid AgentCategory
     status: 'active',
     current_task: 'Processing TechCorp lead data',
-    metrics: {
-      processing_time_seconds: 2.3,
-      llm_usage: { total_tokens: 45230, prompt_tokens: 23400, completion_tokens: 21830 },
-      success_rate: 0.98,
-      queue_depth: 3,
-      throughput_per_hour: 67
-    },
-    last_updated: new Date().toISOString()
+    metrics: { processing_time_seconds: 2.3, llm_usage: { total_tokens: 45230, prompt_tokens: 23400, completion_tokens: 21830 }, success_rate: 0.98, queue_depth: 3, throughput_per_hour: 67 },
+    last_updated: new Date().toISOString(),
+    description: 'Intakes and performs initial validation of leads.'
   },
   {
     id: '2',
-    name: 'analysis',
+    name: 'lead_analysis_agent', // Valid AgentName
+    displayName: AGENT_DISPLAY_NAMES['lead_analysis_agent'],
+    category: 'initial_processing', // Valid AgentCategory
     status: 'processing',
     current_task: 'Analyzing market fit for Inovacorp',
-    metrics: {
-      processing_time_seconds: 1.8,
-      llm_usage: { total_tokens: 52100, prompt_tokens: 28900, completion_tokens: 23200 },
-      success_rate: 0.94,
-      queue_depth: 1,
-      throughput_per_hour: 89
-    },
-    last_updated: new Date().toISOString()
+    metrics: { processing_time_seconds: 1.8, llm_usage: { total_tokens: 52100, prompt_tokens: 28900, completion_tokens: 23200 }, success_rate: 0.94, queue_depth: 1, throughput_per_hour: 89 },
+    last_updated: new Date().toISOString(),
+    description: 'Analyzes lead data for deeper insights.'
   },
   {
     id: '3',
-    name: 'persona_creation',
+    name: 'persona_creation_agent', // Valid AgentName
+    displayName: AGENT_DISPLAY_NAMES['persona_creation_agent'],
+    category: 'specialized', // Valid AgentCategory
     status: 'completed',
     current_task: '',
-    metrics: {
-      processing_time_seconds: 2.1,
-      llm_usage: { total_tokens: 38700, prompt_tokens: 19400, completion_tokens: 19300 },
-      success_rate: 0.96,
-      queue_depth: 0,
-      throughput_per_hour: 54
-    },
-    last_updated: new Date().toISOString()
+    metrics: { processing_time_seconds: 2.1, llm_usage: { total_tokens: 38700, prompt_tokens: 19400, completion_tokens: 19300 }, success_rate: 0.96, queue_depth: 0, throughput_per_hour: 54 },
+    last_updated: new Date().toISOString(),
+    description: 'Creates detailed buyer personas.'
   },
   {
     id: '4',
-    name: 'approach_strategy',
+    name: 'approach_strategy_agent', // Valid AgentName
+    displayName: AGENT_DISPLAY_NAMES['approach_strategy_agent'],
+    category: 'alternative', // Valid AgentCategory
     status: 'inactive',
     current_task: '',
-    metrics: {
-      processing_time_seconds: 2.7,
-      llm_usage: { total_tokens: 41200, prompt_tokens: 22100, completion_tokens: 19100 },
-      success_rate: 0.92,
-      queue_depth: 0,
-      throughput_per_hour: 43
-    },
-    last_updated: new Date().toISOString()
+    metrics: { processing_time_seconds: 2.7, llm_usage: { total_tokens: 41200, prompt_tokens: 22100, completion_tokens: 19100 }, success_rate: 0.92, queue_depth: 0, throughput_per_hour: 43 },
+    last_updated: new Date().toISOString(),
+    description: 'Develops strategic approach plans.'
   },
   {
     id: '5',
-    name: 'message_crafting',
+    name: 'message_crafting_agent', // Valid AgentName
+    displayName: AGENT_DISPLAY_NAMES['message_crafting_agent'],
+    category: 'alternative', // Valid AgentCategory
     status: 'inactive',
     current_task: '',
-    metrics: {
-      processing_time_seconds: 1.9,
-      llm_usage: { total_tokens: 36800, prompt_tokens: 18900, completion_tokens: 17900 },
-      success_rate: 0.97,
-      queue_depth: 0,
-      throughput_per_hour: 38
-    },
-    last_updated: new Date().toISOString()
+    metrics: { processing_time_seconds: 1.9, llm_usage: { total_tokens: 36800, prompt_tokens: 18900, completion_tokens: 17900 }, success_rate: 0.97, queue_depth: 0, throughput_per_hour: 38 },
+    last_updated: new Date().toISOString(),
+    description: 'Crafts personalized messages for leads.'
   }
 ];
 
@@ -165,6 +217,7 @@ const mockLeads: LeadData[] = [
     pain_point_analysis: ['Escalabilidade', 'Integração de sistemas', 'Automação de processos'],
     purchase_triggers: ['Crescimento de 200%', 'Expansão para novos mercados'],
       processing_stage: 'prospecting',
+    status: 'new',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   },
@@ -182,6 +235,7 @@ const mockLeads: LeadData[] = [
       decision_maker_probability: 0.64
     },
     processing_stage: 'analyzing_refining',
+    status: 'new',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   },
@@ -199,6 +253,7 @@ const mockLeads: LeadData[] = [
       decision_maker_probability: 0.95
     },
     processing_stage: 'reuniao_agendada',
+    status: 'new',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   }
@@ -207,26 +262,24 @@ const mockLeads: LeadData[] = [
 const DashboardContent = () => {
   const { t, language, setLanguage } = useTranslation();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [showBusinessContextForm, setShowBusinessContextForm] = useState(false);
 
   // Initialize real-time updates
   useRealTimeUpdates();
 
   // API calls
-  const { data: agentsData = [], isLoading: agentsLoading, error: agentsError } = useAgents();
+  const { data: agentsData, isLoading: agentsLoading, error: agentsError } = useAgents();
   const { data: leadsResponse, isLoading: leadsLoading, error: leadsError } = useLeads();
-  const { data: metrics, isLoading: metricsLoading, error: metricsError } = useDashboardMetrics();
+  const { data: metricsData, isLoading: metricsLoading, error: metricsError } = useDashboardMetrics();
+  const { data: businessContext, isLoading: businessContextLoading, isError: businessContextError, isSuccess: businessContextSuccess } = useBusinessContext();
 
-  // Transform API data to frontend types
-  const agents = agentsData.map(transformAgentResponse);
-  const leads = leadsResponse?.data?.map(transformLeadResponse) || [];
-
-  const handleLeadUpdate = (updatedLead: LeadData) => {
-    // This will be handled by React Query mutations
-    console.log('Lead updated:', updatedLead);
+  const handleContextSetupComplete = () => {
+    setShowBusinessContextForm(false);
+    // Optionally, you can force a refetch of data here if needed
   };
 
   // Show loading state
-  if (agentsLoading || leadsLoading || metricsLoading) {
+  if (agentsLoading || leadsLoading || metricsLoading || businessContextLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950 flex items-center justify-center">
         <div className="text-white text-xl">Loading...</div>
@@ -235,7 +288,7 @@ const DashboardContent = () => {
   }
 
   // Show error state
-  if (agentsError || leadsError || metricsError) {
+  if (agentsError || leadsError || metricsError || businessContextError) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950 flex items-center justify-center">
         <div className="text-red-400 text-xl">Error loading data. Please try again later.</div>
@@ -243,10 +296,45 @@ const DashboardContent = () => {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950">
-      {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm">
+  // Onboarding Flow for new users: show if the context query is successful but there's no context.
+  if (businessContextSuccess && !businessContext) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950 flex items-center justify-center">
+        <Card className="p-8 bg-slate-800 border-slate-700 text-white text-center max-w-lg">
+          {!showBusinessContextForm ? (
+            <>
+              <Zap size={48} className="mx-auto mb-4 text-green-500" />
+              <h2 className="text-2xl font-bold mb-4">Bem-vindo ao Nellia Prospector!</h2>
+              <p className="mb-6 text-slate-300">
+                Parece que é sua primeira vez aqui.
+                <br />
+                Vamos configurar seu contexto de negócios para começar a encontrar leads.
+              </p>
+              <Button onClick={() => setShowBusinessContextForm(true)} className="bg-green-600 hover:bg-green-700">
+                Configurar Contexto de Negócios
+              </Button>
+            </>
+          ) : (
+            <BusinessContextForm onComplete={handleContextSetupComplete} />
+          )}
+        </Card>
+      </div>
+    );
+  }
+
+  if (businessContextSuccess && businessContext) {
+    const agents: AgentStatus[] = Array.isArray(agentsData) ? agentsData.map(transformAgentResponse) : [];
+    const leads: LeadData[] = leadsResponse?.data ? leadsResponse.data.map(transformLeadResponse) : [];
+    const metrics: DashboardMetricsResponse = metricsData || getDefaultFrontendMetrics();
+
+    const handleLeadUpdate = (updatedLead: LeadData) => {
+      console.log('Lead updated:', updatedLead);
+    };
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950">
+        {/* Header */}
+        <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -319,12 +407,12 @@ const DashboardContent = () => {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-white text-lg flex items-center">
                     <TrendingUp className="w-5 h-5 mr-2" />
-                    Total ROI
+                    Taxa de Sucesso
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-white">527%</div>
-                  <p className="text-green-200 text-sm">Média dos últimos 30 dias</p>
+                  <div className="text-3xl font-bold text-white">{metrics.successRate.toFixed(1)}%</div>
+                  <p className="text-green-200 text-sm">De leads concluídos</p>
                 </CardContent>
               </Card>
 
@@ -332,12 +420,12 @@ const DashboardContent = () => {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-white text-lg flex items-center">
                     <Users className="w-5 h-5 mr-2" />
-                    Leads Processados
+                    Total de Leads
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-white">1,234</div>
-                  <p className="text-blue-200 text-sm">Últimas 24 horas</p>
+                  <div className="text-3xl font-bold text-white">{metrics.totalLeads}</div>
+                  <p className="text-blue-200 text-sm">No sistema</p>
                 </CardContent>
               </Card>
 
@@ -345,12 +433,12 @@ const DashboardContent = () => {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-white text-lg flex items-center">
                     <Activity className="w-5 h-5 mr-2" />
-                    Agentes Ativos
+                    Agentes
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-white">5/5</div>
-                  <p className="text-purple-200 text-sm">Sistema 100% operacional</p>
+                  <div className="text-3xl font-bold text-white">{metrics.activeAgents}/{metrics.totalAgents}</div>
+                  <p className="text-purple-200 text-sm">Ativos / Total</p>
                 </CardContent>
               </Card>
             </div>
@@ -368,20 +456,36 @@ const DashboardContent = () => {
             <CRMBoard leads={leads} onLeadUpdate={handleLeadUpdate} />
           </TabsContent>
 
-          <TabsContent value="agents" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {agents.map((agent) => (
-                <AgentStatusCard key={agent.id} agent={agent} />
-              ))}
-            </div>
+          <TabsContent value="agents" className="space_y-6">
+            {agentsLoading && <p className="text-white">Loading agents...</p>}
+            {!agentsLoading && agentsError && <p className="text-red-400">Error loading agents.</p>}
+            {!agentsLoading && !agentsError && agents.length === 0 && (
+              <AgentsEmptyState />
+            )}
+            {!agentsLoading && !agentsError && agents.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {agents.map((agent) => (
+                  <AgentStatusCard key={agent.id} agent={agent} />
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="leads" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {leads.map((lead) => (
-                <LeadCard key={lead.id} lead={lead} />
-              ))}
-            </div>
+            {leadsLoading && <p className="text-white">Loading leads...</p>}
+            {!leadsLoading && leadsError && <p className="text-red-400">Error loading leads.</p>}
+            {!leadsLoading && !leadsError && leads.length === 0 && (
+              // TODO: The onStartProspecting function needs to be defined.
+              // For now, it will be a console log.
+              <LeadsEmptyState onStartProspecting={() => console.log('Start Prospecting clicked')} />
+            )}
+            {!leadsLoading && !leadsError && leads.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {leads.map((lead) => (
+                  <LeadCard key={lead.id} lead={lead} />
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="chat">
@@ -396,6 +500,7 @@ const DashboardContent = () => {
     </div>
   );
 };
+}
 
 const Index = () => {
   return (

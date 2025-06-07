@@ -24,6 +24,14 @@ export const useLeads = (filters?: LeadFilters) => {
   return useQuery({
     queryKey: leadKeys.list(filters || {}),
     queryFn: () => leadsApi.getAll(filters),
+    select: (data) => ({
+      data: data?.data || [],
+      total: data?.total || 0,
+      page: data?.page || 1,
+      limit: data?.limit || 10,
+      totalPages: data?.totalPages || 0, // Assuming totalPages might be part of the response
+    }),
+    placeholderData: { data: [], total: 0, page: 1, limit: 10, totalPages: 0 }, // Changed to placeholderData
   });
 };
 

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { BullModule } from '@nestjs/bull';
 import { LeadProcessingProcessor } from './processors/lead-processing.processor';
+import { EnrichmentProcessor } from './processors/enrichment.processor';
 import { MetricsCollectionProcessor } from './processors/metrics-collection.processor';
 import { CleanupProcessor } from './processors/cleanup.processor';
 import { QueueService } from './queue.service';
@@ -11,13 +12,16 @@ import { LeadsModule } from '../leads/leads.module';
 import { MetricsModule } from '../metrics/metrics.module';
 import { McpModule } from '../mcp/mcp.module';
 import { WebSocketModule } from '../websocket/websocket.module';
+import { BusinessContextModule } from '../business-context/business-context.module';
+import { UsersModule } from '../users/users.module';
+import { QuotaModule } from '../quota/quota.module';
 
 @Module({
   imports: [
     // Register Bull queues
     BullModule.registerQueue(
       {
-        name: 'lead-processing',
+        name: 'prospect-processing',
         defaultJobOptions: {
           removeOnComplete: 50, // Keep last 50 completed jobs
           removeOnFail: 25, // Keep last 25 failed jobs
@@ -25,6 +29,18 @@ import { WebSocketModule } from '../websocket/websocket.module';
           backoff: {
             type: 'exponential',
             delay: 2000,
+          },
+        },
+      },
+      {
+        name: 'enrichment-processing',
+        defaultJobOptions: {
+          removeOnComplete: 50,
+          removeOnFail: 25,
+          attempts: 2,
+          backoff: {
+            type: 'exponential',
+            delay: 5000,
           },
         },
       },
@@ -56,10 +72,14 @@ import { WebSocketModule } from '../websocket/websocket.module';
     MetricsModule,
     McpModule,
     WebSocketModule,
-    HttpModule, // Add HttpModule here
+    HttpModule,
+    BusinessContextModule,
+    UsersModule,
+    QuotaModule,
   ],
   providers: [
     LeadProcessingProcessor,
+    EnrichmentProcessor,
     MetricsCollectionProcessor,
     CleanupProcessor,
     QueueService,

@@ -20,7 +20,7 @@ export interface LeadProcessingJobData {
   retryCount?: number;
 }
 
-@Processor('lead-processing')
+@Processor('prospect-processing')
 @Injectable()
 export class LeadProcessingProcessor {
   private readonly logger = new Logger(LeadProcessingProcessor.name);

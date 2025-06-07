@@ -359,9 +359,9 @@ export const useProcessLead = (
 // ===================================
 
 export const useBusinessContext = (
-  options?: UseQueryOptions<BusinessContextResponse, Error>
+  options?: UseQueryOptions<BusinessContextResponse | null, Error>
 ) => {
-  return useQuery({
+  return useQuery<BusinessContextResponse | null>({
     queryKey: queryKeys.businessContext.current,
     queryFn: () => businessContextApi.get(),
     staleTime: 1000 * 60 * 10, // 10 minutes
@@ -559,7 +559,6 @@ export const usePipelineStatus = () => {
     isProcessing: agents?.some(agent => agent.status === 'processing') || false,
     activeAgentCount: agents?.filter(agent => agent.status === 'active').length || 0,
     totalLeads: metrics?.totalLeads || 0,
-    processedLeads: metrics?.processedLeads || 0,
-    processingRate: metrics ? (metrics.processedLeads / metrics.totalLeads) * 100 : 0,
+    processingRate: metrics?.processingRate || 0,
   };
 };

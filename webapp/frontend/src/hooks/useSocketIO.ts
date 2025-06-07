@@ -186,7 +186,13 @@ export const useSocketIO = (config: SocketConfig = {}) => {
         'subscription-confirmed',
         'subscription-error',
         'unsubscription-confirmed',
-        'connection-stats'
+        'connection-stats',
+        'quota-updated',
+        'job-progress',
+        'job-completed',
+        'job-failed',
+        'enrichment-update',
+        'lead-update'
       ];
 
       eventTypes.forEach(eventType => {
