@@ -1,7 +1,10 @@
-import { Controller, Post, Get, Body, Param, Logger, HttpException, HttpStatus, Req } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, Logger, HttpException, HttpStatus, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam } from '@nestjs/swagger';
 import { ProspectService, StartProspectingDto, ProspectJobStatus } from './prospect.service';
+import { UserId } from '../auth/user-id.decorator';
+import { ApiBearerAuth } from '@nestjs/swagger';
+import { AuthGuard } from '@nestjs/passport';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -9,7 +12,8 @@ interface AuthenticatedRequest extends Request {
     email: string;
   };
 }
-
+@ApiBearerAuth()
+@UseGuards(AuthGuard('jwt'))
 @ApiTags('prospect')
 @Controller('prospect')
 export class ProspectController {
@@ -20,23 +24,21 @@ export class ProspectController {
   ) {}
 
   @Post('start')
-  @ApiOperation({ summary: 'Start a new prospecting process' })
-  @ApiBody({ type: StartProspectingDto, description: 'Parameters for starting the prospecting process' })
+  @ApiOperation({ summary: 'Start a new prospecting process based on the user\'s business context.' })
   @ApiResponse({ status: 201, description: 'Prospecting process started successfully', type: Object })
   @ApiResponse({ status: 400, description: 'Bad Request, e.g., business context not ready' })
   @ApiResponse({ status:403, description: 'Quota exceeded or insufficient permissions' })
   @ApiResponse({ status: 409, description: 'Another prospecting job is already running for this user' })
   async startProspecting(
-    @Body() dto: StartProspectingDto,
-    @Req() request: AuthenticatedRequest
+    @UserId() userId: string
   ): Promise<{ jobId: string | number; status: string }> {
-    // For now, use a mock user ID - replace with real auth when available
-    const userId = request.user?.id || 'mock-user-id';
-    
-    this.logger.log(`User ${userId} received request to start prospecting with query: ${dto.searchQuery}`);
+    if (!userId) {
+      throw new HttpException('User not authenticated', HttpStatus.UNAUTHORIZED);
+    }
+    this.logger.log(`User ${userId} received request to start prospecting.`);
     
     try {
-      const job = await this.prospectService.startProspectingProcess(userId, dto);
+      const job = await this.prospectService.startProspectingProcess(userId);
       this.logger.log(`Prospecting job created for user ${userId} with ID: ${job.id}`);
       return { jobId: job.id, status: 'started' };
     } catch (error) {
@@ -59,11 +61,15 @@ export class ProspectController {
   @ApiResponse({ status: 404, description: 'Job not found' })
   async getProspectStatus(
     @Param('jobId') jobId: string,
-    @Req() request: AuthenticatedRequest
+    @UserId() userId: string
   ): Promise<ProspectJobStatus> {
-    // For now, use a mock user ID - replace with real auth when available
-    const userId = request.user?.id || 'mock-user-id';
-    
+    if (!userId) {
+      throw new HttpException('User not authenticated', HttpStatus.UNAUTHORIZED);
+    }
+    if (!jobId) {
+      throw new HttpException('Job ID is required', HttpStatus.BAD_REQUEST);
+    }
+
     this.logger.log(`User ${userId} received request for status of job ID: ${jobId}`);
     
     try {
@@ -83,9 +89,10 @@ export class ProspectController {
   @Get('jobs')
   @ApiOperation({ summary: 'Get a list of recent prospecting jobs for the current user' })
   @ApiResponse({ status: 200, description: 'List of recent jobs retrieved successfully', type: [Object] })
-  async getProspectJobs(@Req() request: AuthenticatedRequest): Promise<ProspectJobStatus[]> {
-    // For now, use a mock user ID - replace with real auth when available
-    const userId = request.user?.id || 'mock-user-id';
+  async getProspectJobs(@UserId() userId: string): Promise<ProspectJobStatus[]> {
+    if (!userId) {
+      throw new HttpException('User not authenticated', HttpStatus.UNAUTHORIZED);
+    }
     
     this.logger.log(`User ${userId} received request to get recent prospect jobs`);
     

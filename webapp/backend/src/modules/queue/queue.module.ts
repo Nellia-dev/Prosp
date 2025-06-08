@@ -15,6 +15,7 @@ import { WebSocketModule } from '../websocket/websocket.module';
 import { BusinessContextModule } from '../business-context/business-context.module';
 import { UsersModule } from '../users/users.module';
 import { QuotaModule } from '../quota/quota.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { QuotaModule } from '../quota/quota.module';
     BusinessContextModule,
     UsersModule,
     QuotaModule,
+    AuthModule,
   ],
   providers: [
     LeadProcessingProcessor,

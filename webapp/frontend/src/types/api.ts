@@ -266,3 +266,19 @@ export interface UserPlanStatusResponse {
   hasActiveJob: boolean;
   activeJobId: string | null;
 }
+
+// Prospecting API types
+export interface StartProspectingRequest {
+  searchQuery: string;
+  maxSites?: number;
+}
+
+export interface ProspectJob {
+  jobId: string;
+  status: 'waiting' | 'active' | 'completed' | 'failed';
+  progress?: number;
+  createdAt?: string;
+  finishedAt?: string | null;
+  error?: string | null;
+  leadsCreated?: number;
+}

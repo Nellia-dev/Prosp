@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { LeadsService } from './leads.service';
 import { 
   LeadData, 
@@ -8,6 +8,7 @@ import {
   LeadFilters 
 } from '../../shared/types/nellia.types';
 
+@ApiBearerAuth()
 @ApiTags('leads')
 @Controller('leads')
 export class LeadsController {

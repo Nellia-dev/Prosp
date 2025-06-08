@@ -4,11 +4,13 @@ import { BusinessContextEntity } from '../../database/entities/business-context.
 import { BusinessContextService } from './business-context.service';
 import { BusinessContextController } from './business-context.controller';
 import { McpModule } from '../mcp/mcp.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([BusinessContextEntity]),
     forwardRef(() => McpModule),
+    AuthModule
   ],
   controllers: [BusinessContextController],
   providers: [BusinessContextService],

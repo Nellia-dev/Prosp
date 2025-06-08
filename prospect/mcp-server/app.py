@@ -15,9 +15,10 @@ import traceback
 # Add parent directory to Python path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-# Import the new agentic pipeline
+# Import the new agentic pipeline and the celery task
 from run import execute_agentic_pipeline
 from event_models import create_event_from_dict
+from .celery_app import run_agentic_harvester_task
 
 # Import the enrichment pipeline
 from agents.enhanced_lead_processor import EnhancedLeadProcessor
@@ -64,92 +65,30 @@ if ENHANCED_COMPONENTS_AVAILABLE:
 @app.route('/api/v2/run_agentic_harvester', methods=['POST'])
 def run_agentic_harvester():
     """
-    New endpoint to execute the agentic harvester pipeline.
-    Returns immediate response with job_id, while the actual processing happens asynchronously.
+    New endpoint to asynchronously execute the agentic harvester pipeline via Celery.
+    Returns an immediate response with a job_id.
     """
     try:
-        # Validate request data
         request_data = request.json
         if not request_data:
             return jsonify({"error": "Request body must be JSON"}), 400
 
-        # Parse and validate harvester job data
-        try:
-            job_data = HarvesterJobData(**request_data)
-        except Exception as e:
-            return jsonify({"error": f"Invalid job data: {str(e)}"}), 400
+        # Use a new job_id for every request to ensure unique tracking
+        job_id = f"job_{request_data.get('user_id', 'unknown')}_{int(datetime.now().timestamp())}"
+        request_data['job_id'] = job_id
 
-        # Generate job_id if not provided
-        if not job_data.job_id:
-            job_data.job_id = f"job_{job_data.user_id}_{int(datetime.now().timestamp())}"
+        # Dispatch the task to the Celery worker
+        run_agentic_harvester_task.delay(request_data)
 
-        # For now, we'll execute synchronously and return results
-        # In a production environment, this should be handled by a task queue
-        try:
-            # Execute the agentic pipeline
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            events = []
-            total_leads = 0
-            execution_time = 0
-            success = True
-            error_message = None
-            leads_data = []
+        app.logger.info(f"Dispatched Celery task for job_id: {job_id}")
 
-            # Define async function to collect events
-            async def collect_events():
-                nonlocal total_leads, execution_time, success, error_message, leads_data, events
-                
-                async for event_dict in execute_agentic_pipeline(
-                    initial_query=job_data.initial_query,
-                    business_context=job_data.business_context,
-                    user_id=job_data.user_id,
-                    max_leads_to_generate=job_data.max_leads_to_generate,
-                    config_overrides={"max_sites_to_scrape": job_data.max_sites_to_scrape}
-                ):
-                    events.append(event_dict)
-                    
-                    # Extract final metrics from pipeline_end event
-                    if event_dict.get('event_type') == 'pipeline_end':
-                        total_leads = event_dict.get('total_leads_generated', 0)
-                        execution_time = event_dict.get('execution_time_seconds', 0)
-                        success = event_dict.get('success', True)
-                        error_message = event_dict.get('error_message')
-                    
-                    # Collect lead data from lead_generated events
-                    elif event_dict.get('event_type') == 'lead_generated':
-                        lead_data = event_dict.get('lead_data')
-                        if lead_data:
-                            leads_data.append(lead_data)
-            
-            # Run the async event collection
-            loop.run_until_complete(collect_events())
-
-            loop.close()
-
-            # Return the aggregated response
-            response = AgenticHarvesterResponse(
-                success=success,
-                job_id=job_data.job_id,
-                user_id=job_data.user_id,
-                total_leads_generated=total_leads,
-                execution_time_seconds=execution_time,
-                error_message=error_message,
-                leads_data=leads_data if success else None
-            )
-
-            return jsonify(response.model_dump()), 200 if success else 500
-
-        except Exception as e:
-            return jsonify({
-                "success": False,
-                "job_id": job_data.job_id,
-                "user_id": job_data.user_id,
-                "total_leads_generated": 0,
-                "execution_time_seconds": 0,
-                "error_message": str(e)
-            }), 500
+        # Return a 202 Accepted response immediately
+        return jsonify({
+            "status": "processing",
+            "message": "Harvester job has been accepted and is processing.",
+            "job_id": job_id,
+            "user_id": request_data.get('user_id')
+        }), 202
 
     except Exception as e:
         app.logger.error(f"Error in run_agentic_harvester: {e}\n{traceback.format_exc()}")

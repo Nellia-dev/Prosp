@@ -2,9 +2,7 @@ import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { UsersService } from './users.service';
 import { QuotaService } from '../quota/quota.service';
-
-// Assuming you have an auth guard - adjust import path as needed
-// import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 interface AuthenticatedRequest extends Request {
   user: {
@@ -13,8 +11,9 @@ interface AuthenticatedRequest extends Request {
   };
 }
 
+@ApiBearerAuth()
+@ApiTags('Users')
 @Controller('users')
-// @UseGuards(JwtAuthGuard) // Uncomment when auth guard is available
 export class UsersController {
   constructor(
     private readonly usersService: UsersService,

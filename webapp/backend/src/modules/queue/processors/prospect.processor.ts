@@ -79,60 +79,31 @@ export class ProspectProcessor {
 
       // Step 4: Execute harvester with quota limits
       this.logger.log(`Job ${job.id}: Executing harvester for user ${userId} (query: "${enhancedQuery}", maxSites: ${maxSites}, maxLeads: ${maxLeadsToReturn})`);
-      const harvesterResults = await this.executeHarvester({
-        query: enhancedQuery,
-        maxSites: maxSites,
-        maxLeads: Math.min(maxLeadsToReturn, remainingQuota), // Respect both job limit and remaining quota
-        context: context,
-        userId: userId, // Add userId to params
-      });
+      // Step 4: Dispatch job to MCP via McpService
+      this.logger.log(`Job ${job.id}: Dispatching to MCP for user ${userId} (query: "${enhancedQuery}", maxSites: ${maxSites}, maxLeads: ${maxLeadsToReturn})`);
       
-      this.logger.log(`Job ${job.id}: Harvester executed, found ${harvesterResults.length} results`);
-      await job.progress(60);
+      const mcpResponse = await this.mcpService.runHarvester(
+        enhancedQuery,
+        maxSites,
+        context,
+        Math.min(maxLeadsToReturn, remainingQuota), // Respect both job limit and remaining quota
+        userId,
+      );
 
-      // Step 5: Process results through MCP agents to get initial lead data
-      this.logger.log(`Job ${job.id}: Processing ${harvesterResults.length} harvester results for user ${userId}`);
-      const processedLeadsDto = await this.processHarvesterResults(harvesterResults, context, userId);
-      
-      // Limit leads to user's quota (safety check)
-      const leadsToCreate = processedLeadsDto.slice(0, Math.min(maxLeadsToReturn, remainingQuota));
-      this.logger.log(`Job ${job.id}: ${leadsToCreate.length} leads processed and ready for creation (limited by quota)`);
-      await job.progress(80);
-
-      // Step 6: Save leads to database with HARVESTED status and dispatch to enrichment queue
-      this.logger.log(`Job ${job.id}: Saving ${leadsToCreate.length} leads for user ${userId} and dispatching for enrichment.`);
-      const createdLeads = await this.createLeadsAndDispatchForEnrichment(leadsToCreate, userId, job.id.toString());
-      
-      // Step 7: Consume quota for created leads
-      if (createdLeads.length > 0) {
-        await this.quotaService.consumeQuota(userId, createdLeads.length);
-        this.logger.log(`Job ${job.id}: Consumed ${createdLeads.length} quota for user ${userId}`);
-      }
-      
-      // Step 8: Clear user's active job
-      await this.usersService.clearProspectingJob(userId);
-      
       await job.progress(100);
 
-      const completionMessage = `Harvester process completed for user ${userId}, job ${job.id}. Dispatched ${createdLeads.length} leads for enrichment.`;
+      const completionMessage = `Harvester job ${job.id} successfully dispatched to MCP. MCP Job ID: ${mcpResponse.job_id}. Waiting for webhook.`;
       this.logger.log(completionMessage);
 
-      // Step 9: Emit WebSocket events for job completion and quota update
-      try {
-        await this.emitJobCompletedEvent(userId, job.id.toString(), createdLeads.length, searchQuery);
-        this.logger.log(`Job ${job.id}: WebSocket events emitted for user ${userId}`);
-      } catch (wsError) {
-        this.logger.warn(`Job ${job.id}: Failed to emit WebSocket events: ${wsError.message}`);
-      }
-
+      // The processor's job is now done. It has successfully handed off the task.
+      // The McpWebhookService will handle the results when they arrive.
       return {
         success: true,
         userId: userId,
-        leadsDispatched: createdLeads.length,
-        quotaConsumed: createdLeads.length,
         jobId: job.id,
+        mcpJobId: mcpResponse.job_id,
         message: completionMessage,
-        completedAt: new Date().toISOString(),
+        dispatchedAt: new Date().toISOString(),
       };
 
     } catch (error) {
@@ -145,13 +116,18 @@ export class ProspectProcessor {
         this.logger.error(`Failed to clear job for user ${userId}: ${clearError.message}`);
       }
 
-      // Emit job failed event
-      try {
-        await this.emitJobFailedEvent(userId, job.id.toString(), error.message, searchQuery);
-        this.logger.log(`Job ${job.id}: Job failed WebSocket event emitted for user ${userId}`);
-      } catch (wsError) {
-        this.logger.warn(`Job ${job.id}: Failed to emit job failed WebSocket event: ${wsError.message}`);
-      }
+      // The job failed to dispatch. The webhook service will not be called.
+      // We should emit a generic failure event here to notify the user.
+      this.webSocketService.emitJobFailed(userId, {
+        jobId: job.id.toString(),
+        userId: userId,
+        status: 'failed',
+        error: `Failed to dispatch job to MCP: ${error.message}`,
+        searchQuery: searchQuery,
+        startedAt: new Date(job.timestamp).toISOString(),
+        failedAt: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
+      });
       
       await job.moveToFailed({ message: error.message }, true);
       throw error;
@@ -169,253 +145,4 @@ export class ProspectProcessor {
     return query.trim();
   }
 
-  private async executeHarvester(params: HarvesterParams): Promise<HarvesterResult[]> {
-    this.logger.debug(`Executing harvester with quota-aware params: ${JSON.stringify({
-      query: params.query, 
-      maxSites: params.maxSites,
-      maxLeads: params.maxLeads
-    })}`);
-    
-    // Option 1: Call via MCP (preferred)
-    try {
-      this.logger.log('Attempting harvester execution via MCP.');
-      const mcpResults = await this.mcpService.runHarvester(
-        params.query, 
-        params.maxSites, 
-        params.context,
-        params.maxLeads,  // Pass quota limit to MCP
-        params.userId // Pass userId for logging/context
-      );
-      this.logger.log(`MCP harvester successful, ${mcpResults?.length || 0} results.`);
-      
-      // MCP should already limit results, but add safety check
-      const limitedResults = (mcpResults || []).slice(0, params.maxLeads);
-      this.logger.log(`Limited results to ${limitedResults.length} based on quota`);
-      
-      return limitedResults;
-    } catch (mcpError) {
-      this.logger.warn(`MCP harvester failed: ${mcpError.message}. Falling back to direct Python execution.`);
-      return this.executeHarvesterDirect(params);
-    }
-  }
-
-  private async executeHarvesterDirect(params: HarvesterParams): Promise<HarvesterResult[]> {
-    this.logger.log('Attempting direct Python harvester execution with quota limits.');
-    const { spawn } = require('child_process');
-    
-    return new Promise((resolve, reject) => {
-      const pythonArgs = [
-        'prospect/harvester.py',
-        '--query', params.query,
-        '--max-sites', params.maxSites.toString(),
-        '--max-leads', params.maxLeads.toString(), // Pass quota limit to Python
-        '--output-format', 'json'
-      ];
-      
-      this.logger.debug(`Spawning Python process: python3 ${pythonArgs.join(' ')}`);
-
-      const pythonProcess = spawn('python3', pythonArgs);
-      let output = '';
-      let errorOutput = '';
-
-      pythonProcess.stdout.on('data', (data: Buffer) => {
-        output += data.toString();
-      });
-
-      pythonProcess.stderr.on('data', (data: Buffer) => {
-        errorOutput += data.toString();
-        this.logger.error(`Harvester stderr: ${data.toString()}`);
-      });
-
-      pythonProcess.on('close', (code: number) => {
-        this.logger.log(`Python harvester process exited with code ${code}.`);
-        
-        if (code === 0) {
-          try {
-            const results = JSON.parse(output);
-            // Additional safety: limit results to maxLeads
-            const limitedResults = (results || []).slice(0, params.maxLeads);
-            this.logger.log(`Successfully parsed and limited to ${limitedResults.length} results from direct harvester.`);
-            resolve(limitedResults);
-          } catch (parseError) {
-            this.logger.error(`Failed to parse harvester output: ${parseError.message}. Output: ${output}`);
-            reject(new Error(`Failed to parse harvester output: ${parseError.message}`));
-          }
-        } else {
-          reject(new Error(`Harvester process failed with code ${code}. Error: ${errorOutput || 'Unknown error'}`));
-        }
-      });
-
-      pythonProcess.on('error', (err) => {
-        this.logger.error(`Failed to start Python harvester process: ${err.message}`);
-        reject(new Error(`Failed to start harvester process: ${err.message}`));
-      });
-    });
-  }
-
-  private async processHarvesterResults(
-    results: HarvesterResult[], 
-    context: BusinessContextType,
-    userId: string
-  ): Promise<CreateLeadDto[]> {
-    this.logger.debug(`Processing ${results.length} harvester results for user ${userId}.`);
-    const processedLeads: CreateLeadDto[] = [];
-
-    for (const result of results) {
-      if (!result || !result.url) {
-        this.logger.warn('Skipping invalid harvester result (missing URL).');
-        continue;
-      }
-      
-      try {
-        this.logger.debug(`Processing result for URL: ${result.url}`);
-        const leadData = await this.mcpService.processRawDataToLead(result, context);
-        
-        if (leadData) {
-          // Add userId to the lead DTO
-          const leadWithUser: CreateLeadDto = {
-            ...leadData,
-            userId: userId,
-          };
-          
-          this.logger.debug(`Successfully processed data for ${result.url} into lead DTO for user ${userId}.`);
-          processedLeads.push(leadWithUser);
-        } else {
-          this.logger.warn(`MCP service returned no lead data for ${result.url}.`);
-        }
-      } catch (error) {
-        this.logger.warn(`Failed to process result for ${result.url} via MCP: ${error.message}`);
-      }
-    }
-    
-    this.logger.log(`Finished processing harvester results for user ${userId}. ${processedLeads.length} leads ready for saving.`);
-    return processedLeads;
-  }
-
-  private async createLeadsAndDispatchForEnrichment(leads: CreateLeadDto[], userId: string, harvesterJobId: string): Promise<LeadData[]> {
-    this.logger.debug(`Creating ${leads.length} leads and dispatching to enrichment queue for user ${userId}.`);
-    const createdLeads: LeadData[] = [];
-
-    for (const leadDto of leads) {
-      try {
-        // Create lead with HARVESTED status
-        const newLead = await this.leadsService.create({ ...leadDto, status: LeadStatus.HARVESTED });
-        this.logger.debug(`Created lead: ${newLead.company_name} (ID: ${newLead.id}) with status HARVESTED.`);
-        
-        // Dispatch to enrichment queue
-        await this.enrichmentQueue.add('enrich-lead', {
-          leadId: newLead.id,
-          userId: userId,
-          jobId: harvesterJobId, // Pass original job ID for tracking
-        });
-        this.logger.debug(`Dispatched lead ${newLead.id} to enrichment queue.`);
-
-        createdLeads.push(newLead);
-      } catch (error) {
-        this.logger.error(`Failed to create or dispatch lead for ${leadDto.company_name}: ${error.message}`, error.stack);
-      }
-    }
-    
-    this.logger.log(`Finished creating and dispatching leads for user ${userId}. ${createdLeads.length} leads processed.`);
-    return createdLeads;
-  }
-
-  // WebSocket event emission methods
-  private async emitJobCompletedEvent(
-    userId: string, 
-    jobId: string, 
-    leadsGenerated: number, 
-    searchQuery: string
-  ): Promise<void> {
-    try {
-      // Get updated user and quota information
-      const user = await this.usersService.getUserById(userId);
-      const planDetails = PLANS[user.plan];
-      const remainingQuota = await this.quotaService.getRemainingQuota(userId);
-      const quotaUsed = planDetails.quota - remainingQuota;
-      
-      // Create quota update data
-      const quotaUpdate: QuotaUpdateData = {
-        userId: userId,
-        planId: user.plan,
-        planName: planDetails.name,
-        quotaUsed: quotaUsed,
-        quotaTotal: planDetails.quota === Infinity ? 999999 : planDetails.quota,
-        quotaRemaining: remainingQuota,
-        quotaUsagePercentage: planDetails.quota === Infinity 
-          ? 0 
-          : Math.round((quotaUsed / planDetails.quota) * 100),
-        nextResetAt: this.calculateNextResetDate(user.lastQuotaResetAt, planDetails.period),
-        leadsGenerated: leadsGenerated,
-        timestamp: new Date().toISOString(),
-      };
-
-      // Create job completed data
-      const jobCompletedData: JobCompletedData = {
-        jobId: jobId,
-        userId: userId,
-        status: 'completed',
-        leadsGenerated: leadsGenerated,
-        searchQuery: searchQuery,
-        quotaUpdate: quotaUpdate,
-        startedAt: new Date().toISOString(), // This could be tracked more precisely
-        completedAt: new Date().toISOString(),
-        timestamp: new Date().toISOString(),
-      };
-
-      // Emit job completed event (includes quota update)
-      this.webSocketService.emitJobCompleted(userId, jobCompletedData);
-      
-      this.logger.debug(`Job completed WebSocket event emitted for user ${userId}, job ${jobId}`);
-    } catch (error) {
-      this.logger.error(`Failed to emit job completed event: ${error.message}`, error.stack);
-      throw error;
-    }
-  }
-
-  private async emitJobFailedEvent(
-    userId: string,
-    jobId: string,
-    error: string,
-    searchQuery: string
-  ): Promise<void> {
-    try {
-      const jobFailedData: JobFailedData = {
-        jobId: jobId,
-        userId: userId,
-        status: 'failed',
-        error: error,
-        searchQuery: searchQuery,
-        startedAt: new Date().toISOString(), // This could be tracked more precisely
-        failedAt: new Date().toISOString(),
-        timestamp: new Date().toISOString(),
-      };
-
-      this.webSocketService.emitJobFailed(userId, jobFailedData);
-      
-      this.logger.debug(`Job failed WebSocket event emitted for user ${userId}, job ${jobId}`);
-    } catch (wsError) {
-      this.logger.error(`Failed to emit job failed event: ${wsError.message}`, wsError.stack);
-      // Don't throw here as this is secondary to the main error
-    }
-  }
-
-  private calculateNextResetDate(lastResetAt: Date, period: 'day' | 'week' | 'month'): string {
-    const lastReset = new Date(lastResetAt);
-    const nextReset = new Date(lastReset);
-    
-    switch (period) {
-      case 'day':
-        nextReset.setDate(nextReset.getDate() + 1);
-        break;
-      case 'week':
-        nextReset.setDate(nextReset.getDate() + 7);
-        break;
-      case 'month':
-        nextReset.setMonth(nextReset.getMonth() + 1);
-        break;
-    }
-    
-    return nextReset.toISOString();
-  }
 }

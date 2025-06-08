@@ -1,8 +1,8 @@
 import { useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useNelliaSocket } from './useSocketIO';
+import { useWebSocket } from '../contexts/WebSocketContext';
 import { useToast } from './use-toast';
-import { AgentStatus, LeadData, AgentMetrics } from '../types/nellia';
+import { AgentStatus, LeadData, AgentMetrics, DashboardMetricsResponse } from '../types/nellia';
 import { useAuth } from '../contexts/AuthContext';
 
 // Define WebSocket event data types
@@ -18,29 +18,20 @@ interface AgentStatusUpdateEvent {
   metrics?: AgentMetrics;
 }
 
-interface AgentMetricsUpdateEvent {
-  agentId: string;
-  metrics: Partial<AgentMetrics>;
-}
-
 interface LeadStageUpdateEvent {
   leadId: string;
   stage: ProcessingStage;
   updatedAt: string;
 }
 
-interface LeadProcessingUpdateEvent {
-  leadId: string;
-  processingStatus: string;
-  progress?: number;
-  results?: Record<string, unknown>;
+interface LeadCreatedEvent {
+  lead: LeadData;
 }
 
 interface LeadDeletedEvent {
   leadId: string;
 }
 
-// New interfaces for quota and job updates
 interface QuotaUpdateEvent {
   userId: string;
   planId: string;
@@ -93,431 +84,199 @@ interface EnrichmentEvent {
   [key: string]: unknown;
 }
 
-export const useRealTimeAgentUpdates = () => {
-  const socket = useNelliaSocket();
+// Combined hook for all real-time updates
+export const useRealTimeUpdates = () => {
+  const { isConnected, emit, subscribe } = useWebSocket();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
 
+  // Subscribe to rooms/entities
   useEffect(() => {
-    if (!socket.isConnected) return;
-
-    // Subscribe to agent updates
-    socket.subscribe(['agents']);
-
-    const handleAgentStatusUpdate = (data: unknown) => {
-      const { agentId, status, metrics } = data as AgentStatusUpdateEvent;
-
-      // Update agent in cache
-      queryClient.setQueryData(['agents'], (oldData: { agents?: AgentStatus[] } | undefined) => {
-        if (!oldData?.agents) return oldData;
-        
-        return {
-          ...oldData,
-          agents: oldData.agents.map((agent: AgentStatus) =>
-            agent.id === agentId
-              ? { ...agent, status, metrics: metrics || agent.metrics }
-              : agent
-          ),
-        };
-      });
-
-      // Update specific agent query
-      queryClient.invalidateQueries({ queryKey: ['agents', agentId] });
-      
-      // Show notification for status changes
-      if (status === 'error') {
-        toast({
-          title: "Agent Error",
-          description: `Agent ${agentId} encountered an error`,
-          variant: "destructive",
-        });
+    if (isConnected) {
+      emit('subscribe', { entities: ['agents', 'leads', 'metrics', 'enrichment'] });
+      if (user?.id) {
+        emit('join-user-room', { userId: user.id });
       }
-    };
 
-    const handleAgentMetricsUpdate = (data: unknown) => {
-      const { agentId, metrics } = data as AgentMetricsUpdateEvent;
+      return () => {
+        emit('unsubscribe', { entities: ['agents', 'leads', 'metrics', 'enrichment'] });
+      };
+    }
+  }, [isConnected, emit, user?.id]);
 
-      queryClient.setQueryData(['agents'], (oldData: { agents?: AgentStatus[] } | undefined) => {
-        if (!oldData?.agents) return oldData;
-        
-        return {
-          ...oldData,
-          agents: oldData.agents.map((agent: AgentStatus) =>
-            agent.id === agentId
-              ? { ...agent, metrics: { ...agent.metrics, ...metrics } }
-              : agent
-          ),
-        };
-      });
-
-      // Invalidate metrics queries
-      queryClient.invalidateQueries({ queryKey: ['metrics'] });
-    };
-
-    // Listen for Socket.IO events (these will be handled automatically by the useSocketIO hook)
-    // The automatic query invalidation will handle most updates
-    // We keep these handlers for specific UI notifications
-
-    return () => {
-      // Socket.IO disconnection is handled by useSocketIO hook
-    };
-  }, [socket.isConnected, socket, queryClient, toast]);
-};
-
-export const useRealTimeLeadUpdates = () => {
-  const socket = useNelliaSocket();
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-
+  // Handle Agent Updates
   useEffect(() => {
-    if (!socket.isConnected) return;
-
-    // Subscribe to lead updates
-    socket.subscribe(['leads']);
-
-    const handleLeadStageUpdate = (data: unknown) => {
-      const { leadId, stage, updatedAt } = data as LeadStageUpdateEvent;
-
-      // Update lead in cache
-      queryClient.setQueryData(['leads'], (oldData: { leads?: LeadData[] } | undefined) => {
-        if (!oldData?.leads) return oldData;
-        
-        return {
-          ...oldData,
-          leads: oldData.leads.map((lead: LeadData) =>
-            lead.id === leadId
-              ? { ...lead, processing_stage: stage, updated_at: updatedAt }
-              : lead
-          ),
-        };
+    const handleAgentUpdate = (data: AgentStatus) => {
+      queryClient.setQueryData(['agents'], (oldData: AgentStatus[] | undefined) => {
+        if (!oldData) return [data];
+        const existing = oldData.find(a => a.id === data.id);
+        if (existing) {
+          return oldData.map(a => a.id === data.id ? data : a);
+        }
+        return [...oldData, data];
       });
-
-      // Update specific lead query
-      queryClient.setQueryData(['leads', leadId], (oldData: LeadData | undefined) => {
-        if (!oldData) return oldData;
-        return { ...oldData, processing_stage: stage, updated_at: updatedAt };
-      });
-
-      // Invalidate stage-based queries
-      queryClient.invalidateQueries({ queryKey: ['leads', 'by-stage'] });
+      queryClient.invalidateQueries({ queryKey: ['agents', data.id] });
     };
 
-    const handleLeadProcessingUpdate = (data: unknown) => {
-      const { leadId, processingStatus, progress, results } = data as LeadProcessingUpdateEvent;
+    const unsubscribe = subscribe<AgentStatus>('agent-update', handleAgentUpdate);
+    return unsubscribe;
+  }, [subscribe, queryClient]);
 
-      queryClient.setQueryData(['leads', leadId], (oldData: LeadData | undefined) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          // Note: These fields might need to be added to LeadData interface
-          // processingStatus,
-          // processingProgress: progress,
-          // processingResults: results,
-        };
+  // Handle Lead Updates
+  useEffect(() => {
+    const handleLeadCreated = (data: LeadCreatedEvent) => {
+      const newLead = data.lead;
+      queryClient.setQueryData(['leads'], (oldData: { data?: LeadData[] } | undefined) => {
+        if (!oldData?.data) return { data: [newLead] };
+        return { ...oldData, data: [newLead, ...oldData.data] };
       });
-
-      // Show progress notification
-      if (progress !== undefined) {
-        toast({
-          title: "Processing Lead",
-          description: `Lead processing ${progress}% complete`,
-          duration: 2000,
-        });
-      }
-    };
-
-    const handleLeadCreated = (data: unknown) => {
-      const newLead = data as LeadData;
-      
-      queryClient.setQueryData(['leads'], (oldData: { leads?: LeadData[]; total?: number } | undefined) => {
-        if (!oldData?.leads) return { leads: [newLead], total: 1 };
-        
-        return {
-          ...oldData,
-          leads: [newLead, ...oldData.leads],
-          total: (oldData.total || 0) + 1,
-        };
-      });
-
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
       toast({
-        title: "New Lead",
-        description: `New lead: ${newLead.company_name}`,
-        duration: 3000,
+        title: "New Lead Generated",
+        description: `Successfully generated lead: ${newLead.company_name}`,
       });
     };
 
-    const handleLeadDeleted = (data: unknown) => {
-      const { leadId } = data as LeadDeletedEvent;
-      
-      queryClient.setQueryData(['leads'], (oldData: { leads?: LeadData[]; total?: number } | undefined) => {
-        if (!oldData?.leads) return oldData;
-        
+    const handleLeadStageUpdate = (data: LeadStageUpdateEvent) => {
+      queryClient.setQueryData(['leads'], (oldData: { data?: LeadData[] } | undefined) => {
+        if (!oldData?.data) return oldData;
         return {
           ...oldData,
-          leads: oldData.leads.filter((lead: LeadData) => lead.id !== leadId),
-          total: Math.max(0, (oldData.total || 0) - 1),
+          data: oldData.data.map(lead =>
+            lead.id === data.leadId ? { ...lead, processing_stage: data.stage, updated_at: data.updatedAt } : lead
+          ),
         };
       });
-
-      queryClient.removeQueries({ queryKey: ['leads', leadId] });
+      queryClient.invalidateQueries({ queryKey: ['leads', data.leadId] });
     };
+
+    const handleLeadDeleted = (data: LeadDeletedEvent) => {
+        queryClient.setQueryData(['leads'], (oldData: { data?: LeadData[] } | undefined) => {
+            if (!oldData?.data) return oldData;
+            return {
+                ...oldData,
+                data: oldData.data.filter(lead => lead.id !== data.leadId),
+            };
+        });
+        queryClient.invalidateQueries({ queryKey: ['leads'] });
+    };
+
+    const unsubCreated = subscribe<LeadCreatedEvent>('lead-created', handleLeadCreated);
+    const unsubStage = subscribe<LeadStageUpdateEvent>('lead-stage-update', handleLeadStageUpdate);
+    const unsubDeleted = subscribe<LeadDeletedEvent>('lead-deleted', handleLeadDeleted);
 
     return () => {
-      // Socket.IO disconnection is handled by useSocketIO hook
+      unsubCreated();
+      unsubStage();
+      unsubDeleted();
     };
-  }, [socket.isConnected, socket, queryClient, toast]);
+  }, [subscribe, queryClient, toast]);
 
+  // Handle Metrics Updates
   useEffect(() => {
-    if (!socket.isConnected) return;
+    const handleMetricsUpdate = (data: DashboardMetricsResponse) => {
+      queryClient.setQueryData(['dashboard-metrics'], data);
+    };
+    const unsubscribe = subscribe<DashboardMetricsResponse>('metrics-update', handleMetricsUpdate);
+    return unsubscribe;
+  }, [subscribe, queryClient]);
 
+  // Handle Enrichment Updates
+  useEffect(() => {
     const handleEnrichmentUpdate = (data: EnrichmentEvent) => {
       queryClient.setQueryData(['enrichment-status', data.job_id], (oldData: { events: EnrichmentEvent[] } | undefined) => {
         const newEvents = oldData ? [...oldData.events, data] : [data];
-        return {
-          events: newEvents,
-          lastUpdate: new Date().toISOString(),
-        };
+        return { events: newEvents, lastUpdate: new Date().toISOString() };
       });
 
       if (data.event_type === 'pipeline_end') {
         toast({
           title: "Enrichment Complete",
           description: `Lead enrichment finished for job ${data.job_id}`,
-          duration: 5000,
         });
         queryClient.invalidateQueries({ queryKey: ['leads'] });
       }
     };
+    const unsubscribe = subscribe<EnrichmentEvent>('enrichment-update', handleEnrichmentUpdate);
+    return unsubscribe;
+  }, [subscribe, queryClient, toast]);
 
-    socket.subscribe(['enrichment']);
-    
-    const currentSocket = socket;
-    currentSocket.emit('enrichment-update', handleEnrichmentUpdate);
-
-    return () => {
-      currentSocket.emit('unsubscribe', { entities: ['enrichment'] });
-    };
-  }, [socket, queryClient, toast]);
-};
-
-export const useRealTimeMetricsUpdates = () => {
-  const socket = useNelliaSocket();
-  const queryClient = useQueryClient();
-
+  // Handle Job and Quota Updates
   useEffect(() => {
-    if (!socket.isConnected) return;
+    if (!user) return;
 
-    // Subscribe to metrics updates
-    socket.subscribe(['metrics']);
-
-    const handleMetricsUpdate = (data: unknown) => {
-      const metrics = data as Record<string, unknown>;
-      
-      queryClient.setQueryData(['metrics', 'dashboard'], metrics);
-    };
-
-    const handlePerformanceUpdate = (data: unknown) => {
-      const performanceData = data as Record<string, unknown>;
-      
-      queryClient.setQueryData(['metrics', 'performance'], performanceData);
-    };
-
-    const handleAgentPerformanceUpdate = (data: unknown) => {
-      const agentPerformanceData = data as Record<string, unknown>;
-      
-      queryClient.setQueryData(['metrics', 'agent-performance'], agentPerformanceData);
-    };
-
-    return () => {
-      // Socket.IO disconnection is handled by useSocketIO hook
-    };
-  }, [socket.isConnected, socket, queryClient]);
-};
-
-// New hooks for quota and job updates
-export const useRealTimeQuotaUpdates = () => {
-  const socket = useNelliaSocket();
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const { user } = useAuth();
-
-  useEffect(() => {
-    if (!socket.isConnected || !user) return;
-
-    // Join user-specific room for quota updates
-    socket.emit('join-user-room', { userId: user.id });
-
-    // Listen for quota updates through lastMessage
-    if (socket.lastMessage?.type === 'quota-updated') {
-      const quotaData = socket.lastMessage.data as QuotaUpdateEvent;
-      
-      // Only process updates for the current user
-      if (quotaData.userId !== user.id) return;
-
-      // Update user plan status cache
-      queryClient.setQueryData(['user-plan-status'], (oldData: Record<string, unknown> | undefined) => {
-        if (!oldData) return oldData;
-        
-        return {
-          ...oldData,
-          quotaUsed: quotaData.quotaUsed,
-          quotaTotal: quotaData.quotaTotal,
-          quotaRemaining: quotaData.quotaRemaining,
-          quotaUsagePercentage: quotaData.quotaUsagePercentage,
-          lastUpdated: quotaData.timestamp,
-        };
-      });
-
-      // Show notification for quota updates
-      if (quotaData.leadsGenerated && quotaData.leadsGenerated > 0) {
-        toast({
-          title: "Quota Updated",
-          description: `Generated ${quotaData.leadsGenerated} new leads. ${quotaData.quotaRemaining} leads remaining.`,
-          duration: 5000,
-        });
-      }
-
-      // Warning for low quota
-      if (quotaData.quotaUsagePercentage >= 90) {
-        toast({
-          title: "Quota Nearly Exhausted",
-          description: `You've used ${quotaData.quotaUsagePercentage}% of your quota. Consider upgrading your plan.`,
-          variant: "destructive",
-          duration: 8000,
-        });
-      }
-    }
-  }, [socket.lastMessage, socket.isConnected, queryClient, toast, user]);
-};
-
-export const useRealTimeJobUpdates = () => {
-  const socket = useNelliaSocket();
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const { user } = useAuth();
-
-  useEffect(() => {
-    if (!socket.isConnected || !user) return;
-
-    // Join user-specific room for job updates
-    socket.emit('join-user-room', { userId: user.id });
-
-    // Listen for job updates through lastMessage
-    if (socket.lastMessage?.type === 'job-progress') {
-      const jobData = socket.lastMessage.data as JobProgressEvent;
-      
-      // Only process updates for the current user
-      if (jobData.userId !== user.id) return;
-
-      // Update prospect job status cache
-      queryClient.setQueryData(['prospect-job-status'], (oldData: Record<string, unknown> | undefined) => {
-        return {
-          ...oldData,
-          jobId: jobData.jobId,
-          status: jobData.status,
-          progress: jobData.progress,
-          currentStep: jobData.currentStep,
-          searchQuery: jobData.searchQuery,
-          lastUpdated: jobData.timestamp,
-        };
-      });
-
-      // Show progress notification
+    const handleJobProgress = (data: JobProgressEvent) => {
+      if (data.userId !== user.id) return;
+      queryClient.setQueryData(['prospect-job-status'], data);
       toast({
-        title: "Job Progress",
-        description: `${jobData.currentStep || 'Processing'}: ${jobData.progress}% complete`,
-        duration: 3000,
+        title: "Harvesting Progress",
+        description: `${data.currentStep || 'Processing'}: ${data.progress}%`,
+        duration: 2000,
       });
-    }
+    };
 
-    if (socket.lastMessage?.type === 'job-completed') {
-      const jobData = socket.lastMessage.data as JobCompletedEvent;
-      
-      // Only process updates for the current user
-      if (jobData.userId !== user.id) return;
-
-      // Clear job status
+    const handleJobCompleted = (data: JobCompletedEvent) => {
+      if (data.userId !== user.id) return;
       queryClient.setQueryData(['prospect-job-status'], null);
-
-      // Invalidate related queries to refresh data
       queryClient.invalidateQueries({ queryKey: ['leads'] });
-      queryClient.invalidateQueries({ queryKey: ['metrics'] });
-      queryClient.invalidateQueries({ queryKey: ['user-plan-status'] });
-
-      // Show success notification
+      queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
       toast({
-        title: "Job Completed Successfully",
-        description: `Generated ${jobData.leadsGenerated} new leads for "${jobData.searchQuery}"`,
-        duration: 6000,
+        title: "Harvesting Complete",
+        description: `Generated ${data.leadsGenerated} new leads.`,
       });
+    };
 
-      // Handle quota update if included
-      if (jobData.quotaUpdate) {
-        queryClient.setQueryData(['user-plan-status'], (oldData: Record<string, unknown> | undefined) => {
-          if (!oldData) return oldData;
-          
-          return {
-            ...oldData,
-            quotaUsed: jobData.quotaUpdate!.quotaUsed,
-            quotaTotal: jobData.quotaUpdate!.quotaTotal,
-            quotaRemaining: jobData.quotaUpdate!.quotaRemaining,
-            quotaUsagePercentage: jobData.quotaUpdate!.quotaUsagePercentage,
-            lastUpdated: jobData.quotaUpdate!.timestamp,
-          };
+    const handleJobFailed = (data: JobFailedEvent) => {
+      if (data.userId !== user.id) return;
+      queryClient.setQueryData(['prospect-job-status'], null);
+      toast({
+        title: "Harvesting Failed",
+        description: data.error,
+        variant: "destructive",
+      });
+    };
+
+    const handleQuotaUpdate = (data: QuotaUpdateEvent) => {
+      if (data.userId !== user.id) return;
+      queryClient.setQueryData(['user-plan-status'], data);
+      if (data.quotaUsagePercentage >= 90) {
+        toast({
+          title: "Quota Alert",
+          description: `You have used ${data.quotaUsagePercentage.toFixed(0)}% of your quota.`,
+          variant: "destructive",
         });
       }
-    }
+    };
 
-    if (socket.lastMessage?.type === 'job-failed') {
-      const jobData = socket.lastMessage.data as JobFailedEvent;
-      
-      // Only process updates for the current user
-      if (jobData.userId !== user.id) return;
+    const unsubProgress = subscribe<JobProgressEvent>('job-progress', handleJobProgress);
+    const unsubCompleted = subscribe<JobCompletedEvent>('job-completed', handleJobCompleted);
+    const unsubFailed = subscribe<JobFailedEvent>('job-failed', handleJobFailed);
+    const unsubQuota = subscribe<QuotaUpdateEvent>('quota-update', handleQuotaUpdate);
 
-      // Clear job status
-      queryClient.setQueryData(['prospect-job-status'], null);
-
-      // Show error notification
-      toast({
-        title: "Job Failed",
-        description: `Failed to process "${jobData.searchQuery}": ${jobData.error}`,
-        variant: "destructive",
-        duration: 8000,
-      });
-    }
-  }, [socket.lastMessage, socket.isConnected, queryClient, toast, user]);
+    return () => {
+      unsubProgress();
+      unsubCompleted();
+      unsubFailed();
+      unsubQuota();
+    };
+  }, [subscribe, queryClient, toast, user]);
 };
 
-// Combined hook for all real-time updates
-export const useRealTimeUpdates = () => {
-  useRealTimeAgentUpdates();
-  useRealTimeLeadUpdates();
-  useRealTimeMetricsUpdates();
-  useRealTimeQuotaUpdates();
-  useRealTimeJobUpdates();
-};
-
-// Hook for subscribing to custom events
+// Hook for subscribing to custom events (for components that need it)
 export const useRealTimeEvent = <T extends WebSocketEventData = WebSocketEventData>(
   eventName: string,
   callback: (data: T) => void,
   dependencies: unknown[] = []
 ) => {
-  const socket = useNelliaSocket();
+  const { subscribe } = useWebSocket();
 
   const wrappedCallback = useCallback((data: WebSocketEventData) => {
     callback(data as T);
   }, dependencies);
 
   useEffect(() => {
-    if (!socket.isConnected) return;
-
-    // For Socket.IO, we can't directly subscribe to custom events like the old WebSocket context
-    // Instead, the events are automatically handled by the useSocketIO hook
-    // This hook is kept for compatibility but events are handled in useSocketIO
-
-    return () => {
-      // Cleanup is handled by useSocketIO hook
-    };
-  }, [socket.isConnected, eventName, wrappedCallback, socket]);
+    const unsubscribe = subscribe(eventName, wrappedCallback);
+    return unsubscribe;
+  }, [eventName, wrappedCallback, subscribe]);
 };

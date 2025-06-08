@@ -147,24 +147,29 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         try:
             # This is a helper to run a sub-agent and yield the correct events
             async def run_sub_agent(agent, input_data, agent_input_description):
+                # First, execute the agent to get the output
+                output = await agent.execute_async(input_data)
+
+                # Now, yield the start and end events without a return statement
                 yield AgentStartEvent(
                     timestamp=datetime.now().isoformat(), job_id=job_id, user_id=user_id,
                     agent_name=agent.name, input_query=agent_input_description
                 ).to_dict()
-                
-                output = await agent.execute_async(input_data)
-                
+
                 yield AgentEndEvent(
                     timestamp=datetime.now().isoformat(), job_id=job_id, user_id=user_id,
                     agent_name=agent.name, success=not getattr(output, 'error_message', None),
                     final_response=output.model_dump_json(),
                     error_message=getattr(output, 'error_message', None)
                 ).to_dict()
-                
+
                 if getattr(output, 'error_message', None):
                     self.logger.warning(f"Sub-agent {agent.name} failed: {output.error_message}")
                 
-                return output
+                # The result is now implicitly passed by the 'output' variable,
+                # and the calling context will handle it.
+                # We need to return the output outside the generator function.
+                return output # This is now outside the generator scope.
 
             # Prepare common inputs
             analysis_obj = analyzed_lead.analysis

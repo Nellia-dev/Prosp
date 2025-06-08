@@ -14,6 +14,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth } from '@nes
 import { UserId } from '../auth/user-id.decorator';
 import { AuthGuard } from '@nestjs/passport';
 import { BusinessContextService } from './business-context.service';
+import { Public } from '../auth/public.decorator';
 import {
   CreateBusinessContextDto,
   UpdateBusinessContextDto,
@@ -22,7 +23,6 @@ import {
 import { BusinessContextEntity } from '../../database/entities/business-context.entity';
 
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
 @ApiTags('business-context')
 @Controller('business-context')
 export class BusinessContextController {
@@ -100,6 +100,7 @@ export class BusinessContextController {
     return { success };
   }
 
+  @Public()
   @Post('validate')
   @ApiOperation({ summary: 'Validate business context' })
   @ApiBody({ type: CreateBusinessContextDto })

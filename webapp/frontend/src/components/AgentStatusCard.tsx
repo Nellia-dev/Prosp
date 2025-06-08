@@ -15,21 +15,21 @@ import {
   Settings,
   Target
 } from "lucide-react";
-import { ExtendedAgentResponse } from "../types/unified";
+import { AgentStatus } from "../types/nellia";
 import { useTranslation } from "../hooks/useTranslation";
 import { useStartAgent, useStopAgent } from "../hooks/api/useUnifiedApi";
 import { useState } from "react";
 
 interface AgentStatusCardProps {
-  agent: ExtendedAgentResponse;
+  agent: AgentStatus;
   showControls?: boolean;
-  onAgentClick?: (agent: ExtendedAgentResponse) => void;
+  onAgentClick?: (agent: AgentStatus) => void;
 }
 
-export const AgentStatusCard = ({ 
-  agent, 
+export const AgentStatusCard = ({
+  agent,
   showControls = true,
-  onAgentClick 
+  onAgentClick,
 }: AgentStatusCardProps) => {
   const { t } = useTranslation();
   const [isActioning, setIsActioning] = useState(false);

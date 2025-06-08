@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { TranslationProvider, useTranslation } from '../hooks/useTranslation';
-import { useAgents, useLeads, useDashboardMetrics, useBusinessContext } from '../hooks/api';
+import { useAgents, useLeads, useDashboardMetrics, useBusinessContext, useStartProspecting } from '../hooks/api/useUnifiedApi';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,9 +17,11 @@ import {
   Activity,
   BarChart3,
   Zap,
-  Kanban
+  Kanban,
+  Rocket
 } from "lucide-react";
 
+import { ProspectDashboard } from '../components/ProspectDashboard';
 import { AgentStatusCard } from '../components/AgentStatusCard';
 import { LeadCard } from '../components/LeadCard';
 import { ChatInterface } from '../components/ChatInterface';
@@ -30,8 +32,7 @@ import { CRMBoard } from '../components/CRMBoard';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { AgentsEmptyState } from '../components/EmptyStates/AgentsEmptyState';
 import { LeadsEmptyState } from '../components/EmptyStates/LeadsEmptyState';
-// Placeholder for OnboardingFlow, to be created in Phase 2
-// import { OnboardingFlow } from '../components/OnboardingFlow'; 
+import { WebSocketProvider } from '../contexts/WebSocketContext';
 
 import { 
   AgentStatus, 
@@ -141,124 +142,6 @@ const transformAgentResponse = (apiAgent: AgentResponse): AgentStatus => {
   };
 };
 
-// Mock data - updated to conform to AgentStatus type
-const mockAgents: AgentStatus[] = [
-  {
-    id: '1',
-    name: 'lead_intake_agent', // Valid AgentName
-    displayName: AGENT_DISPLAY_NAMES['lead_intake_agent'],
-    category: 'initial_processing', // Valid AgentCategory
-    status: 'active',
-    current_task: 'Processing TechCorp lead data',
-    metrics: { processing_time_seconds: 2.3, llm_usage: { total_tokens: 45230, prompt_tokens: 23400, completion_tokens: 21830 }, success_rate: 0.98, queue_depth: 3, throughput_per_hour: 67 },
-    last_updated: new Date().toISOString(),
-    description: 'Intakes and performs initial validation of leads.'
-  },
-  {
-    id: '2',
-    name: 'lead_analysis_agent', // Valid AgentName
-    displayName: AGENT_DISPLAY_NAMES['lead_analysis_agent'],
-    category: 'initial_processing', // Valid AgentCategory
-    status: 'processing',
-    current_task: 'Analyzing market fit for Inovacorp',
-    metrics: { processing_time_seconds: 1.8, llm_usage: { total_tokens: 52100, prompt_tokens: 28900, completion_tokens: 23200 }, success_rate: 0.94, queue_depth: 1, throughput_per_hour: 89 },
-    last_updated: new Date().toISOString(),
-    description: 'Analyzes lead data for deeper insights.'
-  },
-  {
-    id: '3',
-    name: 'persona_creation_agent', // Valid AgentName
-    displayName: AGENT_DISPLAY_NAMES['persona_creation_agent'],
-    category: 'specialized', // Valid AgentCategory
-    status: 'completed',
-    current_task: '',
-    metrics: { processing_time_seconds: 2.1, llm_usage: { total_tokens: 38700, prompt_tokens: 19400, completion_tokens: 19300 }, success_rate: 0.96, queue_depth: 0, throughput_per_hour: 54 },
-    last_updated: new Date().toISOString(),
-    description: 'Creates detailed buyer personas.'
-  },
-  {
-    id: '4',
-    name: 'approach_strategy_agent', // Valid AgentName
-    displayName: AGENT_DISPLAY_NAMES['approach_strategy_agent'],
-    category: 'alternative', // Valid AgentCategory
-    status: 'inactive',
-    current_task: '',
-    metrics: { processing_time_seconds: 2.7, llm_usage: { total_tokens: 41200, prompt_tokens: 22100, completion_tokens: 19100 }, success_rate: 0.92, queue_depth: 0, throughput_per_hour: 43 },
-    last_updated: new Date().toISOString(),
-    description: 'Develops strategic approach plans.'
-  },
-  {
-    id: '5',
-    name: 'message_crafting_agent', // Valid AgentName
-    displayName: AGENT_DISPLAY_NAMES['message_crafting_agent'],
-    category: 'alternative', // Valid AgentCategory
-    status: 'inactive',
-    current_task: '',
-    metrics: { processing_time_seconds: 1.9, llm_usage: { total_tokens: 36800, prompt_tokens: 18900, completion_tokens: 17900 }, success_rate: 0.97, queue_depth: 0, throughput_per_hour: 38 },
-    last_updated: new Date().toISOString(),
-    description: 'Crafts personalized messages for leads.'
-  }
-];
-
-const mockLeads: LeadData[] = [
-  {
-    id: '1',
-    company_name: 'TechCorp Brasil',
-    website: 'techcorp.com.br',
-    relevance_score: 0.89,
-    roi_potential_score: 0.76,
-    brazilian_market_fit: 0.92,
-    qualification_tier: 'High Potential',
-    company_sector: 'SaaS B2B',
-    persona: {
-      likely_role: 'CTO',
-      decision_maker_probability: 0.87
-    },
-    pain_point_analysis: ['Escalabilidade', 'Integração de sistemas', 'Automação de processos'],
-    purchase_triggers: ['Crescimento de 200%', 'Expansão para novos mercados'],
-      processing_stage: 'prospecting',
-    status: 'new',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: '2',
-    company_name: 'InovaCorp',
-    website: 'inovacorp.com.br',
-    relevance_score: 0.72,
-    roi_potential_score: 0.68,
-    brazilian_market_fit: 0.85,
-    qualification_tier: 'Medium Potential',
-    company_sector: 'E-commerce',
-    persona: {
-      likely_role: 'Head de Marketing',
-      decision_maker_probability: 0.64
-    },
-    processing_stage: 'analyzing_refining',
-    status: 'new',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: '3',
-    company_name: 'FinTech Solutions',
-    website: 'fintechsol.com.br',
-    relevance_score: 0.94,
-    roi_potential_score: 0.88,
-    brazilian_market_fit: 0.96,
-    qualification_tier: 'High Potential',
-    company_sector: 'Fintech',
-    persona: {
-      likely_role: 'CEO',
-      decision_maker_probability: 0.95
-    },
-    processing_stage: 'reuniao_agendada',
-    status: 'new',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }
-];
-
 const DashboardContent = () => {
   const { t, language, setLanguage } = useTranslation();
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -272,10 +155,17 @@ const DashboardContent = () => {
   const { data: leadsResponse, isLoading: leadsLoading, error: leadsError } = useLeads();
   const { data: metricsData, isLoading: metricsLoading, error: metricsError } = useDashboardMetrics();
   const { data: businessContext, isLoading: businessContextLoading, isError: businessContextError, isSuccess: businessContextSuccess } = useBusinessContext();
+  const startProspectingMutation = useStartProspecting();
 
   const handleContextSetupComplete = () => {
     setShowBusinessContextForm(false);
     // Optionally, you can force a refetch of data here if needed
+  };
+
+  const handleStartHarvesting = () => {
+    if (businessContext) {
+      startProspectingMutation.mutate();
+    }
   };
 
   // Show loading state
@@ -374,10 +264,14 @@ const DashboardContent = () => {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid grid-cols-6 bg-slate-800 border border-slate-700">
+          <TabsList className="grid grid-cols-7 bg-slate-800 border border-slate-700">
             <TabsTrigger value="dashboard" className="text-white data-[state=active]:bg-slate-700">
               <BarChart3 className="w-4 h-4 mr-2" />
               {t('dashboard')}
+            </TabsTrigger>
+            <TabsTrigger value="prospect" className="text-white data-[state=active]:bg-slate-700">
+               <Rocket className="w-4 h-4 mr-2" />
+               {t('prospect')}
             </TabsTrigger>
             <TabsTrigger value="crm" className="text-white data-[state=active]:bg-slate-700">
               <Kanban className="w-4 h-4 mr-2" />
@@ -445,11 +339,41 @@ const DashboardContent = () => {
 
             <MetricsVisualization />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Card className="md:col-span-3 bg-slate-800/50 border-slate-700">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="text-lg font-medium text-white">
+                        Automated Prospecting
+                    </CardTitle>
+                    <Zap className="w-5 h-5 text-green-500" />
+                </CardHeader>
+                <CardContent>
+                    <p className="text-sm text-slate-400 mb-4">
+                        Launch the AI agents to automatically find and qualify new leads based on your business context.
+                    </p>
+                    <Button
+                        onClick={handleStartHarvesting}
+                        disabled={!businessContext || startProspectingMutation.isPending}
+                        className="w-full bg-green-600 hover:bg-green-700 disabled:bg-slate-600 disabled:cursor-not-allowed"
+                    >
+                        {startProspectingMutation.isPending ? 'Harvesting in Progress...' : 'Start New Harvest'}
+                    </Button>
+                    {startProspectingMutation.isError && (
+                        <p className="text-red-400 text-sm mt-2">
+                            Error starting harvesting: {startProspectingMutation.error.message}
+                        </p>
+                    )}
+                </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:col-span-3">
               {agents.slice(0, 3).map((agent) => (
-                <AgentStatusCard key={agent.id} agent={agent} />
+                <AgentStatusCard key={agent.id} agent={agent} showControls={false} />
               ))}
             </div>
+          </TabsContent>
+
+          <TabsContent value="prospect">
+            <ProspectDashboard />
           </TabsContent>
 
           <TabsContent value="crm" className="space-y-6">
@@ -465,7 +389,7 @@ const DashboardContent = () => {
             {!agentsLoading && !agentsError && agents.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {agents.map((agent) => (
-                  <AgentStatusCard key={agent.id} agent={agent} />
+                  <AgentStatusCard key={agent.id} agent={agent} showControls={false} />
                 ))}
               </div>
             )}
@@ -502,11 +426,14 @@ const DashboardContent = () => {
 };
 }
 
+
 const Index = () => {
   return (
-    <TranslationProvider>
-      <DashboardContent />
-    </TranslationProvider>
+    <WebSocketProvider>
+      <TranslationProvider>
+        <DashboardContent />
+      </TranslationProvider>
+    </WebSocketProvider>
   );
 };
 

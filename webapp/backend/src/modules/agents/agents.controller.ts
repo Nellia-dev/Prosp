@@ -1,8 +1,9 @@
 import { Controller, Get, Post, Param, HttpCode, HttpStatus, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { AgentsService } from './agents.service';
 import { AgentStatus, AgentMetrics, AgentCategory } from '../../shared/types/nellia.types';
 
+@ApiBearerAuth()
 @ApiTags('agents')
 @Controller('agents')
 export class AgentsController {

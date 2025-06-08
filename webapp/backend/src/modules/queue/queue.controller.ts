@@ -1,8 +1,9 @@
 import { Controller, Get, Post, Delete, Param, Body } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { QueueService } from './queue.service';
 import { ProcessingStage } from '../../shared/types/nellia.types';
 
+@ApiBearerAuth()
 @ApiTags('Queue Management')
 @Controller('queue')
 export class QueueController {

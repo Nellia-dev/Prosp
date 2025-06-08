@@ -153,6 +153,7 @@ async def execute_agentic_pipeline(
             query=agent_query,
             job_id=job_id,
             user_id=user_id,
+            business_context=business_context,
             max_leads_limit=max_leads_to_generate - total_leads_generated,
             max_sites_to_scrape=max_sites_to_scrape
         ):
@@ -266,6 +267,7 @@ async def _execute_agent_with_events(
     query: str,
     job_id: str,
     user_id: str,
+    business_context: Dict[str, Any],
     max_leads_limit: int = None,
     max_sites_to_scrape: int = None
 ) -> AsyncIterator[Dict[str, Any]]:
@@ -277,6 +279,7 @@ async def _execute_agent_with_events(
         query: The query to pass to the agent
         job_id: Job identifier
         user_id: User identifier
+        business_context: The user's business context for enriching leads.
         max_leads_limit: Maximum leads to generate (for quota adherence)
         max_sites_to_scrape: Maximum sites to scrape (for performance control)
     
@@ -309,13 +312,16 @@ async def _execute_agent_with_events(
         for lead_data in result.get('extracted_leads', []):
             if max_leads_limit is not None and max_leads_limit <= 0:
                 break
-                
+
+            # Structure the raw lead data into the format expected by the backend
+            structured_lead = _structure_lead_data(lead_data, business_context)
+            
             yield LeadGeneratedEvent(
                 timestamp=datetime.now().isoformat(),
                 job_id=job_id,
                 user_id=user_id,
-                lead_data=lead_data,
-                source_url=lead_data.get('source_url', lead_data.get('url', 'Unknown')),
+                lead_data=structured_lead,
+                source_url=structured_lead.get('website', 'Unknown'),
                 agent_name=agent.name
             ).to_dict()
             
@@ -441,6 +447,41 @@ async def _call_agent_and_run_with_events(
     return {
         "final_response": final_response_text,
         "extracted_leads": extracted_json_data
+    }
+
+def _structure_lead_data(raw_lead: Dict[str, Any], business_context: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Transforms a raw lead dictionary from an agent into the structured LeadData format
+    expected by the NestJS backend.
+    """
+    company_name = raw_lead.get('company_name') or raw_lead.get('title')
+    website = raw_lead.get('url') or raw_lead.get('website')
+
+    # A more robust way to get company name from title if not explicitly found
+    if not raw_lead.get('company_name') and raw_lead.get('title'):
+        # Remove common suffixes like " | Company", " - Official Site", etc.
+        company_name = re.split(r'\s*[-|]\s*', raw_lead.get('title'))[0].strip()
+
+    # Basic email extraction from notes if not present
+    email = raw_lead.get('email')
+    if not email:
+        notes = raw_lead.get('snippet', '') + raw_lead.get('description', '')
+        email_match = re.search(r'[\w\.-]+@[\w\.-]+', notes)
+        if email_match:
+            email = email_match.group(0)
+
+    return {
+        "company_name": company_name,
+        "website": website,
+        "linkedin_url": raw_lead.get('linkedin_url'),
+        "status": "HARVESTED",
+        "source": "AGENTIC_HARVESTER",
+        "potential_score": raw_lead.get('potential_score', 0.5),
+        "confidence_score": raw_lead.get('confidence_score', 0.5),
+        "notes": raw_lead.get('snippet') or raw_lead.get('description'),
+        "initial_prompt": business_context.get('business_description'),
+        "lead_data": raw_lead, # Store original raw data for enrichment
+        "contact_email": email,
     }
 
 def _extract_leads_from_output(output) -> List[Dict[str, Any]]:

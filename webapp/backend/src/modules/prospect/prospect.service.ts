@@ -9,11 +9,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { BusinessContext as BusinessContextType } from '@/shared/types/nellia.types';
 
 export class StartProspectingDto {
-  @ApiProperty({ example: 'tech companies in Brazil', description: 'The search query for prospecting' })
-  searchQuery: string;
-
-  @ApiProperty({ example: 20, description: 'Maximum number of sites to process', required: false, default: 10 })
-  maxSites?: number;
+  // This DTO is now empty as the backend will derive the necessary parameters.
 }
 
 export interface HarvesterJobData {
@@ -52,8 +48,8 @@ export class ProspectService {
   /**
    * Start prospecting process for a specific user with quota and job checks
    */
-  async startProspectingProcess(userId: string, dto: StartProspectingDto): Promise<Job<HarvesterJobData>> {
-    this.logger.log(`User ${userId} attempting to start prospecting process with query: ${dto.searchQuery}`);
+  async startProspectingProcess(userId: string): Promise<Job<HarvesterJobData>> {
+    this.logger.log(`User ${userId} attempting to start prospecting process.`);
 
     // Step 1: Validate Business Context
     const contextReadiness = await this.businessContextService.isReadyForProspecting(userId);
@@ -92,8 +88,8 @@ export class ProspectService {
     // Step 4: Prepare Job Data
     const jobData: HarvesterJobData = {
       userId: userId,
-      searchQuery: dto.searchQuery,
-      maxSites: dto.maxSites || 10, // Default or user input
+      searchQuery: context.business_description, // Use business description as the query
+      maxSites: 10, // Hardcoded default, as per user request
       maxLeadsToReturn: maxLeadsUserCanRequest, // Key: limit for MCP
       businessContext: context,
       timestamp: new Date().toISOString(),

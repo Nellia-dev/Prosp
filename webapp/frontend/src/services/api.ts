@@ -25,6 +25,7 @@ import type {
   LeadStatsResponse,
   MetricsSummaryResponse,
   UserPlanStatusResponse,
+  ProspectJob,
 } from '../types/api';
 
 // Export the apiClient for use in other parts of the application
@@ -283,14 +284,13 @@ interface ProspectJobStatusDetailsResponse extends ProspectJobResponse {
 }
 
 export const prospectApi = {
-  start: async (data: StartProspectingRequestDto): Promise<{ jobId: string | number; status: string }> => {
+  start: async (): Promise<{ jobId: string | number; status: string }> => {
     // Backend /prospect/start returns { jobId: job.id, status: 'started' } directly.
-    const response = await apiClient.post<{ jobId: string | number; status: string }>('/prospect/start', data);
-    return response.data; 
+    const response = await apiClient.post<{ jobId: string | number; status: string }>('/prospect/start');
+    return response.data;
   },
-  getJobs: async (): Promise<ProspectJobResponse[]> => {
-    // Backend /prospect/jobs returns ProspectJobStatus[] which should map to ProspectJobResponse[]
-    const response = await apiClient.get<ApiResponse<ProspectJobResponse[]>>('/prospect/jobs');
+  getJobs: async (): Promise<ProspectJob[]> => {
+    const response = await apiClient.get<ApiResponse<ProspectJob[]>>('/prospect/jobs');
     return response.data.data || [];
   },
   getJobStatus: async (jobId: string): Promise<ProspectJobStatusDetailsResponse> => {
@@ -299,6 +299,7 @@ export const prospectApi = {
     return response.data.data;
   },
 };
+
 
 // User API
 export const userApi = {

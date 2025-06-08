@@ -22,6 +22,8 @@ import { QueueModule } from './modules/queue/queue.module';
 import { WebSocketModule } from './modules/websocket/websocket.module';
 import { UsersModule } from './modules/users/users.module';
 import { QuotaModule } from './modules/quota/quota.module';
+import { McpWebhookModule } from './modules/mcp-webhook/mcp-webhook.module';
+import { ProspectModule } from './modules/prospect/prospect.module';
 
 @Module({
   imports: [
@@ -67,6 +69,8 @@ import { QuotaModule } from './modules/quota/quota.module';
     WebSocketModule,
     UsersModule,
     QuotaModule,
+    McpWebhookModule,
+    ProspectModule,
   ],
   controllers: [],
   providers: [],

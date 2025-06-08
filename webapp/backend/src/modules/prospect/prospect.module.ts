@@ -6,6 +6,7 @@ import { BusinessContextModule } from '../business-context/business-context.modu
 import { McpModule } from '../mcp/mcp.module';
 import { UsersModule } from '../users/users.module';
 import { QuotaModule } from '../quota/quota.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { QuotaModule } from '../quota/quota.module';
     McpModule,
     UsersModule,
     QuotaModule,
+    AuthModule,
   ],
   controllers: [ProspectController],
   providers: [ProspectService],

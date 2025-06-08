@@ -8,6 +8,18 @@ import { AgentName, AgentCategory } from '../../shared/enums/nellia.enums';
 import { Lead } from '@/database/entities/lead.entity';
 import { BusinessContextService } from '../business-context/business-context.service';
 import EventSource from 'eventsource';
+import { AxiosError } from 'axios';
+
+export class McpApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status?: number,
+    public readonly data?: any,
+  ) {
+    super(message);
+    this.name = 'McpApiError';
+  }
+}
 
 // MCP Server API Types (matching prospect/mcp-server Flask API)
 interface LeadProcessingStateCreate {
@@ -129,8 +141,14 @@ export class McpService implements OnModuleInit {
 
       return response.data;
     } catch (error) {
-      this.logger.error(`MCP API request failed: ${method} ${endpoint}`, error.message);
-      throw new Error(`MCP server request failed: ${error.message}`);
+      this.logger.error(`MCP API request failed: ${method} ${endpoint}`, error.stack);
+      if (error.isAxiosError) {
+        const axiosError = error as AxiosError;
+        const status = axiosError.response?.status;
+        const data = axiosError.response?.data;
+        throw new McpApiError(`MCP server request failed with status ${status}`, status, data);
+      }
+      throw new McpApiError(`MCP server request failed: ${error.message}`);
     }
   }
 
@@ -166,85 +184,6 @@ export class McpService implements OnModuleInit {
     return this.makeRequest('GET', `/api/run/${runId}/status`);
   }
 
-  // =====================================
-  // Legacy Methods (Adapted for HTTP)
-  // =====================================
-
-  /**
-   * Process lead - triggers processing and returns status
-   */
-  async processLead(leadData: LeadData): Promise<LeadData> {
-    try {
-      // Generate unique IDs for tracking
-      const leadId = `lead_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      const runId = `run_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      // Start lead processing in MCP server
-      const processingState: LeadProcessingStateCreate = {
-        lead_id: leadId,
-        run_id: runId,
-        url: leadData.website,
-        start_time: new Date().toISOString(),
-        current_agent: 'LeadIntakeAgent',
-      };
-
-      const result = await this.startLeadProcessing(processingState);
-      
-      // Return enhanced lead data with tracking information
-      return {
-        ...leadData,
-        id: leadId,
-        // Note: runId is not part of LeadData interface, storing in processing_stage for now
-        processing_stage: 'lead_qualification' as ProcessingStage,
-      } as LeadData;
-    } catch (error) {
-      this.logger.error('Failed to process lead', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get lead progress - gets current processing status
-   */
-  async getLeadProgress(leadId: string): Promise<any> {
-    try {
-      const status = await this.getLeadStatus(leadId);
-      return {
-        leadId,
-        status: status.lead_status.status,
-        currentAgent: status.lead_status.current_agent,
-        startTime: status.lead_status.start_time,
-        lastUpdate: status.lead_status.last_update_time,
-        endTime: status.lead_status.end_time,
-        agentExecutions: status.agent_executions,
-        errorMessage: status.lead_status.error_message,
-      };
-    } catch (error) {
-      this.logger.error(`Failed to get lead progress for ${leadId}`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update lead stage - records agent completion
-   */
-  async updateLeadStage(leadId: string, stage: string, agentName?: string): Promise<void> {
-    try {
-      const eventPayload: AgentEventPayload = {
-        agent_name: agentName || stage,
-        status: 'SUCCESS',
-        start_time: new Date().toISOString(),
-        end_time: new Date().toISOString(),
-        processing_time_seconds: 1.0,
-        output_json: JSON.stringify({ stage, status: 'completed' }),
-      };
-
-      await this.recordAgentEvent(leadId, eventPayload);
-    } catch (error) {
-      this.logger.error(`Failed to update lead stage for ${leadId}`, error);
-      throw error;
-    }
-  }
 
   // =====================================
   // Enhanced Agent Management Methods
@@ -619,106 +558,31 @@ export class McpService implements OnModuleInit {
     context: BusinessContextType,
     maxLeadsToReturn?: number,
     userId?: string,
-  ): Promise<any[]> { // Replace 'any[]' with HarvesterResult[] once HarvesterResult is defined
-    this.logger.log(`Requesting agentic harvester for user ${userId || 'unknown'}. Query: "${query}", Max Sites: ${maxSites}, Max Leads: ${maxLeadsToReturn || 'unlimited'}`);
-    try {
-      // Prepare payload for the new agentic harvester endpoint
-      const payload = {
-        user_id: userId || 'unknown',
-        initial_query: query,
-        business_context: context,
-        max_leads_to_generate: maxLeadsToReturn || 50, // Default fallback
-        max_sites_to_scrape: maxSites,
-        timestamp: new Date().toISOString(),
-      };
+  ): Promise<{ status: string; job_id: string }> {
+    this.logger.log(`Dispatching agentic harvester job for user ${userId || 'unknown'}. Query: "${query}", Max Sites: ${maxSites}, Max Leads: ${maxLeadsToReturn || 'unlimited'}`);
+    
+    const payload = {
+      user_id: userId || 'unknown',
+      initial_query: query,
+      business_context: context,
+      max_leads_to_generate: maxLeadsToReturn || 50, // Default fallback
+      max_sites_to_scrape: maxSites,
+      timestamp: new Date().toISOString(),
+    };
 
-      // Call the new agentic harvester endpoint
-      const response = await this.makeRequest<{
-        success: boolean;
-        job_id: string;
-        user_id: string;
-        total_leads_generated: number;
-        execution_time_seconds: number;
-        error_message?: string;
-        leads_data?: any[];
-      }>('POST', '/api/v2/run_agentic_harvester', payload);
+    // This now returns the immediate response from the MCP server, not the results.
+    const response = await this.makeRequest<{
+      status: string;
+      message: string;
+      job_id: string;
+      user_id: string;
+    }>('POST', '/api/v2/run_agentic_harvester', payload);
 
-      if (!response.success) {
-        throw new Error(response.error_message || 'Agentic harvester failed');
-      }
-
-      const results = response.leads_data || [];
-      this.logger.log(`Agentic harvester completed successfully for user ${userId || 'unknown'}. Generated ${response.total_leads_generated} leads in ${response.execution_time_seconds.toFixed(2)}s. Job ID: ${response.job_id}`);
-      
-      return results;
-    } catch (error) {
-      this.logger.error(`Agentic harvester failed for user ${userId || 'unknown'}: ${error.message}`, error.stack);
-      
-      // Fallback to legacy harvester if agentic harvester fails
-      this.logger.warn('Falling back to legacy harvester due to agentic harvester failure');
-      return this.runLegacyHarvester(query, maxSites, context, maxLeadsToReturn, userId);
-    }
+    this.logger.log(`Successfully dispatched harvester job to MCP. Job ID: ${response.job_id}`);
+    
+    return { status: response.status, job_id: response.job_id };
   }
 
-  /**
-   * Legacy harvester method (fallback for compatibility).
-   * This is the original implementation for backward compatibility.
-   */
-  private async runLegacyHarvester(
-    query: string,
-    maxSites: number,
-    context: BusinessContextType,
-    maxLeadsToReturn?: number,
-    userId?: string,
-  ): Promise<any[]> {
-    this.logger.log(`Running legacy harvester for user ${userId || 'unknown'} as fallback`);
-    try {
-      const payload = {
-        query,
-        max_sites: maxSites,
-        max_leads_to_return: maxLeadsToReturn,
-        user_id: userId,
-        business_context: context,
-      };
-      const results: any[] = await this.makeRequest<any[]>('POST', '/api/harvester/run', payload);
-      this.logger.log(`Legacy harvester returned ${results.length} results for user ${userId || 'unknown'}.`);
-      return results;
-    } catch (error) {
-      this.logger.error(`Legacy harvester also failed for user ${userId || 'unknown'}: ${error.message}`, error.stack);
-      throw error;
-    }
-  }
-
-  /**
-   * Processes raw data (e.g., from harvester) into a structured lead DTO via MCP.
-   * @param rawData A single harvester result (type 'any' for now, should be HarvesterResult).
-   * @param context The business context to use for processing.
-   * @returns A promise resolving to a CreateLeadDto or null if processing fails.
-   */
-  async processRawDataToLead(
-    rawData: any, // Should be HarvesterResult
-    context: BusinessContextType,
-  ): Promise<LeadData | null> { // Plan uses CreateLeadDto, but McpService might return full LeadData
-    const url = rawData && rawData.url ? rawData.url : 'unknown URL';
-    this.logger.log(`Requesting MCP to process raw data for URL: ${url}`);
-    try {
-      const payload = {
-        raw_data: rawData,
-        business_context: context,
-      };
-      // Assuming MCP returns data that can be cast or transformed into CreateLeadDto or LeadData
-      const leadDto = await this.makeRequest<LeadData | null>('POST', '/api/mcp/process-raw-to-lead', payload);
-      if (leadDto) {
-        this.logger.log(`MCP successfully processed raw data into lead DTO for URL: ${url}`);
-      } else {
-        this.logger.warn(`MCP returned null for raw data processing of URL: ${url}`);
-      }
-      return leadDto;
-    } catch (error) {
-      this.logger.error(`MCP processRawDataToLead failed for URL ${url}: ${error.message}`, error.stack);
-      return null;
-    }
-  }
 
   // =====================================
   // System Methods

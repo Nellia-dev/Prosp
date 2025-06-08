@@ -13,6 +13,7 @@ import {
   ApiResponse,
   ApiQuery,
   ApiParam,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { MetricsService } from './metrics.service';
 import {
@@ -24,6 +25,7 @@ import {
   AgentMetrics,
 } from '../../shared/types/nellia.types';
 
+@ApiBearerAuth()
 @ApiTags('metrics')
 @Controller('metrics')
 export class MetricsController {
