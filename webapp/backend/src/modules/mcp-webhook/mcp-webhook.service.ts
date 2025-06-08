@@ -6,7 +6,7 @@ import { QuotaService } from '../quota/quota.service';
 import { UsersService } from '../users/users.service';
 import { WebSocketService } from '../websocket/websocket.service';
 import { CreateLeadDto, LeadData } from '../../shared/types/nellia.types';
-import { JobCompletedData, JobFailedData, QuotaUpdateData } from '../websocket/dto/websocket.dto';
+import { JobCompletedData, JobFailedData, QuotaUpdateData, JobProgressData } from '../websocket/dto/websocket.dto';
 import { LeadStatus } from '@/shared/enums/nellia.enums';
 import { PLANS } from '../../config/plans.config';
 
@@ -67,6 +67,46 @@ export class McpWebhookService {
     } catch (error) {
       this.logger.error(`Error processing webhook for job ${job_id}: ${error.message}`, error.stack);
       await this.handleFailedJob(user_id, job_id, 'Internal error processing webhook.');
+    }
+  }
+
+  async processStreamedEvent(event: any): Promise<void> {
+    const { user_id, job_id, event_type, ...data } = event;
+
+    if (!user_id) {
+      this.logger.warn('Received a streamed event without a user_id. Cannot broadcast.');
+      return;
+    }
+
+    this.logger.debug(`Processing streamed event [${event_type}] for job [${job_id}] for user [${user_id}]`);
+
+    // Map Python event types to specific frontend WebSocket events
+    switch (event_type) {
+      case 'status_update':
+        const progressData: JobProgressData = {
+          jobId: job_id,
+          userId: user_id,
+          status: 'active',
+          progress: data.progress || 50, // Default progress if not specified
+          currentStep: data.status_message,
+          timestamp: data.timestamp,
+        };
+        this.webSocketService.emitJobProgress(user_id, progressData);
+        break;
+
+      case 'agent_start':
+      case 'agent_end':
+      case 'pipeline_end':
+      case 'pipeline_error':
+        // These events are all related to the enrichment process status
+        this.webSocketService.emitEnrichmentUpdate(user_id, event);
+        break;
+
+      default:
+        this.logger.warn(`Unhandled event type received: ${event_type}`);
+        // Optionally, send to a generic channel for debugging
+        this.webSocketService.emitToUser(user_id, 'unhandled-pipeline-event', event);
+        break;
     }
   }
 

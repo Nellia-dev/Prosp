@@ -161,6 +161,10 @@ export class WebSocketService {
     this.logger.debug(`Sent ${event} to user room: ${roomName}`);
   }
 
+  emitToUser(userId: string, event: string, data: any) {
+    this.sendToUserRoom(userId, event, data);
+  }
+
   // New methods for quota and job updates
   emitQuotaUpdate(userId: string, quotaData: QuotaUpdateData) {
     const message: WebSocketMessage = {

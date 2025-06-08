@@ -45,7 +45,7 @@ from data_models.lead_structures import (
 )
 from agents.base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
-from event_models import AgentStartEvent, AgentEndEvent, StatusUpdateEvent, PipelineErrorEvent
+from event_models import AgentStartEvent, AgentEndEvent, StatusUpdateEvent, PipelineErrorEvent, PipelineEndEvent
 
 # New Agent Imports
 from .tavily_enrichment_agent import TavilyEnrichmentAgent, TavilyEnrichmentInput, TavilyEnrichmentOutput
@@ -130,12 +130,15 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
     ) -> AsyncIterator[Dict[str, Any]]:
         """
         Asynchronously executes the full enrichment pipeline, yielding events for each step.
-        Returns the final ComprehensiveProspectPackage upon completion.
+        The final result is yielded as a 'pipeline_end' event with the package in its data field.
         """
         start_time = time.time()
         url = str(analyzed_lead.validated_lead.site_data.url)
         company_name = self._extract_company_name(analyzed_lead)
-        self.logger.info(f"Starting enrichment pipeline for: {url} (Job ID: {job_id})")
+        
+        # Bind logger with context for this pipeline execution
+        pipeline_logger = self.logger.bind(job_id=job_id, user_id=user_id, company_url=url)
+        pipeline_logger.info(f"Starting enrichment pipeline for: {company_name}")
 
         yield StatusUpdateEvent(
             timestamp=datetime.now().isoformat(),
@@ -145,60 +148,72 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         ).to_dict()
 
         try:
-            # This is a helper to run a sub-agent and yield the correct events
-            async def run_sub_agent(agent, input_data, agent_input_description):
-                # First, execute the agent to get the output
-                output = await agent.execute_async(input_data)
+            # This is a helper to run a sub-agent, yield events, and return the result
+            async def run_and_log_agent(agent, input_data, agent_input_description):
+                agent_logger = pipeline_logger.bind(agent_name=agent.name)
+                agent_logger.info(f"Executing sub-agent. Input: {agent_input_description}")
 
-                # Now, yield the start and end events without a return statement
                 yield AgentStartEvent(
                     timestamp=datetime.now().isoformat(), job_id=job_id, user_id=user_id,
                     agent_name=agent.name, input_query=agent_input_description
                 ).to_dict()
-
+                
+                output = await agent.execute_async(input_data)
+                
+                success = not getattr(output, 'error_message', None)
+                
                 yield AgentEndEvent(
                     timestamp=datetime.now().isoformat(), job_id=job_id, user_id=user_id,
-                    agent_name=agent.name, success=not getattr(output, 'error_message', None),
+                    agent_name=agent.name, success=success,
                     final_response=output.model_dump_json(),
                     error_message=getattr(output, 'error_message', None)
                 ).to_dict()
-
-                if getattr(output, 'error_message', None):
-                    self.logger.warning(f"Sub-agent {agent.name} failed: {output.error_message}")
                 
-                # The result is now implicitly passed by the 'output' variable,
-                # and the calling context will handle it.
-                # We need to return the output outside the generator function.
-                return output # This is now outside the generator scope.
+                if not success:
+                    agent_logger.warning(f"Sub-agent failed: {output.error_message}")
+                else:
+                    agent_logger.info(f"Sub-agent finished successfully.")
+                
+                return output
 
             # Prepare common inputs
             analysis_obj = analyzed_lead.analysis
             persona_profile_str = self._construct_persona_profile_string(analysis_obj, company_name)
 
             # --- Execute Sub-Agents Sequentially ---
-            external_intel = await run_sub_agent(self.tavily_enrichment_agent, TavilyEnrichmentInput(company_name=company_name, initial_extracted_text=analyzed_lead.validated_lead.site_data.extracted_text_content or ""), f"Enriching data for {company_name}")
-            contact_info = await run_sub_agent(self.contact_extraction_agent, ContactExtractionInput(extracted_text=analyzed_lead.validated_lead.cleaned_text_content or "", company_name=company_name, product_service_offered=self.product_service_context), f"Extracting contacts for {company_name}")
+            # --- Execute Sub-Agents Sequentially ---
+            # The 'async for' loop correctly handles the async generator
+            async def get_agent_result(agent, input_data, description):
+                result = None
+                async for event in run_and_log_agent(agent, input_data, description):
+                    if event.get("event_type") == "agent_end":
+                        result = event.get("output")
+                    yield event
+                return result
+
+            external_intel = await get_agent_result(self.tavily_enrichment_agent, TavilyEnrichmentInput(company_name=company_name, initial_extracted_text=analyzed_lead.validated_lead.site_data.extracted_text_content or ""), f"Enriching data for {company_name}")
+            contact_info = await get_agent_result(self.contact_extraction_agent, ContactExtractionInput(extracted_text=analyzed_lead.validated_lead.cleaned_text_content or "", company_name=company_name, product_service_offered=self.product_service_context), f"Extracting contacts for {company_name}")
             
             lead_analysis_str_for_agents = self._construct_lead_analysis_string(analysis_obj, external_intel)
             
-            pain_analysis_output = await run_sub_agent(self.pain_point_deepening_agent, PainPointDeepeningInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, product_service_offered=self.product_service_context, company_name=company_name), "Deepening pain points")
+            pain_analysis_output = await get_agent_result(self.pain_point_deepening_agent, PainPointDeepeningInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, product_service_offered=self.product_service_context, company_name=company_name), "Deepening pain points")
             deepened_pain_points_for_agents = json.dumps(pain_analysis_output.model_dump(), ensure_ascii=False) if pain_analysis_output and not pain_analysis_output.error_message else "Análise de dores não disponível."
 
-            qualification_output = await run_sub_agent(self.lead_qualification_agent, LeadQualificationInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents, product_service_offered=self.product_service_context), "Qualifying lead")
-            competitor_intel_output = await run_sub_agent(self.competitor_identification_agent, CompetitorIdentificationInput(initial_extracted_text=analyzed_lead.validated_lead.site_data.extracted_text_content or "", product_service_offered=", ".join(analysis_obj.main_services), known_competitors_list_str=self.competitors_list), "Identifying competitors")
-            purchase_triggers_output = await run_sub_agent(self.buying_trigger_identification_agent, BuyingTriggerIdentificationInput(lead_data_str=json.dumps(analyzed_lead.analysis.model_dump()), enriched_data=external_intel.tavily_enrichment or "", product_service_offered=self.product_service_context), "Identifying buying triggers")
+            qualification_output = await get_agent_result(self.lead_qualification_agent, LeadQualificationInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents, product_service_offered=self.product_service_context), "Qualifying lead")
+            competitor_intel_output = await get_agent_result(self.competitor_identification_agent, CompetitorIdentificationInput(initial_extracted_text=analyzed_lead.validated_lead.site_data.extracted_text_content or "", product_service_offered=", ".join(analysis_obj.main_services), known_competitors_list_str=self.competitors_list), "Identifying competitors")
+            purchase_triggers_output = await get_agent_result(self.buying_trigger_identification_agent, BuyingTriggerIdentificationInput(lead_data_str=json.dumps(analyzed_lead.analysis.model_dump()), enriched_data=external_intel.tavily_enrichment or "", product_service_offered=self.product_service_context), "Identifying buying triggers")
             
-            value_props_output = await run_sub_agent(self.value_proposition_customization_agent, ValuePropositionCustomizationInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents, buying_triggers_report=json.dumps([t.model_dump() for t in purchase_triggers_output.identified_triggers]), product_service_offered=self.product_service_context, company_name=company_name), "Customizing value propositions")
-            strategic_questions_output = await run_sub_agent(self.strategic_question_generation_agent, StrategicQuestionGenerationInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents), "Generating strategic questions")
+            value_props_output = await get_agent_result(self.value_proposition_customization_agent, ValuePropositionCustomizationInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents, buying_triggers_report=json.dumps([t.model_dump() for t in purchase_triggers_output.identified_triggers]), product_service_offered=self.product_service_context, company_name=company_name), "Customizing value propositions")
+            strategic_questions_output = await get_agent_result(self.strategic_question_generation_agent, StrategicQuestionGenerationInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents), "Generating strategic questions")
 
             current_lead_summary_for_tot = f"Empresa: {company_name} ({url})\nSetor: {analysis_obj.company_sector}\nPersona (Estimada): {persona_profile_str}\nDores: {pain_analysis_output.primary_pain_category if pain_analysis_output else 'N/A'}"
             
-            tot_generation_output = await run_sub_agent(self.tot_strategy_generation_agent, ToTStrategyGenerationInput(current_lead_summary=current_lead_summary_for_tot, product_service_offered=self.product_service_context), "Generating ToT strategies")
-            tot_evaluation_output = await run_sub_agent(self.tot_strategy_evaluation_agent, ToTStrategyEvaluationInput(proposed_strategies_text=json.dumps([s.model_dump() for s in tot_generation_output.proposed_strategies]), current_lead_summary=current_lead_summary_for_tot), "Evaluating ToT strategies")
-            tot_synthesis_output = await run_sub_agent(self.tot_action_plan_synthesis_agent, ToTActionPlanSynthesisInput(evaluated_strategies_text=json.dumps([e.model_dump() for e in tot_evaluation_output.evaluated_strategies]), proposed_strategies_text=json.dumps([s.model_dump() for s in tot_generation_output.proposed_strategies]), current_lead_summary=current_lead_summary_for_tot), "Synthesizing ToT action plan")
+            tot_generation_output = await get_agent_result(self.tot_strategy_generation_agent, ToTStrategyGenerationInput(current_lead_summary=current_lead_summary_for_tot, product_service_offered=self.product_service_context), "Generating ToT strategies")
+            tot_evaluation_output = await get_agent_result(self.tot_strategy_evaluation_agent, ToTStrategyEvaluationInput(proposed_strategies_text=json.dumps([s.model_dump() for s in tot_generation_output.proposed_strategies]), current_lead_summary=current_lead_summary_for_tot), "Evaluating ToT strategies")
+            tot_synthesis_output = await get_agent_result(self.tot_action_plan_synthesis_agent, ToTActionPlanSynthesisInput(evaluated_strategies_text=json.dumps([e.model_dump() for e in tot_evaluation_output.evaluated_strategies]), proposed_strategies_text=json.dumps([s.model_dump() for s in tot_generation_output.proposed_strategies]), current_lead_summary=current_lead_summary_for_tot), "Synthesizing ToT action plan")
             
-            detailed_approach_plan_output = await run_sub_agent(self.detailed_approach_plan_agent, DetailedApproachPlanInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents, final_action_plan_text=tot_synthesis_output.model_dump_json(), product_service_offered=self.product_service_context, lead_url=url), "Developing detailed approach plan")
-            objection_handling_output = await run_sub_agent(self.objection_handling_agent, ObjectionHandlingInput(detailed_approach_plan_text=detailed_approach_plan_output.model_dump_json(), persona_profile=persona_profile_str, product_service_offered=self.product_service_context, company_name=company_name), "Preparing objection handling")
+            detailed_approach_plan_output = await get_agent_result(self.detailed_approach_plan_agent, DetailedApproachPlanInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents, final_action_plan_text=tot_synthesis_output.model_dump_json(), product_service_offered=self.product_service_context, lead_url=url), "Developing detailed approach plan")
+            objection_handling_output = await get_agent_result(self.objection_handling_agent, ObjectionHandlingInput(detailed_approach_plan_text=detailed_approach_plan_output.model_dump_json(), persona_profile=persona_profile_str, product_service_offered=self.product_service_context, company_name=company_name), "Preparing objection handling")
 
             # Final construction of the package
             enhanced_strategy = EnhancedStrategy(
@@ -210,8 +225,8 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 strategic_questions=strategic_questions_output.generated_questions
             )
             
-            personalized_message_output = await run_sub_agent(self.b2b_personalized_message_agent, B2BPersonalizedMessageInput(final_action_plan_text=tot_synthesis_output.model_dump_json(), customized_value_propositions_text=json.dumps([p.model_dump() for p in value_props_output.custom_propositions]), contact_details=B2BContactDetailsInput(emails_found=contact_info.emails_found, instagram_profiles_found=contact_info.instagram_profiles), product_service_offered=self.product_service_context, lead_url=url, company_name=company_name, persona_fictional_name=persona_profile_str), "Crafting personalized message")
-            internal_briefing_output = await run_sub_agent(self.internal_briefing_summary_agent, InternalBriefingSummaryInput(all_lead_data=enhanced_strategy.model_dump()), "Creating internal briefing")
+            personalized_message_output = await get_agent_result(self.b2b_personalized_message_agent, B2BPersonalizedMessageInput(final_action_plan_text=tot_synthesis_output.model_dump_json(), customized_value_propositions_text=json.dumps([p.model_dump() for p in value_props_output.custom_propositions]), contact_details=B2BContactDetailsInput(emails_found=contact_info.emails_found, instagram_profiles_found=contact_info.instagram_profiles), product_service_offered=self.product_service_context, lead_url=url, company_name=company_name, persona_fictional_name=persona_profile_str), "Crafting personalized message")
+            internal_briefing_output = await get_agent_result(self.internal_briefing_summary_agent, InternalBriefingSummaryInput(all_lead_data=enhanced_strategy.model_dump()), "Creating internal briefing")
 
             total_time = time.time() - start_time
             
@@ -226,15 +241,19 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 processing_metadata={"total_processing_time": total_time, "processing_mode": "enhanced", "tavily_enabled": bool(self.tavily_api_key), "company_name": company_name}
             )
             
-            yield StatusUpdateEvent(
-                timestamp=datetime.now().isoformat(), job_id=job_id, user_id=user_id,
-                status_message="Enrichment pipeline completed successfully."
+            pipeline_logger.info("Enrichment pipeline completed successfully.")
+            yield PipelineEndEvent(
+                timestamp=datetime.now().isoformat(),
+                job_id=job_id,
+                user_id=user_id,
+                success=True,
+                total_leads_generated=1, # This pipeline processes one lead
+                execution_time_seconds=total_time,
+                data=final_package.model_dump()
             ).to_dict()
 
-            return final_package
-
         except Exception as e:
-            self.logger.error(f"Enrichment pipeline failed for {url}: {e}\n{traceback.format_exc()}")
+            pipeline_logger.error(f"Enrichment pipeline failed: {e}\n{traceback.format_exc()}")
             yield PipelineErrorEvent(
                 timestamp=datetime.now().isoformat(),
                 job_id=job_id,
@@ -246,8 +265,8 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
 
     def process(self, analyzed_lead: AnalyzedLead) -> ComprehensiveProspectPackage:
         """
-        Synchronous wrapper for the async pipeline.
-        This remains for compatibility with the existing BaseAgent.execute method.
+        DEPRECATED: Synchronous wrapper for the async pipeline.
+        This method is not compatible with the new event-streaming architecture and will not return the final package.
         For streaming, call execute_enrichment_pipeline directly.
         """
         self.logger.warning("Executing enrichment pipeline synchronously. Event streaming is disabled.")
@@ -257,18 +276,14 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             final_result = None
             try:
                 async for event in self.execute_enrichment_pipeline(analyzed_lead, "sync_job", "sync_user"):
+                    if event.get("event_type") == "pipeline_end":
+                        # Attempt to reconstruct the package from the final event
+                        final_data = event.get("data", {})
+                        return ComprehensiveProspectPackage(**final_data)
                     events.append(event)
-                # The return value of an async generator is not directly accessible here.
-                # This synchronous version will need a different way to get the final package.
-                # For now, we'll assume the last event might contain it or we reconstruct it.
-                # This part needs refinement if sync execution is a primary use case.
-                # A better approach would be to not have this sync method at all.
-                # Let's return an empty package for now to satisfy the type hint.
-                # The primary use will be the async generator.
-                self.logger.info("Synchronous execution finished. Note: Final package is not returned in this mode.")
-                
-                # This is a simplified placeholder. A real implementation would need to
-                # properly retrieve the return value from the async generator.
+
+                self.logger.warning("Synchronous execution finished, but no 'pipeline_end' event was found.")
+                # Fallback for safety, though it shouldn't be reached in a successful run.
                 return ComprehensiveProspectPackage(analyzed_lead=analyzed_lead)
 
             except Exception as e:

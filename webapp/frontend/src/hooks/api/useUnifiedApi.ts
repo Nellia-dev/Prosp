@@ -24,7 +24,8 @@ import {
   businessContextApi,
   chatApi,
   metricsApi,
-  prospectApi
+  prospectApi,
+  userApi
 } from '../../services/api';
 
 // Import existing API types

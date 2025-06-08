@@ -14,8 +14,9 @@ class BaseEvent:
     """Base class for all pipeline events."""
     event_type: str
     timestamp: str
-    job_id: Optional[str] = None
-    user_id: Optional[str] = None
+    # Non-default arguments must come before default arguments
+    job_id: str
+    user_id: str
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert event to dictionary for JSON serialization."""

@@ -39,50 +39,41 @@ services:
       - nellia-network
 
   # Core Application Services
-  prospect-mcp-server:
+  prospect-service:
     build:
       context: ./prospect
       dockerfile: Dockerfile
-      target: mcp-server
-    container_name: nellia-prospect-mcp-server
+      target: mcp-server # This target now contains all dependencies
+    container_name: nellia-prospect-service
     environment:
       - PYTHONPATH=/app
       - SQLALCHEMY_DATABASE_URL=sqlite:///./mcp_server_data.db
       - FLASK_ENV=production
       - FLASK_DEBUG=false
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - NESTJS_WEBHOOK_URL=http://backend:3001/api/mcp/webhook/job-complete
+      - NESTJS_EVENT_WEBHOOK_URL=http://backend:3001/api/mcp/webhook/event-stream
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
     ports:
       - "5001:5001"
     volumes:
       - mcp_server_data:/app/data
+      - prospect_logs:/app/logs
+    # This command starts the web server and the celery worker in the same container
+    command: >
+      bash -c "gunicorn --bind 0.0.0.0:5001 --workers 2 --timeout 120 --access-logfile - --error-logfile - --chdir /app/mcp-server app:app &
+               celery -A mcp-server.celery_app worker --loglevel=info"
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    networks:
-      - nellia-network
-    restart: unless-stopped
-
-  prospect-agents:
-    build:
-      context: ./prospect
-      dockerfile: Dockerfile
-      target: agents-system
-    container_name: nellia-prospect-agents
-    environment:
-      - PYTHONPATH=/app
-      - MCP_SERVER_URL=http://prospect-mcp-server:5001
-      - ENABLE_MCP_REPORTING=true
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
-      - LOG_LEVEL=INFO
-    volumes:
-      - prospect_data:/app/data
-      - prospect_logs:/app/logs
-    depends_on:
-      prospect-mcp-server:
-        condition: service_healthy
     networks:
       - nellia-network
     restart: unless-stopped
@@ -103,7 +94,7 @@ services:
       - DB_DATABASE=nellia_prospector # Changed DB_NAME to DB_DATABASE for consistency
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - MCP_SERVER_URL=http://prospect-mcp-server:5001
+      - MCP_SERVER_URL=http://prospect-service:5001
       - MCP_SERVER_TIMEOUT=30000
       - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
       - FRONTEND_URL=http://localhost:3000
@@ -116,7 +107,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      prospect-mcp-server:
+      prospect-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/api/v1/health"]
