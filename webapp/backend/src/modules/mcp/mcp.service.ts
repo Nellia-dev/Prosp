@@ -558,7 +558,7 @@ export class McpService implements OnModuleInit {
     maxLeadsToReturn?: number,
     userId?: string,
   ): Promise<{ status: string; job_id: string }> {
-    this.logger.log(`Dispatching context-driven harvester job for user ${userId || 'unknown'}. Max Sites: ${maxSites}, Max Leads: ${maxLeadsToReturn || 'unlimited'}`);
+    this.logger.log(`[MCP_SERVICE] Preparing to dispatch harvester job for user ${userId || 'unknown'}.`);
     
     const payload = {
       user_id: userId || 'unknown',
@@ -567,8 +567,10 @@ export class McpService implements OnModuleInit {
       max_sites_to_scrape: maxSites,
       timestamp: new Date().toISOString(),
     };
+    this.logger.debug(`[MCP_SERVICE] Payload for MCP: ${JSON.stringify(payload, null, 2)}`);
 
     // This now returns the immediate response from the MCP server, not the results.
+    this.logger.log('[MCP_SERVICE] Sending request to /api/v2/run_agentic_harvester...');
     const response = await this.makeRequest<{
       status: string;
       message: string;
@@ -576,7 +578,7 @@ export class McpService implements OnModuleInit {
       user_id: string;
     }>('POST', '/api/v2/run_agentic_harvester', payload);
 
-    this.logger.log(`Successfully dispatched harvester job to MCP. Job ID: ${response.job_id}`);
+    this.logger.log(`[MCP_SERVICE] Successfully dispatched harvester job to MCP. Response: ${JSON.stringify(response)}`);
     
     return { status: response.status, job_id: response.job_id };
   }

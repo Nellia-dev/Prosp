@@ -52,8 +52,8 @@ services:
       - FLASK_DEBUG=false
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - NESTJS_WEBHOOK_URL=http://backend:3001/api/mcp/webhook/job-complete
-      - NESTJS_EVENT_WEBHOOK_URL=http://backend:3001/api/mcp/webhook/event-stream
+      - NESTJS_WEBHOOK_URL=http://backend:3001/api/v1/mcp-webhook/job-complete
+      - NESTJS_EVENT_WEBHOOK_URL=http://backend:3001/api/v1/api/mcp-webhook/event-stream
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
     ports:

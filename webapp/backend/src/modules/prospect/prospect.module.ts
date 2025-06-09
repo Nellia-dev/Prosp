@@ -7,22 +7,28 @@ import { McpModule } from '../mcp/mcp.module';
 import { UsersModule } from '../users/users.module';
 import { QuotaModule } from '../quota/quota.module';
 import { AuthModule } from '../auth/auth.module';
+import { LeadsModule } from '../leads/leads.module';
+import { ProspectProcessor } from '../queue/processors/prospect.processor';
+import { WebSocketModule } from '../websocket/websocket.module';
 
 @Module({
   imports: [
-    // Queue for prospect processing
     BullModule.registerQueue({
       name: 'prospect-processing',
+    },
+    {
+      name: 'enrichment-processing',
     }),
-    // Required modules
     BusinessContextModule,
     McpModule,
     UsersModule,
     QuotaModule,
     AuthModule,
+    WebSocketModule,
+    LeadsModule,
   ],
   controllers: [ProspectController],
-  providers: [ProspectService],
+  providers: [ProspectService, ProspectProcessor],
   exports: [ProspectService],
 })
 export class ProspectModule {}

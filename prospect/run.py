@@ -60,6 +60,7 @@ async def execute_agentic_pipeline(
     initial_query: str,
     business_context: Dict[str, Any],
     user_id: str,
+    job_id: str,
     max_leads_to_generate: int,
     config_overrides: Dict[str, Any] = None
 ) -> AsyncIterator[Dict[str, Any]]:
@@ -70,6 +71,7 @@ async def execute_agentic_pipeline(
         initial_query: The user's search query or instruction
         business_context: Full business context object from the user
         user_id: ID of the user initiating the request
+        job_id: The unique ID for this job.
         max_leads_to_generate: Maximum number of leads to generate (for quota management)
         config_overrides: Optional configuration overrides (e.g., max_sites_to_scrape)
     
@@ -77,12 +79,12 @@ async def execute_agentic_pipeline(
         Dict[str, Any]: Structured event dictionaries for real-time updates
     """
     pipeline_start_time = time.time()
-    job_id = f"job_{user_id}_{int(pipeline_start_time)}"
     total_leads_generated = 0
     
     try:
         # Emit pipeline start event
         yield PipelineStartEvent(
+            event_type="pipeline_start",
             timestamp=datetime.now().isoformat(),
             job_id=job_id,
             user_id=user_id,
@@ -94,6 +96,7 @@ async def execute_agentic_pipeline(
         enhanced_query = _enhance_query_with_business_context(initial_query, business_context)
         
         yield StatusUpdateEvent(
+            event_type="status_update",
             timestamp=datetime.now().isoformat(),
             job_id=job_id,
             user_id=user_id,
@@ -105,6 +108,7 @@ async def execute_agentic_pipeline(
         
         # Step 1: Query refinement
         yield StatusUpdateEvent(
+            event_type="status_update",
             timestamp=datetime.now().isoformat(),
             job_id=job_id,
             user_id=user_id,
@@ -116,7 +120,8 @@ async def execute_agentic_pipeline(
             agent=root_agent,
             query=enhanced_query,
             job_id=job_id,
-            user_id=user_id
+            user_id=user_id,
+            business_context=business_context
         ):
             yield event_dict
             # Capture the refined query from agent end event
@@ -127,6 +132,7 @@ async def execute_agentic_pipeline(
             refined_query = enhanced_query
             
         yield StatusUpdateEvent(
+            event_type="status_update",
             timestamp=datetime.now().isoformat(),
             job_id=job_id,
             user_id=user_id,
@@ -137,6 +143,7 @@ async def execute_agentic_pipeline(
         selected_agent = _determine_agent_by_intent(initial_query)
         
         yield StatusUpdateEvent(
+            event_type="status_update",
             timestamp=datetime.now().isoformat(),
             job_id=job_id,
             user_id=user_id,
@@ -167,6 +174,7 @@ async def execute_agentic_pipeline(
                 # Stop if we've reached the limit
                 if total_leads_generated >= max_leads_to_generate:
                     yield StatusUpdateEvent(
+                        event_type="status_update",
                         timestamp=datetime.now().isoformat(),
                         job_id=job_id,
                         user_id=user_id,
@@ -177,6 +185,7 @@ async def execute_agentic_pipeline(
         # Pipeline completion
         execution_time = time.time() - pipeline_start_time
         yield PipelineEndEvent(
+            event_type="pipeline_end",
             timestamp=datetime.now().isoformat(),
             job_id=job_id,
             user_id=user_id,
@@ -188,6 +197,7 @@ async def execute_agentic_pipeline(
     except Exception as e:
         execution_time = time.time() - pipeline_start_time
         yield PipelineErrorEvent(
+            event_type="pipeline_error",
             timestamp=datetime.now().isoformat(),
             job_id=job_id,
             user_id=user_id,
@@ -196,6 +206,7 @@ async def execute_agentic_pipeline(
         ).to_dict()
         
         yield PipelineEndEvent(
+            event_type="pipeline_end",
             timestamp=datetime.now().isoformat(),
             job_id=job_id,
             user_id=user_id,
@@ -291,6 +302,7 @@ async def _execute_agent_with_events(
     try:
         # Emit agent start event
         yield AgentStartEvent(
+            event_type="agent_start",
             timestamp=datetime.now().isoformat(),
             job_id=job_id,
             user_id=user_id,
@@ -317,6 +329,7 @@ async def _execute_agent_with_events(
             structured_lead = _structure_lead_data(lead_data, business_context)
             
             yield LeadGeneratedEvent(
+                event_type="lead_generated",
                 timestamp=datetime.now().isoformat(),
                 job_id=job_id,
                 user_id=user_id,
@@ -331,6 +344,7 @@ async def _execute_agent_with_events(
         # Emit agent end event
         execution_time = time.time() - agent_start_time
         yield AgentEndEvent(
+            event_type="agent_end",
             timestamp=datetime.now().isoformat(),
             job_id=job_id,
             user_id=user_id,
@@ -343,6 +357,7 @@ async def _execute_agent_with_events(
     except Exception as e:
         execution_time = time.time() - agent_start_time
         yield AgentEndEvent(
+            event_type="agent_end",
             timestamp=datetime.now().isoformat(),
             job_id=job_id,
             user_id=user_id,

@@ -1,6 +1,7 @@
 import os
 import sys
 import asyncio
+import json
 import requests
 from celery import Celery
 from datetime import datetime
@@ -12,19 +13,15 @@ from typing import List
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # --- NEW IMPORTS for unified pipeline ---
-from core_logic.llm_client import LLMClientFactory
-from data_models.lead_structures import HarvesterOutput, SiteData, GoogleSearchData, AnalyzedLead
-from agents.lead_intake_agent import LeadIntakeAgent
-from agents.lead_analysis_agent import LeadAnalysisAgent
-from agents.enhanced_lead_processor import EnhancedLeadProcessor
 from event_models import PipelineErrorEvent
+from run import execute_agentic_pipeline # Import the real pipeline
 # --- END NEW IMPORTS ---
 
 
 # Get Webhook URLs from environment variables
-NESTJS_WEBHOOK_URL = os.getenv('NESTJS_WEBHOOK_URL', 'http://localhost:3000/api/mcp/webhook/job-complete')
+NESTJS_WEBHOOK_URL = os.getenv('NESTJS_WEBHOOK_URL', 'http://backend:3001/api/v1/mcp-webhook/job-complete')
 # New webhook for real-time event streaming
-NESTJS_EVENT_WEBHOOK_URL = os.getenv('NESTJS_EVENT_WEBHOOK_URL', 'http://localhost:3000/api/mcp/webhook/event-stream')
+NESTJS_EVENT_WEBHOOK_URL = os.getenv('NESTJS_EVENT_WEBHOOK_URL', 'http://backend:3001/api/v1/mcp-webhook/event-stream')
 
 
 # Configure Celery
@@ -59,35 +56,32 @@ def post_event_to_webhook(event_data: dict):
 @celery_app.task(name='mcp.tasks.run_agentic_harvester_task')
 def run_agentic_harvester_task(job_data: dict):
     """
-    Celery task to run the FULL unified pipeline: Harvester -> Intake -> Analysis -> Enrichment.
-    This task now streams events in real-time to the backend.
+    Celery task to orchestrate the agentic pipeline from 'run.py'.
+    It generates an initial query and then calls the pipeline, streaming all
+    events back to the NestJS backend via webhooks.
     """
     job_id = job_data.get('job_id')
     user_id = job_data.get('user_id')
-    
-    # Configure logger for this task run
-    task_logger = logger.bind(job_id=job_id, user_id=user_id)
-    task_logger.info("Unified Celery task started.")
-
-    # --- NEW: Call the context-to-query agent first ---
-    from adk1.agent import business_context_to_query_agent
-    from google.adk.agents import Agent
-    from google.adk.runners import Runner
-    from google.adk.sessions import InMemorySessionService
-    import google.generativeai as genai
-
     business_context = job_data.get('business_context', {})
+    max_leads = job_data.get('max_leads_to_generate', 5) # Default to 5 leads
+
+    task_logger = logger.bind(job_id=job_id, user_id=user_id)
+    task_logger.info(f"CELERY_TASK_RECEIVED: Starting job with data: {job_data}")
+
     if not business_context:
         task_logger.error("Job failed: No business_context provided.")
+        # Optionally send a failure event
         return
 
-    # 1. Generate the search query from the business context
+    # 1. Generate the initial search query from business context
     task_logger.info("Generating search query from business context...")
     initial_query = ""
     try:
-        # This is a simplified, direct call to the agent model for this specific task
+        # This logic remains to create the initial seed query for the pipeline
+        from adk1.agent import business_context_to_query_agent
+        import google.generativeai as genai
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-        model = genai.GenerativeModel("gemini-1.5-flash-8b")
+        model = genai.GenerativeModel("gemini-1.5-flash-latest")
         response = model.generate_content(
             f"{business_context_to_query_agent.instruction}\n\nContexto de Negócio:\n{json.dumps(business_context, indent=2)}"
         )
@@ -95,66 +89,49 @@ def run_agentic_harvester_task(job_data: dict):
         task_logger.info(f"Generated initial query: '{initial_query}'")
     except Exception as e:
         task_logger.error(f"Failed to generate initial query: {e}")
-        # Post a failure event and exit
         error_event = PipelineErrorEvent(
             timestamp=datetime.now().isoformat(),
             job_id=job_id,
             user_id=user_id,
-            error_message=f"Failed to generate initial query from business context: {e}",
+            error_message=f"Failed to generate initial query: {e}",
             error_type="QueryGenerationError"
         ).to_dict()
         post_event_to_webhook(error_event)
         return
 
-    # 2. Simulate the harvester output based on the generated query
-    harvester_output = HarvesterOutput(
-        sites_data=[
-            SiteData(
-                url=f"http://www.{initial_query.replace(' ', '').lower()}.com",
-                extracted_text_content=f"Information about {initial_query}",
-                google_search_data=GoogleSearchData(
-                    title=f"{initial_query} - Official Site",
-                    link=f"http://www.{initial_query.replace(' ', '').lower()}.com",
-                    snippet=f"The official website for {initial_query}"
-                )
+    # 2. Run the actual agentic pipeline and stream events
+    task_logger.info("Starting agentic pipeline execution...")
+    final_pipeline_results = {}
+    try:
+        # Use an async function to run the async generator
+        final_pipeline_results = asyncio.run(
+            _run_pipeline_and_stream_events(
+                initial_query=initial_query,
+                business_context=business_context,
+                user_id=user_id,
+                job_id=job_id,
+                max_leads_to_generate=max_leads
             )
-        ]
-    )
-    
-    # Initialize the core components needed for the pipeline
-    llm_client = LLMClientFactory.create_from_env()
-    business_context = job_data.get('business_context', {})
-    product_service_context = business_context.get('product_service_description', '')
-    competitors_list = ", ".join(business_context.get('competitors', []))
-
-    lead_intake_agent = LeadIntakeAgent(llm_client=llm_client)
-    lead_analysis_agent = LeadAnalysisAgent(llm_client=llm_client, product_service_context=product_service_context)
-    enhanced_processor = EnhancedLeadProcessor(
-        llm_client=llm_client,
-        product_service_context=product_service_context,
-        competitors_list=competitors_list
-    )
-
-    # Run the pipeline asynchronously
-    loop = asyncio.get_event_loop()
-    final_results = loop.run_until_complete(
-        _run_full_pipeline(
-            harvester_output,
-            lead_intake_agent,
-            lead_analysis_agent,
-            enhanced_processor,
-            job_id,
-            user_id,
-            task_logger
         )
-    )
+        task_logger.info("Agentic pipeline execution finished.")
+    except Exception as e:
+        task_logger.error(f"An unexpected error occurred during pipeline execution: {e}")
+        error_event = PipelineErrorEvent(
+            timestamp=datetime.now().isoformat(),
+            job_id=job_id,
+            user_id=user_id,
+            error_message=f"Top-level pipeline execution error: {e}",
+            error_type=type(e).__name__
+        ).to_dict()
+        post_event_to_webhook(error_event)
 
-    # Send the final job completion webhook
+    # 3. Send the final job completion webhook
+    # The 'data' in this payload can be simplified, as detailed events were already sent.
     webhook_payload = {
         "job_id": job_id,
         "user_id": user_id,
-        "status": "completed" if final_results.get("success") else "failed",
-        "data": final_results
+        "status": "completed" if final_pipeline_results.get("success") else "failed",
+        "data": final_pipeline_results # Contains final stats like total leads, time, etc.
     }
 
     try:
@@ -168,81 +145,26 @@ def run_agentic_harvester_task(job_data: dict):
     return webhook_payload
 
 
-async def _run_full_pipeline(
-    harvester_output: HarvesterOutput,
-    intake_agent: LeadIntakeAgent,
-    analysis_agent: LeadAnalysisAgent,
-    enrichment_processor: EnhancedLeadProcessor,
-    job_id: str,
-    user_id: str,
-    task_logger
-) -> dict:
+async def _run_pipeline_and_stream_events(**kwargs) -> dict:
     """
-    The main async pipeline logic.
+    Asynchronously runs the agentic pipeline and streams all events via webhook.
     """
-    total_leads_processed = 0
-    total_leads_succeeded = 0
-    all_enriched_packages = []
-    start_time = time.time()
+    final_event_data = {}
+    enriched_leads = []
+    async for event in execute_agentic_pipeline(**kwargs):
+        post_event_to_webhook(event)
+        
+        # Capture lead data as it is generated
+        if event.get("event_type") == "lead_enriched":
+            enriched_leads.append(event.get("lead_data"))
 
-    # 1. Intake and Analysis Stage
-    task_logger.info(f"Starting Intake and Analysis for {len(harvester_output.sites_data)} sites.")
-    analyzed_leads: List[AnalyzedLead] = []
-    for site_data in harvester_output.sites_data:
-        try:
-            validated_lead = await intake_agent.execute(site_data)
-            if not validated_lead.is_valid:
-                task_logger.warning(f"Skipping invalid lead: {site_data.url}")
-                continue
-            
-            analyzed_lead = await analysis_agent.execute(validated_lead)
-            if analyzed_lead.analysis.relevance_score < 0.1: # Basic relevance filter
-                task_logger.warning(f"Skipping irrelevant lead: {site_data.url} (Score: {analyzed_lead.analysis.relevance_score})")
-                continue
-            
-            analyzed_leads.append(analyzed_lead)
-        except Exception as e:
-            task_logger.error(f"Failed during intake/analysis for {site_data.url}: {e}")
-
-    task_logger.info(f"Intake/Analysis complete. {len(analyzed_leads)} leads are qualified for enrichment.")
-
-    # 2. Enrichment Stage
-    for lead_to_enrich in analyzed_leads:
-        total_leads_processed += 1
-        task_logger.info(f"Starting enrichment for lead: {lead_to_enrich.validated_lead.site_data.url}")
-        try:
-            async for event in enrichment_processor.execute_enrichment_pipeline(
-                analyzed_lead=lead_to_enrich,
-                job_id=job_id,
-                user_id=user_id
-            ):
-                # Stream every event immediately
-                post_event_to_webhook(event)
-                
-                # If this is the final event for this lead, capture the data
-                if event.get("event_type") == "pipeline_end" and event.get("success"):
-                    all_enriched_packages.append(event.get("data"))
-                    total_leads_succeeded += 1
-
-        except Exception as e:
-            task_logger.error(f"Enrichment failed for lead {lead_to_enrich.validated_lead.site_data.url}: {e}")
-            # Post a failure event for this specific lead
-            error_event = PipelineErrorEvent(
-                timestamp=datetime.now().isoformat(),
-                job_id=job_id,
-                user_id=user_id,
-                error_message=str(e),
-                error_type=type(e).__name__
-            ).to_dict()
-            post_event_to_webhook(error_event)
-
-    execution_time = time.time() - start_time
-    task_logger.info(f"Full pipeline processing finished in {execution_time:.2f}s.")
-
-    return {
-        "success": total_leads_succeeded > 0,
-        "total_leads_generated": total_leads_succeeded,
-        "total_leads_processed": total_leads_processed,
-        "execution_time_seconds": execution_time,
-        "leads_data": all_enriched_packages # This now contains the full ComprehensiveProspectPackage
-    }
+        # Capture the final 'pipeline_end' event to return summary data
+        if event.get("event_type") == "pipeline_end":
+            final_event_data = {
+                "success": event.get("success", False),
+                "total_leads_generated": event.get("total_leads_generated", 0),
+                "execution_time_seconds": event.get("execution_time_seconds", 0),
+                "error_message": event.get("error_message"),
+                "leads": enriched_leads  # Include the aggregated leads
+            }
+    return final_event_data

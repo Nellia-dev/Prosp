@@ -18,7 +18,6 @@ import { MetricsModule } from './modules/metrics/metrics.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './modules/health/health.module';
-import { QueueModule } from './modules/queue/queue.module';
 import { WebSocketModule } from './modules/websocket/websocket.module';
 import { UsersModule } from './modules/users/users.module';
 import { QuotaModule } from './modules/quota/quota.module';
@@ -65,7 +64,6 @@ import { ProspectModule } from './modules/prospect/prospect.module';
     AuthModule,
     DatabaseModule,
     HealthModule,
-    QueueModule,
     WebSocketModule,
     UsersModule,
     QuotaModule,

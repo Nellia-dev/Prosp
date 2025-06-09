@@ -40,14 +40,17 @@ export class ProspectProcessor {
     private usersService: UsersService,
     private quotaService: QuotaService,
     private webSocketService: WebSocketService,
-  ) {}
+  ) {
+    this.logger.log('ProspectProcessor initialized. Listening for jobs on "prospect-processing" queue.');
+  }
 
   @Process('run-harvester')
   async handleHarvesterProcess(job: Job<HarvesterJobData>): Promise<any> {
+    this.logger.log(`[JOB_START] Picked up job ${job.id} with name ${job.name}`);
     const { userId, maxSites, maxLeadsToReturn, businessContext } = job.data;
     
-    this.logger.log(`Starting context-driven harvester process for user ${userId}, job ${job.id}`);
-    this.logger.log(`Job parameters: maxSites=${maxSites}, maxLeads=${maxLeadsToReturn}`);
+    this.logger.log(`[JOB_DATA] Starting context-driven harvester process for user ${userId}, job ${job.id}`);
+    this.logger.log(`[JOB_DATA] Job parameters: maxSites=${maxSites}, maxLeads=${maxLeadsToReturn}`);
     
     try {
       await job.progress(10);
