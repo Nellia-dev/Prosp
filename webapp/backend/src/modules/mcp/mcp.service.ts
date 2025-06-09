@@ -553,17 +553,15 @@ export class McpService implements OnModuleInit {
    * @returns A promise resolving to an array of harvester results.
    */
   async runHarvester(
-    query: string,
     maxSites: number,
     context: BusinessContextType,
     maxLeadsToReturn?: number,
     userId?: string,
   ): Promise<{ status: string; job_id: string }> {
-    this.logger.log(`Dispatching agentic harvester job for user ${userId || 'unknown'}. Query: "${query}", Max Sites: ${maxSites}, Max Leads: ${maxLeadsToReturn || 'unlimited'}`);
+    this.logger.log(`Dispatching context-driven harvester job for user ${userId || 'unknown'}. Max Sites: ${maxSites}, Max Leads: ${maxLeadsToReturn || 'unlimited'}`);
     
     const payload = {
       user_id: userId || 'unknown',
-      initial_query: query,
       business_context: context,
       max_leads_to_generate: maxLeadsToReturn || 50, // Default fallback
       max_sites_to_scrape: maxSites,

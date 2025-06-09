@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
   import { useTranslation } from '../hooks/useTranslation';
-  import { useProspectJobs, useStartProspecting, ProspectJob, StartProspectingRequest } from '../hooks/api/useProspect';
+  import { useProspectJobs, useStartProspectingJob, useBusinessContext } from '../hooks/api/useUnifiedApi';
+  import type { ProspectJob } from '../types/api';
   import { usePlanInfo } from '../hooks/api/useUserPlanStatus';
   import { useRealTimeEvent } from '../hooks/useRealTimeUpdates';
   import { Button } from "@/components/ui/button";
   import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-  import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
   import { Input } from "@/components/ui/input";
   import { Label } from "@/components/ui/label";
   import { Progress } from "@/components/ui/progress"; // For job progress
@@ -248,83 +248,14 @@ import React, { useState } from 'react';
     );
   };
  
-  // Child Component: StartProspectingModal (Placeholder)
-  interface StartProspectingModalProps {
-    open: boolean;
-    onClose: () => void;
-    onStart: (data: StartProspectingRequest) => void;
-    isLoading?: boolean;
-  }
-  const StartProspectingModal = ({ open, onClose, onStart, isLoading }: StartProspectingModalProps) => {
-    const { t } = useTranslation();
-    const [searchQuery, setSearchQuery] = useState('');
-    const [maxSites, setMaxSites] = useState<number | undefined>(10);
- 
-    const handleSubmit = () => {
-      if (!searchQuery.trim()) {
-        toast.error(t('prospectDashboard.modal.queryRequiredError'));
-        return;
-      }
-      onStart({ searchQuery, maxSites });
-      // onClose(); // Optionally close modal on submit, or wait for success/error from mutation
-    };
- 
-    return (
-      <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-        <DialogContent className="sm:max-w-[425px] bg-slate-800 border-slate-700 text-slate-200">
-          <DialogHeader>
-            <DialogTitle>{t('prospectDashboard.modal.title')}</DialogTitle>
-            <DialogDescription>{t('prospectDashboard.modal.description')}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="searchQuery" className="text-right text-slate-300">
-                {t('prospectDashboard.modal.searchQueryLabel')}
-              </Label>
-              <Input
-                id="searchQuery"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="col-span-3 bg-slate-700 border-slate-600 text-white placeholder-slate-400"
-                placeholder={t('prospectDashboard.modal.searchQueryPlaceholder')}
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="maxSites" className="text-right text-slate-300">
-                {t('prospectDashboard.modal.maxSitesLabel')}
-              </Label>
-              <Input
-                id="maxSites"
-                type="number"
-                value={maxSites === undefined ? '' : maxSites}
-                onChange={(e) => setMaxSites(e.target.value ? parseInt(e.target.value, 10) : undefined)}
-                className="col-span-3 bg-slate-700 border-slate-600 text-white placeholder-slate-400"
-                placeholder="10"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="outline" className="text-slate-300 border-slate-600 hover:bg-slate-700">
-                {t('common.cancel')}
-              </Button>
-            </DialogClose>
-            <Button type="button" onClick={handleSubmit} disabled={isLoading || !searchQuery.trim()} className="bg-green-600 hover:bg-green-700">
-              {isLoading ? t('common.starting') : t('prospectDashboard.modal.startAction')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  };
  
  
   export const ProspectDashboard = () => {
     const { t } = useTranslation();
-    const [showStartModal, setShowStartModal] = useState(false);
     const [enrichmentStatus, setEnrichmentStatus] = useState<EnrichmentStatus>({});
     const { data: jobsData = [], isLoading: jobsLoading, error: jobsError } = useProspectJobs();
-    const { mutate: startProspecting, isPending: startProspectingLoading } = useStartProspecting();
+    const { mutate: startProspectingJob, isPending: startProspectingLoading } = useStartProspectingJob();
+    const { data: businessContext, isLoading: businessContextLoading } = useBusinessContext();
     const { canStartProspecting, hasActiveJob, isQuotaExhausted, isLoading: planLoading } = usePlanInfo();
  
     useRealTimeEvent('enrichment-update', (data: { job_id: string }) => {
@@ -346,21 +277,28 @@ import React, { useState } from 'react';
     const activeJobs = jobs.filter(job => job && ['waiting', 'active'].includes(job.status));
     const recentJobs = jobs.slice(0, 5); // Assuming jobs are sorted by date descending from API or hook
  
-    const handleStartProspecting = (data: StartProspectingRequest) => {
-      startProspecting(data, {
-        onSuccess: () => {
-          setShowStartModal(false); // Close modal on success
-        },
-        // onError is handled by the hook itself
-      });
+    const handleStartProspecting = () => {
+      if (businessContext) {
+        startProspectingJob(businessContext, {
+          onSuccess: () => {
+            toast.success(t('prospectDashboard.jobStartedSuccess'));
+          },
+          onError: (error) => {
+            toast.error(`${t('prospectDashboard.jobStartedError')}: ${error.message}`);
+          },
+        });
+      } else {
+        toast.error(t('prospectDashboard.businessContextMissingError'));
+      }
     };
  
     // Determine if prospecting should be disabled
     const isProspectingDisabled = () => {
-      if (planLoading) return true;
+      if (planLoading || businessContextLoading) return true;
       if (activeJobs.length > 0 || hasActiveJob) return true;
       if (!canStartProspecting || isQuotaExhausted) return true;
       if (startProspectingLoading) return true;
+      if (!businessContext) return true;
       return false;
     };
  
@@ -378,7 +316,7 @@ import React, { useState } from 'react';
       return t('prospectDashboard.startProspectingButton');
     };
     
-    if (jobsLoading) {
+    if (jobsLoading || businessContextLoading) {
       return <p className="text-slate-300 p-4">{t('common.loading')}...</p>;
     }
  
@@ -397,7 +335,7 @@ import React, { useState } from 'react';
             <CardTitle className="flex items-center justify-between text-slate-100">
               {t('prospectDashboard.title')}
               <Button 
-                onClick={() => setShowStartModal(true)}
+                onClick={handleStartProspecting}
                 disabled={isProspectingDisabled()}
                 className={`${
                   isQuotaExhausted 
@@ -433,12 +371,6 @@ import React, { useState } from 'react';
           </Card>
         )}
  
-        <StartProspectingModal 
-          open={showStartModal}
-          onClose={() => setShowStartModal(false)}
-          onStart={handleStartProspecting}
-          isLoading={startProspectingLoading}
-        />
       </div>
     );
   };

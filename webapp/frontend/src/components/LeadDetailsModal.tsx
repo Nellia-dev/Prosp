@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUpdateLead, useDeleteLead, useProcessLead } from '../hooks/api/useLeads';
-import { LeadData } from '../types/nellia';
+import { LeadData, ProcessingStage, QualificationTier, PROCESSING_STAGES, QUALIFICATION_TIERS } from '../types/unified';
 import { useTranslation } from '../hooks/useTranslation';
 import { 
   Save, 
@@ -35,19 +35,6 @@ interface LeadDetailsModalProps {
   onLeadUpdate?: (lead: LeadData) => void;
 }
 
-const PROCESSING_STAGES = [
-  'lead_qualification',
-  'analyzing_refining', 
-  'possibly_qualified',
-  'prospecting',
-  'revisando',
-  'primeiras_mensagens',
-  'negociando',
-  'desqualificado',
-  'reuniao_agendada'
-];
-
-const QUALIFICATION_TIERS = ['High Potential', 'Medium Potential', 'Low Potential'];
 
 export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDetailsModalProps) => {
   const { t } = useTranslation();
@@ -108,9 +95,8 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
         company_name: updatedLead.companyName,
         website: updatedLead.website,
         company_sector: updatedLead.sector,
-        qualification_tier: updatedLead.qualificationTier === 'A' ? 'High Potential' : 
-                           updatedLead.qualificationTier === 'B' ? 'Medium Potential' : 'Low Potential',
-        processing_stage: updatedLead.processingStage as LeadData['processing_stage'],
+        qualification_tier: updatedLead.qualificationTier as QualificationTier,
+        processing_stage: updatedLead.processingStage as ProcessingStage,
         pain_point_analysis: updatedLead.painPoints || [],
         purchase_triggers: updatedLead.triggers || [],
         relevance_score: updatedLead.relevanceScore,

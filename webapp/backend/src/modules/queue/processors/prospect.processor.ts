@@ -44,10 +44,10 @@ export class ProspectProcessor {
 
   @Process('run-harvester')
   async handleHarvesterProcess(job: Job<HarvesterJobData>): Promise<any> {
-    const { userId, searchQuery, maxSites, maxLeadsToReturn } = job.data;
+    const { userId, maxSites, maxLeadsToReturn, businessContext } = job.data;
     
-    this.logger.log(`Starting harvester process for user ${userId}, job ${job.id}`);
-    this.logger.log(`Job parameters: query="${searchQuery}", maxSites=${maxSites}, maxLeads=${maxLeadsToReturn}`);
+    this.logger.log(`Starting context-driven harvester process for user ${userId}, job ${job.id}`);
+    this.logger.log(`Job parameters: maxSites=${maxSites}, maxLeads=${maxLeadsToReturn}`);
     
     try {
       await job.progress(10);
@@ -63,29 +63,21 @@ export class ProspectProcessor {
       this.logger.log(`User ${userId} has ${remainingQuota} leads remaining in quota`);
       await job.progress(20);
 
-      // Step 2: Get business context
-      const context = await this.businessContextService.getContextForMcp(userId);
-      if (!context) {
-        throw new Error('Business context not found or not configured.');
+      // Step 2: Business context is already in job.data, no need to fetch again.
+      if (!businessContext) {
+        throw new Error('Business context not found in job data.');
       }
       
-      this.logger.debug(`Job ${job.id}: Business context fetched for user ${userId}`);
-      await job.progress(30);
-
-      // Step 3: Build enhanced search query
-      const enhancedQuery = this.buildSearchQuery(searchQuery, context);
-      this.logger.debug(`Job ${job.id}: Enhanced search query: "${enhancedQuery}"`);
+      this.logger.debug(`Job ${job.id}: Business context is ready for user ${userId}`);
       await job.progress(40);
 
-      // Step 4: Execute harvester with quota limits
-      this.logger.log(`Job ${job.id}: Executing harvester for user ${userId} (query: "${enhancedQuery}", maxSites: ${maxSites}, maxLeads: ${maxLeadsToReturn})`);
-      // Step 4: Dispatch job to MCP via McpService
-      this.logger.log(`Job ${job.id}: Dispatching to MCP for user ${userId} (query: "${enhancedQuery}", maxSites: ${maxSites}, maxLeads: ${maxLeadsToReturn})`);
+      // Step 3: Dispatch job to MCP via McpService.
+      // The MCP service will now handle generating the query from the context.
+      this.logger.log(`Job ${job.id}: Dispatching to MCP for user ${userId} (maxSites: ${maxSites}, maxLeads: ${maxLeadsToReturn})`);
       
       const mcpResponse = await this.mcpService.runHarvester(
-        enhancedQuery,
         maxSites,
-        context,
+        businessContext,
         Math.min(maxLeadsToReturn, remainingQuota), // Respect both job limit and remaining quota
         userId,
       );
@@ -123,7 +115,7 @@ export class ProspectProcessor {
         userId: userId,
         status: 'failed',
         error: `Failed to dispatch job to MCP: ${error.message}`,
-        searchQuery: searchQuery,
+        searchQuery: 'Context-driven search', // Placeholder for UI
         startedAt: new Date(job.timestamp).toISOString(),
         failedAt: new Date().toISOString(),
         timestamp: new Date().toISOString(),
@@ -134,15 +126,5 @@ export class ProspectProcessor {
     }
   }
 
-  private buildSearchQuery(baseQuery: string, context: BusinessContextType): string {
-    const industryTerms = context.industry_focus?.join(' OR ') || '';
-    const targetMarket = context.target_market || '';
-    
-    let query = baseQuery;
-    if (industryTerms) query += ` (${industryTerms})`;
-    if (targetMarket) query += ` ${targetMarket}`;
-    
-    return query.trim();
-  }
 
 }

@@ -64,7 +64,7 @@ services:
     # This command starts the web server and the celery worker in the same container
     command: >
       bash -c "gunicorn --bind 0.0.0.0:5001 --workers 2 --timeout 120 --access-logfile - --error-logfile - --chdir /app/mcp-server app:app &
-               celery -A mcp-server.celery_app worker --loglevel=info"
+               (cd /app/mcp-server && celery -A celery_app worker --loglevel=info)"
     depends_on:
       redis:
         condition: service_healthy

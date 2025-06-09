@@ -2,15 +2,16 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Globe, Eye } from "lucide-react";
-import { LeadData } from "../types/nellia";
+import { LeadData } from "../types/unified";
 import { useState } from "react";
 
 interface CompactLeadCardProps {
   lead: LeadData;
   onExpand?: (lead: LeadData) => void;
+  isUpdated?: boolean;
 }
 
-export const CompactLeadCard = ({ lead, onExpand }: CompactLeadCardProps) => {
+export const CompactLeadCard = ({ lead, onExpand, isUpdated }: CompactLeadCardProps) => {
   const [isHovered, setIsHovered] = useState(false);
 
   const getQualificationColor = (tier: string) => {
@@ -25,8 +26,8 @@ export const CompactLeadCard = ({ lead, onExpand }: CompactLeadCardProps) => {
   const formatScore = (score: number) => (score * 100).toFixed(0);
 
   return (
-    <Card 
-      className="relative overflow-hidden bg-slate-800 border-slate-600 hover:border-green-500/50 transition-all duration-200 cursor-pointer group mb-2"
+    <Card
+      className={`relative overflow-hidden bg-slate-800 border-slate-600 hover:border-green-500/50 transition-all duration-200 cursor-pointer group mb-2 ${isUpdated ? 'glow-animation' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={() => onExpand?.(lead)}

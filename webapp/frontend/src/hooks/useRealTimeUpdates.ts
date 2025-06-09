@@ -2,15 +2,13 @@ import { useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useToast } from './use-toast';
-import { AgentStatus, LeadData, AgentMetrics, DashboardMetricsResponse } from '../types/nellia';
+import { AgentStatus, LeadData, AgentMetrics, DashboardMetrics, ProcessingStage } from '../types/unified';
 import { useAuth } from '../contexts/AuthContext';
 
 // Define WebSocket event data types
 interface WebSocketEventData {
   [key: string]: unknown;
 }
-
-type ProcessingStage = LeadData['processing_stage'];
 
 interface AgentStatusUpdateEvent {
   agentId: string;
@@ -26,6 +24,15 @@ interface LeadStageUpdateEvent {
 
 interface LeadCreatedEvent {
   lead: LeadData;
+}
+
+interface LeadEnrichedEvent {
+  lead: LeadData;
+}
+
+interface LeadEnrichmentFailedEvent {
+    leadId: string;
+    error: string;
 }
 
 interface LeadDeletedEvent {
@@ -166,19 +173,60 @@ export const useRealTimeUpdates = () => {
     const unsubStage = subscribe<LeadStageUpdateEvent>('lead-stage-update', handleLeadStageUpdate);
     const unsubDeleted = subscribe<LeadDeletedEvent>('lead-deleted', handleLeadDeleted);
 
+    const handleLeadEnriched = (data: LeadEnrichedEvent) => {
+      const updatedLead = data.lead;
+      queryClient.setQueryData(['leads'], (oldData: { data?: LeadData[] } | undefined) => {
+        if (!oldData?.data) return oldData;
+        return {
+          ...oldData,
+          data: oldData.data.map(lead =>
+            lead.id === updatedLead.id ? { ...lead, ...updatedLead } : lead
+          ),
+        };
+      });
+      queryClient.invalidateQueries({ queryKey: ['leads', updatedLead.id] });
+      toast({
+        title: "Lead Enriched",
+        description: `Lead ${updatedLead.company_name} has been fully enriched.`,
+      });
+    };
+
+    const handleLeadEnrichmentFailed = (data: LeadEnrichmentFailedEvent) => {
+      queryClient.setQueryData(['leads'], (oldData: { data?: LeadData[] } | undefined) => {
+        if (!oldData?.data) return oldData;
+        return {
+          ...oldData,
+          data: oldData.data.map(lead =>
+            lead.id === data.leadId ? { ...lead, processing_stage: 'failed' as ProcessingStage } : lead
+          ),
+        };
+      });
+      queryClient.invalidateQueries({ queryKey: ['leads', data.leadId] });
+      toast({
+        title: "Lead Enrichment Failed",
+        description: data.error,
+        variant: "destructive",
+      });
+    };
+
+    const unsubEnriched = subscribe<LeadEnrichedEvent>('lead-enriched', handleLeadEnriched);
+    const unsubFailed = subscribe<LeadEnrichmentFailedEvent>('lead_enrichment_failed', handleLeadEnrichmentFailed);
+
     return () => {
       unsubCreated();
       unsubStage();
       unsubDeleted();
+      unsubEnriched();
+      unsubFailed();
     };
   }, [subscribe, queryClient, toast]);
 
   // Handle Metrics Updates
   useEffect(() => {
-    const handleMetricsUpdate = (data: DashboardMetricsResponse) => {
+    const handleMetricsUpdate = (data: DashboardMetrics) => {
       queryClient.setQueryData(['dashboard-metrics'], data);
     };
-    const unsubscribe = subscribe<DashboardMetricsResponse>('metrics-update', handleMetricsUpdate);
+    const unsubscribe = subscribe<DashboardMetrics>('metrics-update', handleMetricsUpdate);
     return unsubscribe;
   }, [subscribe, queryClient]);
 

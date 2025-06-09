@@ -260,10 +260,6 @@ export const metricsApi = {
 // Types for ProspectAPI (should match types in useProspect.ts or a shared types file)
 // These types are placeholders and should align with the actual DTOs/interfaces
 // used in useProspect.ts and the backend ProspectController/ProspectService.
-interface StartProspectingRequestDto {
-  searchQuery: string;
-  maxSites?: number;
-}
 
 interface ProspectJobResponse {
   jobId: string | number;
@@ -284,9 +280,8 @@ interface ProspectJobStatusDetailsResponse extends ProspectJobResponse {
 }
 
 export const prospectApi = {
-  start: async (): Promise<{ jobId: string | number; status: string }> => {
-    // Backend /prospect/start returns { jobId: job.id, status: 'started' } directly.
-    const response = await apiClient.post<{ jobId: string | number; status: string }>('/prospect/start');
+  startProspectingJob: async (businessContext: BusinessContextRequest): Promise<{ jobId: string | number; status: string }> => {
+    const response = await apiClient.post<{ jobId: string | number; status: string }>('/prospect/start', businessContext);
     return response.data;
   },
   getJobs: async (): Promise<ProspectJob[]> => {

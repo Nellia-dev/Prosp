@@ -69,19 +69,53 @@ def run_agentic_harvester_task(job_data: dict):
     task_logger = logger.bind(job_id=job_id, user_id=user_id)
     task_logger.info("Unified Celery task started.")
 
-    # This is a placeholder for the actual harvester logic.
-    # In a real scenario, a harvester would run here and produce SiteData objects.
-    # For this refactoring, we simulate its output based on the initial query.
-    # We assume the harvester found one "lead" which is the company from the query.
+    # --- NEW: Call the context-to-query agent first ---
+    from adk1.agent import business_context_to_query_agent
+    from google.adk.agents import Agent
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    import google.generativeai as genai
+
+    business_context = job_data.get('business_context', {})
+    if not business_context:
+        task_logger.error("Job failed: No business_context provided.")
+        return
+
+    # 1. Generate the search query from the business context
+    task_logger.info("Generating search query from business context...")
+    initial_query = ""
+    try:
+        # This is a simplified, direct call to the agent model for this specific task
+        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+        model = genai.GenerativeModel("gemini-1.5-flash-8b")
+        response = model.generate_content(
+            f"{business_context_to_query_agent.instruction}\n\nContexto de Negócio:\n{json.dumps(business_context, indent=2)}"
+        )
+        initial_query = response.text.strip()
+        task_logger.info(f"Generated initial query: '{initial_query}'")
+    except Exception as e:
+        task_logger.error(f"Failed to generate initial query: {e}")
+        # Post a failure event and exit
+        error_event = PipelineErrorEvent(
+            timestamp=datetime.now().isoformat(),
+            job_id=job_id,
+            user_id=user_id,
+            error_message=f"Failed to generate initial query from business context: {e}",
+            error_type="QueryGenerationError"
+        ).to_dict()
+        post_event_to_webhook(error_event)
+        return
+
+    # 2. Simulate the harvester output based on the generated query
     harvester_output = HarvesterOutput(
         sites_data=[
             SiteData(
-                url=f"http://www.{job_data['initial_query'].replace(' ', '').lower()}.com",
-                extracted_text_content=f"Information about {job_data['initial_query']}",
+                url=f"http://www.{initial_query.replace(' ', '').lower()}.com",
+                extracted_text_content=f"Information about {initial_query}",
                 google_search_data=GoogleSearchData(
-                    title=f"{job_data['initial_query']} - Official Site",
-                    link=f"http://www.{job_data['initial_query'].replace(' ', '').lower()}.com",
-                    snippet=f"The official website for {job_data['initial_query']}"
+                    title=f"{initial_query} - Official Site",
+                    link=f"http://www.{initial_query.replace(' ', '').lower()}.com",
+                    snippet=f"The official website for {initial_query}"
                 )
             )
         ]

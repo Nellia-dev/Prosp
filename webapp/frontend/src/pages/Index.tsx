@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { TranslationProvider, useTranslation } from '../hooks/useTranslation';
-import { useAgents, useLeads, useDashboardMetrics, useBusinessContext, useStartProspecting } from '../hooks/api/useUnifiedApi';
+import { useAgents, useLeads, useDashboardMetrics, useBusinessContext, useStartProspectingJob } from '../hooks/api/useUnifiedApi';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -155,7 +155,7 @@ const DashboardContent = () => {
   const { data: leadsResponse, isLoading: leadsLoading, error: leadsError } = useLeads();
   const { data: metricsData, isLoading: metricsLoading, error: metricsError } = useDashboardMetrics();
   const { data: businessContext, isLoading: businessContextLoading, isError: businessContextError, isSuccess: businessContextSuccess } = useBusinessContext();
-  const startProspectingMutation = useStartProspecting();
+  const startProspectingMutation = useStartProspectingJob();
 
   const handleContextSetupComplete = () => {
     setShowBusinessContextForm(false);
@@ -164,7 +164,7 @@ const DashboardContent = () => {
 
   const handleStartHarvesting = () => {
     if (businessContext) {
-      startProspectingMutation.mutate();
+      startProspectingMutation.mutate(businessContext);
     }
   };
 

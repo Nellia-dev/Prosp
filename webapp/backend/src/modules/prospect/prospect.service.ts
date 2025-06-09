@@ -14,7 +14,6 @@ export class StartProspectingDto {
 
 export interface HarvesterJobData {
   userId: string; // ID of the user who initiated the job
-  searchQuery: string;
   maxSites: number;
   maxLeadsToReturn: number; // Calculated based on user's remaining quota
   businessContext: BusinessContextType; // Pass the full context
@@ -88,7 +87,6 @@ export class ProspectService {
     // Step 4: Prepare Job Data
     const jobData: HarvesterJobData = {
       userId: userId,
-      searchQuery: context.business_description, // Use business description as the query
       maxSites: 10, // Hardcoded default, as per user request
       maxLeadsToReturn: maxLeadsUserCanRequest, // Key: limit for MCP
       businessContext: context,

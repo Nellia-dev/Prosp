@@ -52,7 +52,6 @@ import type {
   PaginatedResponse,
   BulkLeadOperation,
   ProspectJob,
-  StartProspectingRequest,
   UserPlanStatusResponse,
 } from '../../types/api';
 
@@ -368,13 +367,13 @@ export const useProcessLead = (
 // Prospecting Hooks
 // ===================================
 
-export const useStartProspecting = (
-  options?: UseMutationOptions<{ jobId: string | number; status: string }, Error, void>
+export const useStartProspectingJob = (
+  options?: UseMutationOptions<{ jobId: string | number; status: string }, Error, BusinessContextRequest>
 ) => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => prospectApi.start(),
+    mutationFn: (businessContext: BusinessContextRequest) => prospectApi.startProspectingJob(businessContext),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.prospect.jobs });
       queryClient.invalidateQueries({ queryKey: queryKeys.metrics.dashboard });

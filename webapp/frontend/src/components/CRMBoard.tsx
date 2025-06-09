@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,9 +35,11 @@ const STAGE_CONFIGS = PROCESSING_STAGES.map(stage => ({
 
 export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardProps) => {
   const { t } = useTranslation();
+  useRealTimeUpdates();
   const [draggedLead, setDraggedLead] = useState<LeadData | null>(null);
   const [selectedLead, setSelectedLead] = useState<LeadData | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [recentlyUpdated, setRecentlyUpdated] = useState<Record<string, boolean>>({});
   const [filters, setFilters] = useState({
     search: '',
     sector: 'all',
@@ -46,16 +49,27 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
 
   const updateLeadStageMutation = useUpdateLeadStage();
 
+  useEffect(() => {
+    if (leads.length > 0) {
+      const latestLead = leads.reduce((a, b) => new Date(a.updated_at) > new Date(b.updated_at) ? a : b);
+      setRecentlyUpdated(prev => ({ ...prev, [latestLead.id]: true }));
+      const timer = setTimeout(() => {
+        setRecentlyUpdated(prev => ({ ...prev, [latestLead.id]: false }));
+      }, 5000); // Glow for 5 seconds
+      return () => clearTimeout(timer);
+    }
+  }, [leads]);
+
   // Filter leads based on current filters
   const filteredLeads = useMemo(() => {
     return leads.filter(lead => {
-      const searchMatch = !filters.search || 
+      const searchMatch = !filters.search ||
         lead.company_name.toLowerCase().includes(filters.search.toLowerCase()) ||
         (lead.website && lead.website.toLowerCase().includes(filters.search.toLowerCase()));
       
       const sectorMatch = filters.sector === 'all' || lead.company_sector === filters.sector;
       
-      const qualificationMatch = filters.qualification === 'all' || 
+      const qualificationMatch = filters.qualification === 'all' ||
         lead.qualification_tier === filters.qualification;
       
       const scoreMatch = filters.scoreRange === 'all' || (() => {
@@ -301,9 +315,10 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
                       draggedLead?.id === lead.id ? 'opacity-50' : 'hover:opacity-90'
                     }`}
                   >
-                    <CompactLeadCard 
-                      lead={lead} 
+                    <CompactLeadCard
+                      lead={lead}
                       onExpand={handleLeadExpand}
+                      isUpdated={recentlyUpdated[lead.id]}
                     />
                   </div>
                 ))}

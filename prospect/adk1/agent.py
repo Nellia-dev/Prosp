@@ -370,11 +370,36 @@ def process_provided_urls_for_leads(urls: List[str], lead_analysis_instruction: 
 
 # --- AGENTES (Adaptados para Geração de Leads) ---
 
+# NOVO AGENTE: Ponto de entrada que transforma o contexto de negócio em uma query de busca.
+business_context_to_query_agent = Agent(
+    name="business_context_to_query_agent",
+    model="gemini-1.5-flash-8b",
+    description="""Você é um especialista em marketing e prospecção. Sua função é analisar um rico contexto de negócio de um cliente e destilar essa informação em uma query de busca curta e eficaz para encontrar leads.""",
+    instruction="""Sua tarefa é receber um objeto JSON 'business_context'.
+    Analise a descrição do negócio, o público-alvo, a indústria e a localização.
+    Com base nisso, crie uma única string de busca otimizada para encontrar leads B2B relevantes.
+    A query deve ser concisa e focada.
+    SUA RESPOSTA FINAL DEVE SER APENAS A QUERY DE BUSCA GERADA, SEM QUALQUER TEXTO ADICIONAL.
+
+    Exemplo de Contexto de Negócio:
+    {
+      "business_description": "Oferecemos um software de CRM baseado em IA para otimizar o funil de vendas de equipes de pequeno e médio porte.",
+      "industry_focus": ["SaaS", "Tecnologia", "Vendas"],
+      "target_market": "Pequenas e médias empresas no Brasil",
+      "location": "São Paulo, Brasil"
+    }
+
+    Sua resposta: "empresas SaaS PME em São Paulo que precisam de CRM"
+    """,
+    tools=[]
+)
+
+
 # Este agente é o ponto de entrada inicial para refinar a query do usuário.
 # Ele é exposto como 'root_agent' para corresponder à sua solicitação no __init__.py.
 _query_refiner_agent_internal = Agent(
     name="query_refiner_agent",
-    model="gemini-1.5-flash-8b", 
+    model="gemini-1.5-flash-8b",
     description="""Você é um agente especialista em refinar e otimizar consultas de pesquisa em linguagem natural para torná-las mais eficazes em motores de busca para encontrar leads. Sua saída é APENAS a query refinada.""",
     instruction="""Sua tarefa é receber uma solicitação de busca em linguagem natural do usuário sobre leads.
     Analise a intenção e os termos chave.

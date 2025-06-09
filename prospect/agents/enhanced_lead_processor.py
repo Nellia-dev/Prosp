@@ -128,15 +128,10 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
     async def execute_enrichment_pipeline(
         self, analyzed_lead: AnalyzedLead, job_id: str, user_id: str
     ) -> AsyncIterator[Dict[str, Any]]:
-        """
-        Asynchronously executes the full enrichment pipeline, yielding events for each step.
-        The final result is yielded as a 'pipeline_end' event with the package in its data field.
-        """
         start_time = time.time()
         url = str(analyzed_lead.validated_lead.site_data.url)
         company_name = self._extract_company_name(analyzed_lead)
         
-        # Bind logger with context for this pipeline execution
         pipeline_logger = self.logger.bind(job_id=job_id, user_id=user_id, company_url=url)
         pipeline_logger.info(f"Starting enrichment pipeline for: {company_name}")
 
@@ -148,7 +143,6 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         ).to_dict()
 
         try:
-            # This is a helper to run a sub-agent, yield events, and return the result
             async def run_and_log_agent(agent, input_data, agent_input_description):
                 agent_logger = pipeline_logger.bind(agent_name=agent.name)
                 agent_logger.info(f"Executing sub-agent. Input: {agent_input_description}")
@@ -176,21 +170,18 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 
                 return output
 
-            # Prepare common inputs
+            async def get_agent_result(agent, input_data, description):
+                result = None
+                try:
+                    result = await run_and_log_agent(agent, input_data, description)
+                except Exception as e:
+                    pipeline_logger.error(f"Error in get_agent_result for {agent.name}: {e}")
+                return result
+
             analysis_obj = analyzed_lead.analysis
             persona_profile_str = self._construct_persona_profile_string(analysis_obj, company_name)
 
             # --- Execute Sub-Agents Sequentially ---
-            # --- Execute Sub-Agents Sequentially ---
-            # The 'async for' loop correctly handles the async generator
-            async def get_agent_result(agent, input_data, description):
-                result = None
-                async for event in run_and_log_agent(agent, input_data, description):
-                    if event.get("event_type") == "agent_end":
-                        result = event.get("output")
-                    yield event
-                return result
-
             external_intel = await get_agent_result(self.tavily_enrichment_agent, TavilyEnrichmentInput(company_name=company_name, initial_extracted_text=analyzed_lead.validated_lead.site_data.extracted_text_content or ""), f"Enriching data for {company_name}")
             contact_info = await get_agent_result(self.contact_extraction_agent, ContactExtractionInput(extracted_text=analyzed_lead.validated_lead.cleaned_text_content or "", company_name=company_name, product_service_offered=self.product_service_context), f"Extracting contacts for {company_name}")
             
@@ -215,7 +206,6 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             detailed_approach_plan_output = await get_agent_result(self.detailed_approach_plan_agent, DetailedApproachPlanInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents, final_action_plan_text=tot_synthesis_output.model_dump_json(), product_service_offered=self.product_service_context, lead_url=url), "Developing detailed approach plan")
             objection_handling_output = await get_agent_result(self.objection_handling_agent, ObjectionHandlingInput(detailed_approach_plan_text=detailed_approach_plan_output.model_dump_json(), persona_profile=persona_profile_str, product_service_offered=self.product_service_context, company_name=company_name), "Preparing objection handling")
 
-            # Final construction of the package
             enhanced_strategy = EnhancedStrategy(
                 external_intelligence=external_intel, contact_information=contact_info, pain_point_analysis=pain_analysis_output,
                 competitor_intelligence=competitor_intel_output, purchase_triggers=purchase_triggers_output, lead_qualification=qualification_output,
@@ -247,7 +237,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 job_id=job_id,
                 user_id=user_id,
                 success=True,
-                total_leads_generated=1, # This pipeline processes one lead
+                total_leads_generated=1,
                 execution_time_seconds=total_time,
                 data=final_package.model_dump()
             ).to_dict()
