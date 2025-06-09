@@ -19,9 +19,9 @@ from run import execute_agentic_pipeline # Import the real pipeline
 
 
 # Get Webhook URLs from environment variables
-NESTJS_WEBHOOK_URL = os.getenv('NESTJS_WEBHOOK_URL', 'http://backend:3001/api/v1/mcp-webhook/job-complete')
+NESTJS_WEBHOOK_URL = os.getenv('NESTJS_WEBHOOK_URL', 'http://backend:3001/api/v1/mcp/webhook/job-complete')
 # New webhook for real-time event streaming
-NESTJS_EVENT_WEBHOOK_URL = os.getenv('NESTJS_EVENT_WEBHOOK_URL', 'http://backend:3001/api/v1/mcp-webhook/event-stream')
+NESTJS_EVENT_WEBHOOK_URL = os.getenv('NESTJS_EVENT_WEBHOOK_URL', 'http://backend:3001/api/v1/mcp/webhook/event-stream')
 
 
 # Configure Celery
@@ -131,7 +131,7 @@ def run_agentic_harvester_task(job_data: dict):
         "job_id": job_id,
         "user_id": user_id,
         "status": "completed" if final_pipeline_results.get("success") else "failed",
-        "data": final_pipeline_results # Contains final stats like total leads, time, etc.
+        "data": final_pipeline_results
     }
 
     try:
