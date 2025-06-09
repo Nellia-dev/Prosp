@@ -152,71 +152,116 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                     agent_name=agent.name, input_query=agent_input_description
                 ).to_dict()
                 
-                output = await agent.execute_async(input_data)
-                
-                success = not getattr(output, 'error_message', None)
-                
+                output = None
+                try:
+                    output = await agent.execute_async(input_data)
+                    success = not getattr(output, 'error_message', None)
+                except Exception as e:
+                    agent_logger.error(f"Sub-agent {agent.name} raised an exception: {e}")
+                    success = False
+                    # Try to create a default output object with an error message
+                    try:
+                        output = agent.output_model(error_message=f"Agent execution failed: {e}")
+                    except:
+                        # If that fails, we can't do much
+                        pass
+
+
                 yield AgentEndEvent(
                     timestamp=datetime.now().isoformat(), job_id=job_id, user_id=user_id,
                     agent_name=agent.name, success=success,
-                    final_response=output.model_dump_json(),
-                    error_message=getattr(output, 'error_message', None)
+                    final_response=output.model_dump_json() if output else None,
+                    error_message=getattr(output, 'error_message', "Agent execution failed with an exception.")
                 ).to_dict()
                 
                 if not success:
-                    agent_logger.warning(f"Sub-agent failed: {output.error_message}")
+                    agent_logger.warning(f"Sub-agent failed: {getattr(output, 'error_message', 'Unknown error')}")
                 else:
                     agent_logger.info(f"Sub-agent finished successfully.")
                 
-                return output
+                yield output
 
             async def get_agent_result(agent, input_data, description):
                 result = None
+                events = []
                 try:
-                    result = await run_and_log_agent(agent, input_data, description)
+                    async for item in run_and_log_agent(agent, input_data, description):
+                        if isinstance(item, dict) and 'event_type' in item:
+                            events.append(item)
+                        else:
+                            result = item
                 except Exception as e:
-                    pipeline_logger.error(f"Error in get_agent_result for {agent.name}: {e}")
-                return result
+                    pipeline_logger.error(f"Error in get_agent_result for {agent.name}: {e}\n{traceback.format_exc()}")
+                    # The original code returned None, so we'll create a default error object if possible
+                    # or just let result be None.
+                    pass
+                return result, events
 
             analysis_obj = analyzed_lead.analysis
             persona_profile_str = self._construct_persona_profile_string(analysis_obj, company_name)
 
             # --- Execute Sub-Agents Sequentially ---
-            external_intel = await get_agent_result(self.tavily_enrichment_agent, TavilyEnrichmentInput(company_name=company_name, initial_extracted_text=analyzed_lead.validated_lead.site_data.extracted_text_content or ""), f"Enriching data for {company_name}")
-            contact_info = await get_agent_result(self.contact_extraction_agent, ContactExtractionInput(extracted_text=analyzed_lead.validated_lead.cleaned_text_content or "", company_name=company_name, product_service_offered=self.product_service_context), f"Extracting contacts for {company_name}")
+            external_intel, events = await get_agent_result(self.tavily_enrichment_agent, TavilyEnrichmentInput(company_name=company_name, initial_extracted_text=analyzed_lead.validated_lead.site_data.extracted_text_content or ""), f"Enriching data for {company_name}")
+            for event in events: yield event
+            
+            contact_info, events = await get_agent_result(self.contact_extraction_agent, ContactExtractionInput(extracted_text=analyzed_lead.validated_lead.cleaned_text_content or "", company_name=company_name, product_service_offered=self.product_service_context), f"Extracting contacts for {company_name}")
+            for event in events: yield event
             
             lead_analysis_str_for_agents = self._construct_lead_analysis_string(analysis_obj, external_intel)
             
-            pain_analysis_output = await get_agent_result(self.pain_point_deepening_agent, PainPointDeepeningInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, product_service_offered=self.product_service_context, company_name=company_name), "Deepening pain points")
+            pain_analysis_output, events = await get_agent_result(self.pain_point_deepening_agent, PainPointDeepeningInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, product_service_offered=self.product_service_context, company_name=company_name), "Deepening pain points")
+            for event in events: yield event
             deepened_pain_points_for_agents = json.dumps(pain_analysis_output.model_dump(), ensure_ascii=False) if pain_analysis_output and not pain_analysis_output.error_message else "Análise de dores não disponível."
 
-            qualification_output = await get_agent_result(self.lead_qualification_agent, LeadQualificationInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents, product_service_offered=self.product_service_context), "Qualifying lead")
-            competitor_intel_output = await get_agent_result(self.competitor_identification_agent, CompetitorIdentificationInput(initial_extracted_text=analyzed_lead.validated_lead.site_data.extracted_text_content or "", product_service_offered=", ".join(analysis_obj.main_services), known_competitors_list_str=self.competitors_list), "Identifying competitors")
-            purchase_triggers_output = await get_agent_result(self.buying_trigger_identification_agent, BuyingTriggerIdentificationInput(lead_data_str=json.dumps(analyzed_lead.analysis.model_dump()), enriched_data=external_intel.tavily_enrichment or "", product_service_offered=self.product_service_context), "Identifying buying triggers")
+            qualification_output, events = await get_agent_result(self.lead_qualification_agent, LeadQualificationInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents, product_service_offered=self.product_service_context), "Qualifying lead")
+            for event in events: yield event
             
-            value_props_output = await get_agent_result(self.value_proposition_customization_agent, ValuePropositionCustomizationInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents, buying_triggers_report=json.dumps([t.model_dump() for t in purchase_triggers_output.identified_triggers]), product_service_offered=self.product_service_context, company_name=company_name), "Customizing value propositions")
-            strategic_questions_output = await get_agent_result(self.strategic_question_generation_agent, StrategicQuestionGenerationInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents), "Generating strategic questions")
+            competitor_intel_output, events = await get_agent_result(self.competitor_identification_agent, CompetitorIdentificationInput(initial_extracted_text=analyzed_lead.validated_lead.site_data.extracted_text_content or "", product_service_offered=", ".join(analysis_obj.main_services), known_competitors_list_str=self.competitors_list), "Identifying competitors")
+            for event in events: yield event
+
+            purchase_triggers_output, events = await get_agent_result(self.buying_trigger_identification_agent, BuyingTriggerIdentificationInput(lead_data_str=json.dumps(analyzed_lead.analysis.model_dump()), enriched_data=external_intel.tavily_enrichment if external_intel else "", product_service_offered=self.product_service_context), "Identifying buying triggers")
+            for event in events: yield event
+            
+            value_props_output, events = await get_agent_result(self.value_proposition_customization_agent, ValuePropositionCustomizationInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents, buying_triggers_report=json.dumps([t.model_dump() for t in purchase_triggers_output.identified_triggers]) if purchase_triggers_output and purchase_triggers_output.identified_triggers else "[]", product_service_offered=self.product_service_context, company_name=company_name), "Customizing value propositions")
+            for event in events: yield event
+
+            strategic_questions_output, events = await get_agent_result(self.strategic_question_generation_agent, StrategicQuestionGenerationInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents), "Generating strategic questions")
+            for event in events: yield event
 
             current_lead_summary_for_tot = f"Empresa: {company_name} ({url})\nSetor: {analysis_obj.company_sector}\nPersona (Estimada): {persona_profile_str}\nDores: {pain_analysis_output.primary_pain_category if pain_analysis_output else 'N/A'}"
             
-            tot_generation_output = await get_agent_result(self.tot_strategy_generation_agent, ToTStrategyGenerationInput(current_lead_summary=current_lead_summary_for_tot, product_service_offered=self.product_service_context), "Generating ToT strategies")
-            tot_evaluation_output = await get_agent_result(self.tot_strategy_evaluation_agent, ToTStrategyEvaluationInput(proposed_strategies_text=json.dumps([s.model_dump() for s in tot_generation_output.proposed_strategies]), current_lead_summary=current_lead_summary_for_tot), "Evaluating ToT strategies")
-            tot_synthesis_output = await get_agent_result(self.tot_action_plan_synthesis_agent, ToTActionPlanSynthesisInput(evaluated_strategies_text=json.dumps([e.model_dump() for e in tot_evaluation_output.evaluated_strategies]), proposed_strategies_text=json.dumps([s.model_dump() for s in tot_generation_output.proposed_strategies]), current_lead_summary=current_lead_summary_for_tot), "Synthesizing ToT action plan")
+            tot_generation_output, events = await get_agent_result(self.tot_strategy_generation_agent, ToTStrategyGenerationInput(current_lead_summary=current_lead_summary_for_tot, product_service_offered=self.product_service_context), "Generating ToT strategies")
+            for event in events: yield event
+
+            tot_evaluation_output, events = await get_agent_result(self.tot_strategy_evaluation_agent, ToTStrategyEvaluationInput(proposed_strategies_text=json.dumps([s.model_dump() for s in tot_generation_output.proposed_strategies]) if tot_generation_output and tot_generation_output.proposed_strategies else "[]", current_lead_summary=current_lead_summary_for_tot), "Evaluating ToT strategies")
+            for event in events: yield event
+
+            tot_synthesis_output, events = await get_agent_result(self.tot_action_plan_synthesis_agent, ToTActionPlanSynthesisInput(evaluated_strategies_text=json.dumps([e.model_dump() for e in tot_evaluation_output.evaluated_strategies]) if tot_evaluation_output and tot_evaluation_output.evaluated_strategies else "[]", proposed_strategies_text=json.dumps([s.model_dump() for s in tot_generation_output.proposed_strategies]) if tot_generation_output and tot_generation_output.proposed_strategies else "[]", current_lead_summary=current_lead_summary_for_tot), "Synthesizing ToT action plan")
+            for event in events: yield event
             
-            detailed_approach_plan_output = await get_agent_result(self.detailed_approach_plan_agent, DetailedApproachPlanInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents, final_action_plan_text=tot_synthesis_output.model_dump_json(), product_service_offered=self.product_service_context, lead_url=url), "Developing detailed approach plan")
-            objection_handling_output = await get_agent_result(self.objection_handling_agent, ObjectionHandlingInput(detailed_approach_plan_text=detailed_approach_plan_output.model_dump_json(), persona_profile=persona_profile_str, product_service_offered=self.product_service_context, company_name=company_name), "Preparing objection handling")
+            detailed_approach_plan_output, events = await get_agent_result(self.detailed_approach_plan_agent, DetailedApproachPlanInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents, final_action_plan_text=tot_synthesis_output.model_dump_json() if tot_synthesis_output else "{}", product_service_offered=self.product_service_context, lead_url=url), "Developing detailed approach plan")
+            for event in events: yield event
+
+            objection_handling_output, events = await get_agent_result(self.objection_handling_agent, ObjectionHandlingInput(detailed_approach_plan_text=detailed_approach_plan_output.model_dump_json() if detailed_approach_plan_output else "{}", persona_profile=persona_profile_str, product_service_offered=self.product_service_context, company_name=company_name), "Preparing objection handling")
+            for event in events: yield event
 
             enhanced_strategy = EnhancedStrategy(
                 external_intelligence=external_intel, contact_information=contact_info, pain_point_analysis=pain_analysis_output,
                 competitor_intelligence=competitor_intel_output, purchase_triggers=purchase_triggers_output, lead_qualification=qualification_output,
-                tot_generated_strategies=tot_generation_output.proposed_strategies, tot_evaluated_strategies=tot_evaluation_output.evaluated_strategies,
-                tot_synthesized_action_plan=tot_synthesis_output, detailed_approach_plan=detailed_approach_plan_output,
-                value_propositions=value_props_output.custom_propositions, objection_framework=objection_handling_output,
-                strategic_questions=strategic_questions_output.generated_questions
+                tot_generated_strategies=tot_generation_output.proposed_strategies if tot_generation_output else [],
+                tot_evaluated_strategies=tot_evaluation_output.evaluated_strategies if tot_evaluation_output else [],
+                tot_synthesized_action_plan=tot_synthesis_output,
+                detailed_approach_plan=detailed_approach_plan_output,
+                value_propositions=value_props_output.custom_propositions if value_props_output else [],
+                objection_framework=objection_handling_output,
+                strategic_questions=strategic_questions_output.generated_questions if strategic_questions_output else []
             )
             
-            personalized_message_output = await get_agent_result(self.b2b_personalized_message_agent, B2BPersonalizedMessageInput(final_action_plan_text=tot_synthesis_output.model_dump_json(), customized_value_propositions_text=json.dumps([p.model_dump() for p in value_props_output.custom_propositions]), contact_details=B2BContactDetailsInput(emails_found=contact_info.emails_found, instagram_profiles_found=contact_info.instagram_profiles), product_service_offered=self.product_service_context, lead_url=url, company_name=company_name, persona_fictional_name=persona_profile_str), "Crafting personalized message")
-            internal_briefing_output = await get_agent_result(self.internal_briefing_summary_agent, InternalBriefingSummaryInput(all_lead_data=enhanced_strategy.model_dump()), "Creating internal briefing")
+            personalized_message_output, events = await get_agent_result(self.b2b_personalized_message_agent, B2BPersonalizedMessageInput(final_action_plan_text=tot_synthesis_output.model_dump_json() if tot_synthesis_output else '{}', customized_value_propositions_text=json.dumps([p.model_dump() for p in value_props_output.custom_propositions]) if value_props_output and value_props_output.custom_propositions else '[]', contact_details=B2BContactDetailsInput(emails_found=contact_info.emails_found if contact_info else [], instagram_profiles_found=contact_info.instagram_profiles if contact_info else []), product_service_offered=self.product_service_context, lead_url=url, company_name=company_name, persona_fictional_name=persona_profile_str), "Crafting personalized message")
+            for event in events: yield event
+            
+            internal_briefing_output, events = await get_agent_result(self.internal_briefing_summary_agent, InternalBriefingSummaryInput(all_lead_data=enhanced_strategy.model_dump()), "Creating internal briefing")
+            for event in events: yield event
 
             total_time = time.time() - start_time
             

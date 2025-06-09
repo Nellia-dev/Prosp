@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 # Import the new agentic pipeline and the celery task
 from run import execute_agentic_pipeline
 from event_models import create_event_from_dict
-from .celery_app import run_agentic_harvester_task
+from celery_app import run_agentic_harvester_task
 
 # Import the enrichment pipeline
 from agents.enhanced_lead_processor import EnhancedLeadProcessor
