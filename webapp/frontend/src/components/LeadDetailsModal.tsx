@@ -197,10 +197,11 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
         </DialogHeader>
 
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 bg-slate-800">
+          <TabsList className="grid w-full grid-cols-5 bg-slate-800">
             <TabsTrigger value="overview" className="text-slate-300">Overview</TabsTrigger>
             <TabsTrigger value="details" className="text-slate-300">Details</TabsTrigger>
             <TabsTrigger value="insights" className="text-slate-300">Insights</TabsTrigger>
+            <TabsTrigger value="strategy" className="text-slate-300">Strategy</TabsTrigger>
             <TabsTrigger value="actions" className="text-slate-300">Actions</TabsTrigger>
           </TabsList>
 
@@ -492,6 +493,63 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                       <span className="text-slate-500">No triggers identified</span>
                     )}
                   </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="strategy" className="space-y-4">
+            <Card className="bg-slate-800 border-slate-700">
+              <CardHeader>
+                <CardTitle className="text-white text-sm flex items-center">
+                  <TrendingUp className="w-4 h-4 mr-2" />
+                  Approach Plan
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {lead.enrichment_data?.enhanced_strategy?.detailed_approach_plan ? (
+                  <div className="space-y-4 text-slate-300">
+                    <div>
+                      <h4 className="font-semibold text-white">Main Objective</h4>
+                      <p>{lead.enrichment_data.enhanced_strategy.detailed_approach_plan.main_objective}</p>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-white">Elevator Pitch</h4>
+                      <p>{lead.enrichment_data.enhanced_strategy.detailed_approach_plan.adapted_elevator_pitch}</p>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-white">Contact Sequence</h4>
+                      <div className="space-y-2">
+                        {lead.enrichment_data.enhanced_strategy.detailed_approach_plan.contact_sequence.map((step: any) => (
+                          <div key={step.step_number} className="p-2 bg-slate-850 rounded-md">
+                            <p className="font-bold">{step.step_number}. {step.channel}</p>
+                            <p><span className="font-semibold">Objective:</span> {step.objective}</p>
+                            <p><span className="font-semibold">CTA:</span> {step.cta}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-slate-500">No detailed approach plan available. Enrich the lead to generate one.</p>
+                )}
+              </CardContent>
+            </Card>
+            <Card className="bg-slate-800 border-slate-700">
+              <CardHeader>
+                <CardTitle className="text-white text-sm flex items-center">
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Personalized Message
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {lead.enrichment_data?.enhanced_personalized_message?.primary_message ? (
+                  <div className="space-y-2 text-slate-300 bg-slate-850 p-3 rounded-md">
+                    <p className="font-semibold text-white">{lead.enrichment_data.enhanced_personalized_message.primary_message.subject_line}</p>
+                    <p className="whitespace-pre-wrap">{lead.enrichment_data.enhanced_personalized_message.primary_message.message_body}</p>
+                  </div>
+                ) : (
+                  <p className="text-slate-500">No personalized message available.</p>
                 )}
               </CardContent>
             </Card>

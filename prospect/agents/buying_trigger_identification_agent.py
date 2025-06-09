@@ -22,9 +22,8 @@ class BuyingTriggerIdentificationOutput(BaseModel):
     error_message: Optional[str] = None
 
 class BuyingTriggerIdentificationAgent(BaseAgent[BuyingTriggerIdentificationInput, BuyingTriggerIdentificationOutput]):
-    def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "BuyingTriggerIdentificationAgent"
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -129,7 +128,11 @@ if __name__ == '__main__':
 
     print("Running mock test for BuyingTriggerIdentificationAgent...")
     mock_llm = MockLLMClient()
-    agent = BuyingTriggerIdentificationAgent(llm_client=mock_llm)
+    agent = BuyingTriggerIdentificationAgent(
+        name="BuyingTriggerIdentificationAgent",
+        description="Identifies buying triggers from lead data.",
+        llm_client=mock_llm
+    )
 
     test_lead_data_str = """{
         "company_name": "Empresa Exemplo",

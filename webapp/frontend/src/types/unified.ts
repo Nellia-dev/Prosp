@@ -99,6 +99,36 @@ export interface ExtendedAgentResponse extends AgentStatus {
 // Lead Types (Aligned with Database Entity)
 // ===================================
 
+export interface ComprehensiveProspectPackage {
+  // This is a simplified version for the frontend.
+  // Add more fields as needed to display in the modal.
+  enhanced_strategy?: {
+    detailed_approach_plan?: {
+      main_objective: string;
+      adapted_elevator_pitch: string;
+      contact_sequence: {
+        step_number: number;
+        channel: string;
+        objective: string;
+        cta: string;
+      }[];
+    };
+    value_propositions?: {
+      title: string;
+      key_benefit: string;
+    }[];
+    competitor_intelligence?: {
+        identified_competitors: { name: string, description: string }[];
+    };
+  };
+  enhanced_personalized_message?: {
+    primary_message?: {
+      subject_line: string;
+      message_body: string;
+    };
+  };
+}
+
 export interface LeadData {
   id: string;
   company_name: string;
@@ -115,6 +145,8 @@ export interface LeadData {
   pain_point_analysis?: string[];
   purchase_triggers?: string[];
   processing_stage: ProcessingStage;
+  status: string;
+  enrichment_data?: ComprehensiveProspectPackage;
   created_at: string;
   updated_at: string;
 }

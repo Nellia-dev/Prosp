@@ -68,17 +68,21 @@ from .internal_briefing_summary_agent import InternalBriefingSummaryAgent, Inter
 class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage]):
     def __init__(
         self,
+        name: str,
+        description: str,
         llm_client: LLMClientBase,
         product_service_context: str = "",
         competitors_list: str = "",
         tavily_api_key: Optional[str] = None,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        **kwargs
     ):
         super().__init__(
-            name="EnhancedLeadProcessor",
-            description="Orchestrates a series of specialized agents to generate a rich, multi-faceted prospect package.",
+            name=name,
+            description=description,
             llm_client=llm_client,
-            config={"temperature": temperature}
+            config={"temperature": temperature},
+            **kwargs
         )
         self.logger = logger
         
@@ -86,27 +90,28 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         self.competitors_list = competitors_list
         self.tavily_api_key = tavily_api_key or os.getenv("TAVILY_API_KEY")
 
-        self.tavily_enrichment_agent = TavilyEnrichmentAgent(llm_client=self.llm_client, tavily_api_key=self.tavily_api_key)
-        self.contact_extraction_agent = ContactExtractionAgent(llm_client=self.llm_client)
-        self.pain_point_deepening_agent = PainPointDeepeningAgent(llm_client=self.llm_client)
-        self.lead_qualification_agent = LeadQualificationAgent(llm_client=self.llm_client)
-        self.competitor_identification_agent = CompetitorIdentificationAgent(llm_client=self.llm_client)
-        self.strategic_question_generation_agent = StrategicQuestionGenerationAgent(llm_client=self.llm_client)
-        self.buying_trigger_identification_agent = BuyingTriggerIdentificationAgent(llm_client=self.llm_client)
-        self.tot_strategy_generation_agent = ToTStrategyGenerationAgent(llm_client=self.llm_client)
-        self.tot_strategy_evaluation_agent = ToTStrategyEvaluationAgent(llm_client=self.llm_client)
-        self.tot_action_plan_synthesis_agent = ToTActionPlanSynthesisAgent(llm_client=self.llm_client)
-        self.detailed_approach_plan_agent = DetailedApproachPlanAgent(llm_client=self.llm_client)
-        self.objection_handling_agent = ObjectionHandlingAgent(llm_client=self.llm_client)
-        self.value_proposition_customization_agent = ValuePropositionCustomizationAgent(llm_client=self.llm_client)
-        self.b2b_personalized_message_agent = B2BPersonalizedMessageAgent(llm_client=self.llm_client)
-        self.internal_briefing_summary_agent = InternalBriefingSummaryAgent(llm_client=self.llm_client)
+        # Note: The sub-agent constructors will need to be updated to accept name and description
+        self.tavily_enrichment_agent = TavilyEnrichmentAgent(llm_client=self.llm_client, name="TavilyEnrichmentAgent", description="Gathers external intelligence and news about the company using the Tavily web search API.", tavily_api_key=self.tavily_api_key)
+        self.contact_extraction_agent = ContactExtractionAgent(llm_client=self.llm_client, name="ContactExtractionAgent", description="Extracts contact information from lead's data.")
+        self.pain_point_deepening_agent = PainPointDeepeningAgent(llm_client=self.llm_client, name="PainPointDeepeningAgent", description="Further analyzes and details the lead's potential pain points.")
+        self.lead_qualification_agent = LeadQualificationAgent(llm_client=self.llm_client, name="LeadQualificationAgent", description="Qualifies the lead by assigning a tier and provides a justification.")
+        self.competitor_identification_agent = CompetitorIdentificationAgent(llm_client=self.llm_client, name="CompetitorIdentificationAgent", description="Identifies potential competitors of the lead company.")
+        self.strategic_question_generation_agent = StrategicQuestionGenerationAgent(llm_client=self.llm_client, name="StrategicQuestionGenerationAgent", description="Generates additional strategic, open-ended questions.")
+        self.buying_trigger_identification_agent = BuyingTriggerIdentificationAgent(llm_client=self.llm_client, name="BuyingTriggerIdentificationAgent", description="Identifies events or signals that might indicate the lead is actively looking for solutions.")
+        self.tot_strategy_generation_agent = ToTStrategyGenerationAgent(llm_client=self.llm_client, name="ToTStrategyGenerationAgent", description="Generates multiple distinct strategic approach options for the lead.")
+        self.tot_strategy_evaluation_agent = ToTStrategyEvaluationAgent(llm_client=self.llm_client, name="ToTStrategyEvaluationAgent", description="Evaluates the generated strategic options.")
+        self.tot_action_plan_synthesis_agent = ToTActionPlanSynthesisAgent(llm_client=self.llm_client, name="ToTActionPlanSynthesisAgent", description="Synthesizes the evaluated strategies into a single, refined action plan.")
+        self.detailed_approach_plan_agent = DetailedApproachPlanAgent(llm_client=self.llm_client, name="DetailedApproachPlanAgent", description="Develops a detailed, step-by-step approach plan.")
+        self.objection_handling_agent = ObjectionHandlingAgent(llm_client=self.llm_client, name="ObjectionHandlingAgent", description="Anticipates potential objections the lead might have.")
+        self.value_proposition_customization_agent = ValuePropositionCustomizationAgent(llm_client=self.llm_client, name="ValuePropositionCustomizationAgent", description="Crafts customized value propositions.")
+        self.b2b_personalized_message_agent = B2BPersonalizedMessageAgent(llm_client=self.llm_client, name="B2BPersonalizedMessageAgent", description="Generates personalized outreach messages.")
+        self.internal_briefing_summary_agent = InternalBriefingSummaryAgent(llm_client=self.llm_client, name="InternalBriefingSummaryAgent", description="Creates a comprehensive internal briefing document.")
         
     def _construct_persona_profile_string(self, analysis_obj: LeadAnalysis, company_name: str) -> str:
         """Helper to create a descriptive persona string from analysis."""
         persona_parts = [
-            analysis_obj.ideal_customer_profile or "",
-            f"Cargo Estimado na {company_name}: {analysis_obj.company_culture_values.get('decision_maker_role_estimate', 'N/A') if isinstance(analysis_obj.company_culture_values, dict) else (analysis_obj.company_culture_values or 'N/A')}",
+            analysis_obj.general_diagnosis or "",
+            f"Cultura da Empresa: {analysis_obj.company_culture_values or 'N/A'}",
             f"Tamanho da Empresa {company_name}: {analysis_obj.company_size_estimate or 'N/A'}"
         ]
         persona_profile_str = ". ".join(filter(None, persona_parts))
@@ -117,7 +122,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         return (
             f"Setor da Empresa: {analysis_obj.company_sector}\n"
             f"Principais Serviços: {', '.join(analysis_obj.main_services)}\n"
-            f"Descrição da Empresa: {analysis_obj.company_description}\n"
+            f"Diagnóstico Geral: {analysis_obj.general_diagnosis}\n"
             f"Desafios Potenciais Identificados: {', '.join(analysis_obj.potential_challenges)}\n"
             f"Tamanho Estimado: {analysis_obj.company_size_estimate}\n"
             f"Cultura da Empresa: {analysis_obj.company_culture_values}\n"
@@ -136,6 +141,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         pipeline_logger.info(f"Starting enrichment pipeline for: {company_name}")
 
         yield StatusUpdateEvent(
+            event_type="status_update",
             timestamp=datetime.now().isoformat(),
             job_id=job_id,
             user_id=user_id,
@@ -148,11 +154,17 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 agent_logger.info(f"Executing sub-agent. Input: {agent_input_description}")
 
                 yield AgentStartEvent(
-                    timestamp=datetime.now().isoformat(), job_id=job_id, user_id=user_id,
-                    agent_name=agent.name, input_query=agent_input_description
+                    event_type="agent_start",
+                    timestamp=datetime.now().isoformat(),
+                    job_id=job_id,
+                    user_id=user_id,
+                    agent_name=agent.name,
+                    agent_description=agent.description,
+                    input_query=agent_input_description
                 ).to_dict()
                 
                 output = None
+                agent_start_time = time.time()
                 try:
                     output = await agent.execute_async(input_data)
                     success = not getattr(output, 'error_message', None)
@@ -167,9 +179,15 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                         pass
 
 
+                agent_end_time = time.time()
                 yield AgentEndEvent(
-                    timestamp=datetime.now().isoformat(), job_id=job_id, user_id=user_id,
-                    agent_name=agent.name, success=success,
+                    event_type="agent_end",
+                    timestamp=datetime.now().isoformat(),
+                    job_id=job_id,
+                    user_id=user_id,
+                    agent_name=agent.name,
+                    execution_time_seconds=agent_end_time - agent_start_time,
+                    success=success,
                     final_response=output.model_dump_json() if output else None,
                     error_message=getattr(output, 'error_message', "Agent execution failed with an exception.")
                 ).to_dict()
@@ -201,8 +219,9 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             persona_profile_str = self._construct_persona_profile_string(analysis_obj, company_name)
 
             # --- Execute Sub-Agents Sequentially ---
-            external_intel, events = await get_agent_result(self.tavily_enrichment_agent, TavilyEnrichmentInput(company_name=company_name, initial_extracted_text=analyzed_lead.validated_lead.site_data.extracted_text_content or ""), f"Enriching data for {company_name}")
+            tavily_output, events = await get_agent_result(self.tavily_enrichment_agent, TavilyEnrichmentInput(company_name=company_name, initial_extracted_text=analyzed_lead.validated_lead.site_data.extracted_text_content or ""), f"Enriching data for {company_name}")
             for event in events: yield event
+            external_intel = ExternalIntelligence(tavily_enrichment=tavily_output.enriched_data)
             
             contact_info, events = await get_agent_result(self.contact_extraction_agent, ContactExtractionInput(extracted_text=analyzed_lead.validated_lead.cleaned_text_content or "", company_name=company_name, product_service_offered=self.product_service_context), f"Extracting contacts for {company_name}")
             for event in events: yield event
@@ -278,6 +297,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             
             pipeline_logger.info("Enrichment pipeline completed successfully.")
             yield PipelineEndEvent(
+                event_type="pipeline_end",
                 timestamp=datetime.now().isoformat(),
                 job_id=job_id,
                 user_id=user_id,
@@ -290,6 +310,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         except Exception as e:
             pipeline_logger.error(f"Enrichment pipeline failed: {e}\n{traceback.format_exc()}")
             yield PipelineErrorEvent(
+                event_type="pipeline_error",
                 timestamp=datetime.now().isoformat(),
                 job_id=job_id,
                 user_id=user_id,

@@ -7,7 +7,7 @@ import { UsersService } from '../users/users.service';
 import { WebSocketService } from '../websocket/websocket.service';
 import { CreateLeadDto, LeadData } from '../../shared/types/nellia.types';
 import { JobCompletedData, JobFailedData, QuotaUpdateData, JobProgressData } from '../websocket/dto/websocket.dto';
-import { LeadStatus } from '@/shared/enums/nellia.enums';
+import { LeadStatus, ProcessingStage } from '@/shared/enums/nellia.enums';
 import { PLANS } from '../../config/plans.config';
 
 export interface WebhookPayload {
@@ -35,41 +35,6 @@ export class McpWebhookService {
     private readonly webSocketService: WebSocketService,
   ) {}
 
-  async processCompletedJob(payload: WebhookPayload): Promise<void> {
-    const { job_id, user_id, status, data } = payload;
-    this.logger.log(`Processing webhook for completed job ${job_id} for user ${user_id}`);
-
-    try {
-      if (status === 'failed' || !data.success) {
-        const errorMessage = data.error_message || 'Unknown error during harvester execution.';
-        this.logger.error(`Job ${job_id} failed: ${errorMessage}`);
-        await this.handleFailedJob(user_id, job_id, errorMessage);
-        return;
-      }
-
-      const leadsToCreate = (data.leads_data || []).map(lead => ({
-        ...lead,
-        userId: user_id,
-      } as CreateLeadDto));
-
-      this.logger.log(`Job ${job_id}: ${leadsToCreate.length} leads received from MCP.`);
-
-      const createdLeads = await this.createLeadsAndDispatchForEnrichment(leadsToCreate, user_id, job_id);
-
-      if (createdLeads.length > 0) {
-        await this.quotaService.consumeQuota(user_id, createdLeads.length);
-        this.logger.log(`Job ${job_id}: Consumed ${createdLeads.length} quota for user ${user_id}`);
-      }
-
-      await this.usersService.clearProspectingJob(user_id);
-      await this.emitJobCompletedEvent(user_id, job_id, createdLeads.length, 'Agentic Search');
-
-    } catch (error) {
-      this.logger.error(`Error processing webhook for job ${job_id}: ${error.message}`, error.stack);
-      await this.handleFailedJob(user_id, job_id, 'Internal error processing webhook.');
-    }
-  }
-
   async processStreamedEvent(event: any): Promise<void> {
     const { user_id, job_id, event_type, ...data } = event;
 
@@ -82,103 +47,119 @@ export class McpWebhookService {
 
     // Map Python event types to specific frontend WebSocket events
     switch (event_type) {
-      case 'status_update':
-        const progressData: JobProgressData = {
-          jobId: job_id,
-          userId: user_id,
-          status: 'active',
-          progress: data.progress || 50, // Default progress if not specified
-          currentStep: data.status_message,
-          timestamp: data.timestamp,
-        };
-        this.webSocketService.emitJobProgress(user_id, progressData);
+      case 'lead_generated':
+        await this.handleLeadGenerated(user_id, job_id, data.lead_id, data.lead_data);
         break;
 
+      case 'lead_enrichment_end':
+        await this.handleLeadEnrichmentEnd(user_id, job_id, data.lead_id, data.success, data.final_package, data.error_message);
+        break;
+        
+      case 'pipeline_end':
+        await this.handlePipelineEnd(user_id, job_id, data.total_leads_generated);
+        break;
+
+      case 'status_update':
       case 'agent_start':
       case 'agent_end':
-      case 'pipeline_end':
       case 'pipeline_error':
-        // These events are all related to the enrichment process status
+      case 'lead_enrichment_start':
+        // These events are all related to the enrichment process status and are broadcasted to the user
         this.webSocketService.emitEnrichmentUpdate(user_id, event);
         break;
 
       default:
         this.logger.warn(`Unhandled event type received: ${event_type}`);
-        // Optionally, send to a generic channel for debugging
         this.webSocketService.emitToUser(user_id, 'unhandled-pipeline-event', event);
         break;
     }
   }
 
-  private async createLeadsAndDispatchForEnrichment(leads: CreateLeadDto[], userId: string, harvesterJobId: string): Promise<LeadData[]> {
-    const createdLeads: LeadData[] = [];
-    for (const leadDto of leads) {
-      try {
-        const newLead = await this.leadsService.create({ ...leadDto, status: LeadStatus.HARVESTED });
-        await this.enrichmentQueue.add('enrich-lead', {
-          leadId: newLead.id,
-          userId: userId,
-          jobId: harvesterJobId,
-        });
-        createdLeads.push(newLead);
-      } catch (error) {
-        this.logger.error(`Failed to create or dispatch lead for ${leadDto.company_name}: ${error.message}`, error.stack);
-      }
+  private async handleLeadGenerated(userId: string, harvesterJobId: string, leadId: string, leadDto: CreateLeadDto): Promise<void> {
+    try {
+      const createDto = { ...leadDto, id: leadId, userId, status: LeadStatus.HARVESTED };
+      const newLead = await this.leadsService.create(createDto);
+      
+      // Dispatch for enrichment
+      await this.enrichmentQueue.add('enrich-lead', {
+        leadId: newLead.id,
+        userId: userId,
+        harvesterJobId: harvesterJobId,
+      });
+
+      // Notify frontend of the new lead
+      this.webSocketService.emitToUser(userId, 'lead-created', { lead: newLead });
+      this.logger.log(`Successfully created lead ${newLead.id} and dispatched for enrichment.`);
+
+    } catch (error) {
+      this.logger.error(`Failed to create or dispatch lead for ${leadDto.company_name}: ${error.message}`, error.stack);
     }
-    return createdLeads;
   }
 
-  private async handleFailedJob(userId: string, jobId: string, error: string): Promise<void> {
-    await this.usersService.clearProspectingJob(userId);
-    await this.emitJobFailedEvent(userId, jobId, error, 'Agentic Search');
+  private async handleLeadEnrichmentEnd(userId: string, jobId: string, leadId: string, success: boolean, finalPackage: any, errorMessage?: string): Promise<void> {
+    try {
+      if (success && finalPackage) {
+        // Use the specific update methods
+        await this.leadsService.updateStatus(leadId, LeadStatus.ENRICHED);
+        await this.leadsService.updateStage(leadId, ProcessingStage.COMPLETED);
+        await this.leadsService.updateEnrichmentData(leadId, finalPackage);
+        await this.leadsService.update(leadId, {
+          qualification_tier: finalPackage.enhanced_strategy?.lead_qualification?.qualification_tier,
+        });
+
+        const updatedLead = await this.leadsService.findOne(leadId);
+        this.webSocketService.emitToUser(userId, 'lead-enriched', { lead: updatedLead });
+        this.logger.log(`Successfully enriched lead ${leadId}.`);
+      } else {
+        await this.leadsService.updateStatus(leadId, LeadStatus.ENRICHMENT_FAILED);
+        this.webSocketService.emitToUser(userId, 'lead_enrichment_failed', { leadId, error: errorMessage });
+        this.logger.error(`Enrichment failed for lead ${leadId}: ${errorMessage}`);
+      }
+    } catch (error) {
+      this.logger.error(`Error finalizing enrichment for lead ${leadId}: ${error.message}`, error.stack);
+    }
   }
 
-  private async emitJobCompletedEvent(userId: string, jobId: string, leadsGenerated: number, searchQuery: string): Promise<void> {
-    const user = await this.usersService.getUserById(userId);
-    const planDetails = PLANS[user.plan];
-    const remainingQuota = await this.quotaService.getRemainingQuota(userId);
-    const quotaUsed = planDetails.quota - remainingQuota;
+  private async handlePipelineEnd(userId: string, jobId: string, totalLeads: number): Promise<void> {
+    try {
+      await this.usersService.clearProspectingJob(userId);
+      
+      const user = await this.usersService.getUserById(userId);
+      const planDetails = PLANS[user.plan];
+      const quotaRemaining = await this.quotaService.getRemainingQuota(userId);
+      const quotaUsed = planDetails.quota - quotaRemaining;
 
-    const quotaUpdate: QuotaUpdateData = {
-      userId,
-      planId: user.plan,
-      planName: planDetails.name,
-      quotaUsed,
-      quotaTotal: planDetails.quota === Infinity ? 999999 : planDetails.quota,
-      quotaRemaining: remainingQuota,
-      quotaUsagePercentage: planDetails.quota === Infinity ? 0 : Math.round((quotaUsed / planDetails.quota) * 100),
-      nextResetAt: this.calculateNextResetDate(user.lastQuotaResetAt, planDetails.period),
-      leadsGenerated,
-      timestamp: new Date().toISOString(),
-    };
+      const quotaUpdate: QuotaUpdateData = {
+        userId,
+        planId: user.plan,
+        planName: planDetails.name,
+        quotaUsed,
+        quotaTotal: planDetails.quota === Infinity ? 999999 : planDetails.quota,
+        quotaRemaining: quotaRemaining,
+        quotaUsagePercentage: planDetails.quota === Infinity ? 0 : Math.round((quotaUsed / planDetails.quota) * 100),
+        nextResetAt: this.calculateNextResetDate(user.lastQuotaResetAt, planDetails.period),
+        leadsGenerated: totalLeads,
+        timestamp: new Date().toISOString(),
+      };
 
-    const jobCompletedData: JobCompletedData = {
-      jobId,
-      userId,
-      status: 'completed',
-      leadsGenerated,
-      searchQuery,
-      quotaUpdate,
-      startedAt: new Date().toISOString(), // Note: This is the completion time, not start.
-      completedAt: new Date().toISOString(),
-      timestamp: new Date().toISOString(),
-    };
+      const jobCompletedData: JobCompletedData = {
+        jobId,
+        userId,
+        status: 'completed',
+        leadsGenerated: totalLeads,
+        searchQuery: 'Context-driven Search',
+        quotaUpdate,
+        startedAt: new Date().toISOString(), // This should be improved to use actual start time
+        completedAt: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
+      };
 
-    this.webSocketService.emitJobCompleted(userId, jobCompletedData);
-  }
+      this.webSocketService.emitJobCompleted(userId, jobCompletedData);
+      this.logger.log(`Prospecting job ${jobId} officially completed for user ${userId}.`);
 
-  private async emitJobFailedEvent(userId: string, jobId: string, error: string, searchQuery: string): Promise<void> {
-    const jobFailedData: JobFailedData = {
-      jobId,
-      userId,
-      status: 'failed',
-      error,
-      searchQuery,
-      startedAt: new Date().toISOString(), // Note: This is the failure time, not start.
-      failedAt: new Date().toISOString(),
-      timestamp: new Date().toISOString(),
-    };
-    this.webSocketService.emitJobFailed(userId, jobFailedData);
+    } catch (error) {
+      this.logger.error(`Error handling pipeline end for job ${jobId}: ${error.message}`, error.stack);
+    }
   }
 
   private calculateNextResetDate(lastResetAt: Date, period: 'day' | 'week' | 'month'): string {

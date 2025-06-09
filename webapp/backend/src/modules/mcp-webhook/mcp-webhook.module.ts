@@ -19,5 +19,6 @@ import { BullModule } from '@nestjs/bull';
   ],
   controllers: [McpWebhookController],
   providers: [McpWebhookService],
+  exports: [McpWebhookService],
 })
 export class McpWebhookModule {}

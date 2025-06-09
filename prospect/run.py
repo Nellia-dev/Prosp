@@ -284,23 +284,13 @@ async def _execute_agent_with_events(
 ) -> AsyncIterator[Dict[str, Any]]:
     """
     Execute an agent and yield structured events for each step.
-    
-    Args:
-        agent: The agent to execute
-        query: The query to pass to the agent
-        job_id: Job identifier
-        user_id: User identifier
-        business_context: The user's business context for enriching leads.
-        max_leads_limit: Maximum leads to generate (for quota adherence)
-        max_sites_to_scrape: Maximum sites to scrape (for performance control)
-    
-    Yields:
-        Dict[str, Any]: Structured event dictionaries
+    This is the main wrapper that orchestrates the agent execution and event generation.
     """
     agent_start_time = time.time()
+    final_response_text = "No final response captured."
+    success = False
     
     try:
-        # Emit agent start event
         yield AgentStartEvent(
             event_type="agent_start",
             timestamp=datetime.now().isoformat(),
@@ -311,50 +301,28 @@ async def _execute_agent_with_events(
             input_query=query
         ).to_dict()
 
-        # Modify agent tools to respect limits if applicable
         if max_sites_to_scrape and hasattr(agent, 'tools'):
             _configure_agent_tools_for_limits(agent, max_sites_to_scrape)
 
-        # Execute agent using existing call_agent_and_run logic but with event streaming
-        result = await _call_agent_and_run_with_events(
-            agent, query, job_id, user_id, max_leads_limit
-        )
-        
-        # Process extracted leads and emit lead_generated events
-        for lead_data in result.get('extracted_leads', []):
-            if max_leads_limit is not None and max_leads_limit <= 0:
-                break
-
-            # Structure the raw lead data into the format expected by the backend
-            structured_lead = _structure_lead_data(lead_data, business_context)
-            
-            yield LeadGeneratedEvent(
-                event_type="lead_generated",
-                timestamp=datetime.now().isoformat(),
-                job_id=job_id,
-                user_id=user_id,
-                lead_data=structured_lead,
-                source_url=structured_lead.get('website', 'Unknown'),
-                agent_name=agent.name
-            ).to_dict()
-            
-            if max_leads_limit is not None:
-                max_leads_limit -= 1
-
-        # Emit agent end event
-        execution_time = time.time() - agent_start_time
-        yield AgentEndEvent(
-            event_type="agent_end",
-            timestamp=datetime.now().isoformat(),
+        # The refactored call_agent function will handle the streaming and lead event generation
+        async for event in _call_agent_and_run_with_events(
+            agent_to_use=agent,
+            query=query,
             job_id=job_id,
             user_id=user_id,
-            agent_name=agent.name,
-            execution_time_seconds=execution_time,
-            success=True,
-            final_response=result.get('final_response')
-        ).to_dict()
+            business_context=business_context,
+            max_leads_limit=max_leads_limit
+        ):
+            # Pass through all events from the lower-level function
+            yield event
+            # Capture the final response text if it's part of the internal end event
+            if event.get("event_type") == "agent_end_internal":
+                 final_response_text = event.get("final_response", final_response_text)
+        
+        success = True
 
     except Exception as e:
+        success = False
         execution_time = time.time() - agent_start_time
         yield AgentEndEvent(
             event_type="agent_end",
@@ -366,102 +334,114 @@ async def _execute_agent_with_events(
             success=False,
             error_message=str(e)
         ).to_dict()
+    finally:
+        # Ensure agent_end is always emitted
+        execution_time = time.time() - agent_start_time
+        yield AgentEndEvent(
+            event_type="agent_end",
+            timestamp=datetime.now().isoformat(),
+            job_id=job_id,
+            user_id=user_id,
+            agent_name=agent.name,
+            execution_time_seconds=execution_time,
+            success=success,
+            final_response=final_response_text
+        ).to_dict()
 
 def _configure_agent_tools_for_limits(agent: Agent, max_sites_to_scrape: int):
     """
     Configure agent tools to respect the specified limits.
-    
-    Args:
-        agent: The agent whose tools need configuration
-        max_sites_to_scrape: Maximum sites to scrape
     """
     # This is a placeholder for tool configuration logic
-    # In practice, tools in adk1/agent.py already accept parameters like max_search_results_to_scrape
-    # The actual implementation would need to modify the tool calls dynamically
     pass
 
 async def _call_agent_and_run_with_events(
-    agent_to_use: Agent, 
+    agent_to_use: Agent,
     query: str,
     job_id: str,
     user_id: str,
+    business_context: Dict[str, Any],
     max_leads_limit: int = None
-) -> dict:
+) -> AsyncIterator[Dict[str, Any]]:
     """
-    Enhanced version of call_agent_and_run that emits tool events.
-    Based on the original call_agent_and_run function but with event streaming.
+    Executes the agent, yields LeadGeneratedEvents in real-time, and then
+    yields a final internal event with the full text response.
     """
     session_obj = await session_service.create_session(
         app_name=APP_NAME,
         user_id=USER_ID,
         session_id=f"{DEFAULT_SESSION_ID}_{job_id}"
     )
-
     current_session_id = session_obj.id
-
     runner = Runner(
         agent=agent_to_use,
         app_name=APP_NAME,
         session_service=session_service
     )
-
     user_message_content = types.Content(role='user', parts=[types.Part(text=query)])
-
     events = runner.run_async(
         user_id=USER_ID,
         session_id=current_session_id,
         new_message=user_message_content
     )
 
-    final_response_text = "Nenhuma resposta final recebida."
-    extracted_json_data = []
+    final_response_text = ""
     leads_processed = 0
-
+    
     async for event in events:
-        if hasattr(event, 'tool_code') and event.tool_code:
-            # Emit tool call start event (without yielding since this is internal)
-            tool_start_time = time.time()
-            
-        elif hasattr(event, 'tool_code_output') and event.tool_code_output:
+        if hasattr(event, 'tool_code_output') and event.tool_code_output:
             output = event.tool_code_output.output
-            if isinstance(output, (str, dict, list)):
-                # Process tool output and extract leads
-                extracted_from_tool = _extract_leads_from_output(output)
+            extracted_from_tool = _extract_leads_from_output(output)
+            
+            for lead in extracted_from_tool:
+                if max_leads_limit is not None and leads_processed >= max_leads_limit:
+                    break
                 
-                # Respect lead limits
-                for lead in extracted_from_tool:
-                    if max_leads_limit is not None and leads_processed >= max_leads_limit:
-                        break
-                    extracted_json_data.append(lead)
-                    leads_processed += 1
-                    
+                structured_lead = _structure_lead_data(lead, business_context)
+                yield LeadGeneratedEvent(
+                    event_type="lead_generated",
+                    timestamp=datetime.now().isoformat(),
+                    job_id=job_id,
+                    user_id=user_id,
+                    lead_data=structured_lead,
+                    source_url=structured_lead.get('website', 'Unknown'),
+                    agent_name=agent_to_use.name
+                ).to_dict()
+                leads_processed += 1
+
         elif hasattr(event, 'content') and event.content and event.content.parts:
             text_content_part = next((part.text for part in event.content.parts if hasattr(part, 'text')), None)
             if text_content_part:
-                final_response_text = text_content_part
-                
-                # Extract JSON from final response
-                json_match = re.search(r'```json\n(.*?)```', final_response_text, re.DOTALL)
-                if json_match:
-                    try:
-                        parsed_json = json.loads(json_match.group(1).strip())
-                        if isinstance(parsed_json, list):
-                            for lead in parsed_json:
-                                if max_leads_limit is not None and leads_processed >= max_leads_limit:
-                                    break
-                                extracted_json_data.append(lead)
-                                leads_processed += 1
-                        elif isinstance(parsed_json, dict):
-                            if max_leads_limit is None or leads_processed < max_leads_limit:
-                                extracted_json_data.append(parsed_json)
-                                leads_processed += 1
-                    except json.JSONDecodeError:
-                        pass
-                break
+                final_response_text += text_content_part
 
-    return {
-        "final_response": final_response_text,
-        "extracted_leads": extracted_json_data
+    # After the loop, parse the complete final response for any missed leads
+    if final_response_text:
+        json_match = re.search(r'```json\n(.*?)```', final_response_text, re.DOTALL)
+        if json_match:
+            try:
+                parsed_json = json.loads(json_match.group(1).strip())
+                if isinstance(parsed_json, list):
+                    for lead in parsed_json:
+                        if max_leads_limit is not None and leads_processed >= max_leads_limit:
+                            break
+                        structured_lead = _structure_lead_data(lead, business_context)
+                        yield LeadGeneratedEvent(
+                            event_type="lead_generated",
+                            timestamp=datetime.now().isoformat(),
+                            job_id=job_id,
+                            user_id=user_id,
+                            lead_data=structured_lead,
+                            source_url=structured_lead.get('website', 'Unknown'),
+                            agent_name=agent_to_use.name
+                        ).to_dict()
+                        leads_processed += 1
+            except json.JSONDecodeError:
+                pass # It's okay if the final text isn't valid JSON
+
+    # Yield a final internal event to pass the raw text back up
+    yield {
+        "event_type": "agent_end_internal",
+        "final_response": final_response_text
     }
 
 def _structure_lead_data(raw_lead: Dict[str, Any], business_context: Dict[str, Any]) -> Dict[str, Any]:

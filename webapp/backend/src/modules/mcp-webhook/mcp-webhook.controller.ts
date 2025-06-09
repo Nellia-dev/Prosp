@@ -11,21 +11,6 @@ export class McpWebhookController {
   constructor(private readonly webhookService: McpWebhookService) {}
 
   @Public()
-  @Post('job-complete')
-  @ApiOperation({ summary: 'Webhook for completed MCP jobs' })
-  @ApiResponse({ status: 200, description: 'Webhook processed successfully' })
-  async handleJobCompletion(@Body() payload: WebhookPayload): Promise<{ status: string }> {
-    this.logger.log(`Received job-complete webhook for job ID: ${payload.job_id}`);
-    try {
-      await this.webhookService.processCompletedJob(payload);
-      return { status: 'received' };
-    } catch (error) {
-      this.logger.error(`Error processing job-complete webhook for job ${payload.job_id}: ${error.message}`, error.stack);
-      throw new HttpException('Error processing webhook', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
-
-  @Public()
   @Post('event-stream')
   @ApiOperation({ summary: 'Webhook for real-time events from MCP pipelines' })
   @ApiResponse({ status: 200, description: 'Event processed successfully' })

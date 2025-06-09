@@ -25,9 +25,8 @@ class CompetitorIdentificationOutput(BaseModel):
     error_message: Optional[str] = None
 
 class CompetitorIdentificationAgent(BaseAgent[CompetitorIdentificationInput, CompetitorIdentificationOutput]):
-    def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "CompetitorIdentificationAgent"
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""

@@ -4,6 +4,7 @@ import { Logger } from '@nestjs/common';
 import { BusinessContextService } from '../../business-context/business-context.service';
 import { LeadsService } from '../../leads/leads.service';
 import { McpService } from '../../mcp/mcp.service';
+import { McpWebhookService } from '../../mcp-webhook/mcp-webhook.service';
 import { UsersService } from '../../users/users.service';
 import { QuotaService } from '../../quota/quota.service';
 import { WebSocketService } from '../../websocket/websocket.service';
@@ -34,91 +35,67 @@ export class ProspectProcessor {
 
   constructor(
     @InjectQueue('enrichment-processing') private readonly enrichmentQueue: Queue,
-    private businessContextService: BusinessContextService,
-    private leadsService: LeadsService,
-    private mcpService: McpService,
-    private usersService: UsersService,
-    private quotaService: QuotaService,
-    private webSocketService: WebSocketService,
+    private readonly businessContextService: BusinessContextService,
+    private readonly leadsService: LeadsService,
+    private readonly mcpService: McpService,
+    private readonly usersService: UsersService,
+    private readonly quotaService: QuotaService,
+    private readonly webSocketService: WebSocketService,
+    private readonly mcpWebhookService: McpWebhookService,
   ) {
     this.logger.log('ProspectProcessor initialized. Listening for jobs on "prospect-processing" queue.');
   }
 
-  @Process('run-harvester')
-  async handleHarvesterProcess(job: Job<HarvesterJobData>): Promise<any> {
+  @Process('start-unified-pipeline')
+  async handleUnifiedPipeline(job: Job<HarvesterJobData>): Promise<any> {
     this.logger.log(`[JOB_START] Picked up job ${job.id} with name ${job.name}`);
-    const { userId, maxSites, maxLeadsToReturn, businessContext } = job.data;
+    const { userId, businessContext } = job.data;
     
-    this.logger.log(`[JOB_DATA] Starting context-driven harvester process for user ${userId}, job ${job.id}`);
-    this.logger.log(`[JOB_DATA] Job parameters: maxSites=${maxSites}, maxLeads=${maxLeadsToReturn}`);
+    this.logger.log(`[JOB_DATA] Starting unified pipeline for user ${userId}, job ${job.id}`);
     
     try {
-      await job.progress(10);
+      await job.progress(5);
 
-      // Step 1: Validate user and quota
-      const user = await this.usersService.getUserById(userId);
-      const remainingQuota = await this.quotaService.getRemainingQuota(userId);
+      // The MCP service will now handle the entire streaming pipeline
+      this.logger.log(`Job ${job.id}: Dispatching to MCP service to start unified pipeline.`);
       
-      if (remainingQuota <= 0) {
-        throw new Error(`User ${userId} has no remaining quota for lead generation`);
-      }
-
-      this.logger.log(`User ${userId} has ${remainingQuota} leads remaining in quota`);
-      await job.progress(20);
-
-      // Step 2: Business context is already in job.data, no need to fetch again.
-      if (!businessContext) {
-        throw new Error('Business context not found in job data.');
-      }
-      
-      this.logger.debug(`Job ${job.id}: Business context is ready for user ${userId}`);
-      await job.progress(40);
-
-      // Step 3: Dispatch job to MCP via McpService.
-      // The MCP service will now handle generating the query from the context.
-      this.logger.log(`Job ${job.id}: Dispatching to MCP for user ${userId} (maxSites: ${maxSites}, maxLeads: ${maxLeadsToReturn})`);
-      
-      const mcpResponse = await this.mcpService.runHarvester(
-        maxSites,
+      const eventStream = await this.mcpService.executeUnifiedPipeline(
         businessContext,
-        Math.min(maxLeadsToReturn, remainingQuota), // Respect both job limit and remaining quota
         userId,
+        job.id.toString(),
       );
 
+      // The processor's main job is to consume the event stream and pass events
+      // to the webhook service, which contains the logic for handling each event type.
+      for await (const event of eventStream) {
+        await this.mcpWebhookService.processStreamedEvent(event);
+      }
+
       await job.progress(100);
+      this.logger.log(`[JOB_SUCCESS] Unified pipeline stream completed for job ${job.id}.`);
 
-      const completionMessage = `Harvester job ${job.id} successfully dispatched to MCP. MCP Job ID: ${mcpResponse.job_id}. Waiting for webhook.`;
-      this.logger.log(completionMessage);
-
-      // The processor's job is now done. It has successfully handed off the task.
-      // The McpWebhookService will handle the results when they arrive.
+      // The 'pipeline_end' event from the stream will trigger the final user notification.
       return {
         success: true,
-        userId: userId,
         jobId: job.id,
-        mcpJobId: mcpResponse.job_id,
-        message: completionMessage,
-        dispatchedAt: new Date().toISOString(),
+        message: 'Unified pipeline stream processed successfully.',
       };
 
     } catch (error) {
-      this.logger.error(`Harvester process failed for user ${userId}, job ${job.id}: ${error.message}`, error.stack);
+      this.logger.error(`Unified pipeline failed for user ${userId}, job ${job.id}: ${error.message}`, error.stack);
       
-      // Clear user's active job on failure
       try {
         await this.usersService.clearProspectingJob(userId);
       } catch (clearError) {
         this.logger.error(`Failed to clear job for user ${userId}: ${clearError.message}`);
       }
 
-      // The job failed to dispatch. The webhook service will not be called.
-      // We should emit a generic failure event here to notify the user.
       this.webSocketService.emitJobFailed(userId, {
         jobId: job.id.toString(),
         userId: userId,
         status: 'failed',
-        error: `Failed to dispatch job to MCP: ${error.message}`,
-        searchQuery: 'Context-driven search', // Placeholder for UI
+        error: `Pipeline execution failed: ${error.message}`,
+        searchQuery: 'Context-driven search',
         startedAt: new Date(job.timestamp).toISOString(),
         failedAt: new Date().toISOString(),
         timestamp: new Date().toISOString(),

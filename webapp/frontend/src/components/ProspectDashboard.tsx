@@ -32,10 +32,10 @@ import React, { useState } from 'react';
   }
  
   // Child Component: ActiveJobsDisplay (Placeholder)
-  const ActiveJobsDisplay = ({ jobs, enrichmentStatus }: { jobs: ProspectJob[], enrichmentStatus: EnrichmentStatus }) => {
+  const ActiveJobsDisplay = ({ jobs, enrichmentStatus, liveLeadsCount }: { jobs: ProspectJob[], enrichmentStatus: EnrichmentStatus, liveLeadsCount: number }) => {
     const { t } = useTranslation();
     if (!jobs || jobs.length === 0) return <p className="text-slate-400">{t('prospectDashboard.noActiveJobs')}</p>;
- 
+
     return (
       <div className="space-y-4">
         {jobs.map(job => {
@@ -43,27 +43,37 @@ import React, { useState } from 'react';
           const lastEvent = enrichment?.events?.[enrichment.events.length - 1];
           const agentName = lastEvent?.agent_name;
           const progress = enrichment ? (enrichment.events.length / 15) * 100 : job.progress;
- 
+
           return (
             <Card key={job.jobId} className="bg-slate-800 border-slate-700">
               <CardHeader>
-                <CardTitle className="text-slate-200 text-lg">{t('prospectDashboard.jobId')}: {job.jobId}</CardTitle>
-                <Badge variant={job.status === 'active' ? 'default' : 'secondary'} className={
-                  job.status === 'active' ? 'bg-blue-500 text-white' :
-                  job.status === 'waiting' ? 'bg-yellow-500 text-black' : 'bg-slate-600 text-slate-300'
-                }>
-                  {job.status}
-                </Badge>
+                <div className="flex justify-between items-center">
+                  <CardTitle className="text-slate-200 text-lg">{t('prospectDashboard.jobId')}: {job.jobId}</CardTitle>
+                  <Badge variant={job.status === 'active' ? 'default' : 'secondary'} className={
+                    job.status === 'active' ? 'bg-blue-500 text-white' :
+                    job.status === 'waiting' ? 'bg-yellow-500 text-black' : 'bg-slate-600 text-slate-300'
+                  }>
+                    {job.status}
+                  </Badge>
+                </div>
               </CardHeader>
               <CardContent>
+                <div className="flex justify-between items-center mb-2">
+                    <p className="text-sm text-slate-300">Status</p>
+                    <p className="text-sm font-medium text-slate-100">Harvesting & Enriching...</p>
+                </div>
+                <div className="flex justify-between items-center">
+                    <p className="text-sm text-slate-300">Leads Found</p>
+                    <p className="text-sm font-medium text-green-400">{liveLeadsCount}</p>
+                </div>
                 {typeof progress === 'number' && (
-                  <div className="mt-2">
+                  <div className="mt-4">
                     <Progress value={progress} className="w-full [&>div]:bg-green-500" />
                     <p className="text-sm text-slate-400 mt-1">{progress.toFixed(0)}% {t('common.complete')}</p>
                     {agentName && <p className="text-xs text-slate-500 mt-1">Current Agent: {agentName}</p>}
                   </div>
                 )}
-                <p className="text-xs text-slate-500 mt-2">{t('common.createdAt')}: {new Date(job.createdAt || Date.now()).toLocaleString()}</p>
+                <p className="text-xs text-slate-500 mt-4">{t('common.createdAt')}: {new Date(job.createdAt || Date.now()).toLocaleString()}</p>
               </CardContent>
             </Card>
           );
@@ -253,11 +263,29 @@ import React, { useState } from 'react';
   export const ProspectDashboard = () => {
     const { t } = useTranslation();
     const [enrichmentStatus, setEnrichmentStatus] = useState<EnrichmentStatus>({});
-    const { data: jobsData = [], isLoading: jobsLoading, error: jobsError } = useProspectJobs();
+    const { data: jobsData = [], isLoading: jobsLoading, error: jobsError, refetch: refetchJobs } = useProspectJobs();
     const { mutate: startProspectingJob, isPending: startProspectingLoading } = useStartProspectingJob();
     const { data: businessContext, isLoading: businessContextLoading } = useBusinessContext();
     const { canStartProspecting, hasActiveJob, isQuotaExhausted, isLoading: planLoading } = usePlanInfo();
- 
+    const [liveLeadsCount, setLiveLeadsCount] = useState(0);
+
+    // Listen for new leads being generated in real-time
+    useRealTimeEvent('lead-created', () => {
+      setLiveLeadsCount(prev => prev + 1);
+      // Optionally, you can invalidate the leads query to refetch the list
+      // queryClient.invalidateQueries({ queryKey: ['leads'] });
+    });
+
+    // Listen for the overall job to end to reset local state
+    useRealTimeEvent('job-completed', () => {
+        setLiveLeadsCount(0);
+        refetchJobs();
+    });
+    useRealTimeEvent('job-failed', () => {
+        setLiveLeadsCount(0);
+        refetchJobs();
+    });
+
     useRealTimeEvent('enrichment-update', (data: { job_id: string }) => {
       const { job_id } = data;
       if (job_id) {
@@ -270,10 +298,10 @@ import React, { useState } from 'react';
         }));
       }
     });
- 
+
     // Ensure jobsData is always an array, even if API returns null/undefined initially
     const jobs: ProspectJob[] = Array.isArray(jobsData) ? jobsData : [];
- 
+
     const activeJobs = jobs.filter(job => job && ['waiting', 'active'].includes(job.status));
     const recentJobs = jobs.slice(0, 5); // Assuming jobs are sorted by date descending from API or hook
  
@@ -352,7 +380,7 @@ import React, { useState } from 'react';
           </CardHeader>
           <CardContent>
             {activeJobs.length > 0 ? (
-              <ActiveJobsDisplay jobs={activeJobs} enrichmentStatus={enrichmentStatus} />
+              <ActiveJobsDisplay jobs={activeJobs} enrichmentStatus={enrichmentStatus} liveLeadsCount={liveLeadsCount} />
             ) : (
               <ReadyToProspectDisplay />
             )}

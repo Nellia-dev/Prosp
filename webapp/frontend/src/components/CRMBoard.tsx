@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
+import { useRealTimeUpdates, useRealTimeEvent } from '../hooks/useRealTimeUpdates';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,14 @@ interface CRMBoardProps {
   isLoading?: boolean;
 }
 
+interface EnrichmentEvent {
+  event_type: string;
+  lead_id: string;
+  status_message?: string;
+  agent_name?: string;
+  [key: string]: unknown; // Index signature for compatibility
+}
+
 const STAGE_CONFIGS = PROCESSING_STAGES.map(stage => ({
   id: stage,
   label: STAGE_DISPLAY_NAMES[stage],
@@ -36,6 +44,8 @@ const STAGE_CONFIGS = PROCESSING_STAGES.map(stage => ({
 export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardProps) => {
   const { t } = useTranslation();
   useRealTimeUpdates();
+  const [liveLeads, setLiveLeads] = useState<LeadData[]>([]);
+  const [enrichmentEvents, setEnrichmentEvents] = useState<Record<string, EnrichmentEvent>>({});
   const [draggedLead, setDraggedLead] = useState<LeadData | null>(null);
   const [selectedLead, setSelectedLead] = useState<LeadData | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -59,6 +69,24 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
       return () => clearTimeout(timer);
     }
   }, [leads]);
+
+  useRealTimeEvent<{ lead: LeadData }>('lead-created', (event) => {
+    setLiveLeads(prev => [...prev, event.lead]);
+  });
+
+  useRealTimeEvent<EnrichmentEvent>('enrichment-update', (event) => {
+    if (event.lead_id) {
+      setEnrichmentEvents(prev => ({
+        ...prev,
+        [event.lead_id]: event,
+      }));
+    }
+  });
+
+  useRealTimeEvent<{ lead: LeadData }>('lead-enriched', (event) => {
+    setLiveLeads(prev => prev.filter(l => l.id !== event.lead.id));
+    onLeadUpdate?.(event.lead); // This should trigger a refetch in the parent
+  });
 
   // Filter leads based on current filters
   const filteredLeads = useMemo(() => {
@@ -272,6 +300,42 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
 
       {/* CRM Board */}
       <div className="flex gap-4 overflow-x-auto pb-4">
+        {/* Live Processing Column */}
+        <div
+          className="flex-shrink-0 w-80 bg-slate-900/50 rounded-lg border border-slate-700 border-l-4"
+          style={{ borderLeftColor: '#38bdf8' }}
+        >
+          <div className="p-4 border-b border-slate-700">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center space-x-2">
+                <div style={{ color: '#38bdf8' }}>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                </div>
+                <h3 className="font-medium text-white text-sm">Harvesting & Enriching</h3>
+              </div>
+              <Badge variant="secondary" className="text-xs bg-slate-700 text-white">
+                {liveLeads.length}
+              </Badge>
+            </div>
+          </div>
+          <div className="p-3 space-y-2 min-h-96 max-h-96 overflow-y-auto">
+            {liveLeads.map(lead => (
+              <CompactLeadCard
+                key={lead.id}
+                lead={lead}
+                onExpand={handleLeadExpand}
+                enrichmentEvent={enrichmentEvents[lead.id]}
+              />
+            ))}
+            {liveLeads.length === 0 && (
+              <div className="text-center text-slate-500 py-8">
+                <div className="text-sm">No new leads being processed.</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Existing Stage Columns */}
         {STAGE_CONFIGS.map(stage => {
           const stats = getStageStats(stage.id);
           
@@ -285,7 +349,6 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
               onDrop={(e) => handleDrop(e, stage.id)}
               style={stage.style}
             >
-              {/* Stage Header */}
               <div className="p-4 border-b border-slate-700">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center space-x-2">
@@ -303,8 +366,6 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
                   <div>High Potential: {stats.highPotential}</div>
                 </div>
               </div>
-
-              {/* Stage Content */}
               <div className="p-3 space-y-2 min-h-96 max-h-96 overflow-y-auto">
                 {leadsByStage[stage.id]?.map(lead => (
                   <div
@@ -322,7 +383,6 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
                     />
                   </div>
                 ))}
-                
                 {leadsByStage[stage.id]?.length === 0 && (
                   <div className="text-center text-slate-500 py-8">
                     <div className="text-sm">No leads in this stage</div>

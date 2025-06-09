@@ -1,17 +1,16 @@
-import { Processor, Process, InjectQueue } from '@nestjs/bull';
-import { Job, Queue } from 'bull';
+import { Processor, Process } from '@nestjs/bull';
+import { Job } from 'bull';
 import { Logger } from '@nestjs/common';
-import { McpService } from '../../mcp/mcp.service';
 import { LeadsService } from '../../leads/leads.service';
-import { UsersService } from '../../users/users.service';
-import { WebSocketService } from '../../websocket/websocket.service';
-import { Lead } from '@/database/entities/lead.entity';
+import { McpService } from '../../mcp/mcp.service';
+import { McpWebhookService } from '../../mcp-webhook/mcp-webhook.service';
 import { LeadStatus } from '@/shared/enums/nellia.enums';
+import { BusinessContextService } from '@/modules/business-context/business-context.service';
 
-export interface EnrichmentJobData {
+interface EnrichmentJobData {
   leadId: string;
   userId: string;
-  jobId: string; // Original harvester job ID for tracking
+  harvesterJobId: string; // The original job ID for context
 }
 
 @Processor('enrichment-processing')
@@ -19,87 +18,63 @@ export class EnrichmentProcessor {
   private readonly logger = new Logger(EnrichmentProcessor.name);
 
   constructor(
-    private readonly mcpService: McpService,
     private readonly leadsService: LeadsService,
-    private readonly usersService: UsersService,
-    private readonly webSocketService: WebSocketService,
-  ) {}
+    private readonly mcpService: McpService,
+    private readonly mcpWebhookService: McpWebhookService,
+    private readonly businessContextService: BusinessContextService,
+  ) {
+    this.logger.log('EnrichmentProcessor initialized and listening for jobs.');
+  }
 
   @Process('enrich-lead')
   async handleEnrichmentProcess(job: Job<EnrichmentJobData>): Promise<any> {
-    const { leadId, userId, jobId } = job.data;
-    this.logger.log(`Starting enrichment for lead ${leadId} (Job: ${jobId})`);
+    const { leadId, userId, harvesterJobId } = job.data;
+    this.logger.log(`[ENRICH_START] Picked up job ${job.id} to enrich lead ${leadId} for user ${userId}.`);
 
-    let lead: Lead;
+    // Use findById to get the full Lead entity, not the LeadData DTO
+    const lead = await this.leadsService.findById(leadId);
+    if (!lead) {
+      this.logger.error(`Lead with ID ${leadId} not found.`);
+      throw new Error(`Lead not found: ${leadId}`);
+    }
+    
+    // Ensure the lead belongs to the user who queued the job
+    if (lead.userId !== userId) {
+        this.logger.error(`User ${userId} does not have permission to enrich lead ${leadId}.`);
+        throw new Error(`Permission denied for lead ${leadId}`);
+    }
+
     try {
-      lead = await this.leadsService.findById(leadId);
-      if (!lead) {
-        throw new Error(`Lead with ID ${leadId} not found.`);
-      }
-
-      // 1. Update lead status to ENRICHING
       await this.leadsService.updateStatus(leadId, LeadStatus.ENRICHING);
-      this.webSocketService.emitLeadUpdate(userId, {
-        id: lead.id,
-        status: LeadStatus.ENRICHING,
-      });
-      await job.progress(10);
 
-      // 2. Call the MCP enrichment streaming endpoint
-      const enrichmentStream = await this.mcpService.streamEnrichmentPipeline(lead, userId, jobId);
+      const businessContext = await this.businessContextService.getContextForMcp(userId);
+      const eventStream = await this.mcpService.executeUnifiedPipeline(businessContext, userId, harvesterJobId);
 
-      let finalPackage = null;
-
-      // 3. Process the event stream
-      for await (const event of enrichmentStream) {
-        // Emit real-time progress to the frontend
-        this.webSocketService.emitEnrichmentUpdate(userId, event);
-
-        if (event.event_type === 'agent_end' && event.data?.agent_name === 'EnhancedLeadProcessor') {
-           if (event.data?.success) {
-             finalPackage = event.data.final_response;
-           }
-        }
-        
-        if (event.event_type === 'pipeline_error') {
-            throw new Error(event.data?.error_message || 'Unknown error during enrichment.');
-        }
-      }
-      
-      await job.progress(80);
-
-      // 4. Update lead with the final package
-      if (finalPackage) {
-        await this.leadsService.updateEnrichmentData(leadId, finalPackage);
-        this.logger.log(`Successfully enriched lead ${leadId} and saved package.`);
-      } else {
-        this.logger.warn(`Enrichment pipeline for lead ${leadId} finished without a final package.`);
+      for await (const event of eventStream) {
+        // The webhook service already has logic to parse and broadcast events
+        await this.mcpWebhookService.processStreamedEvent(event);
       }
 
-      // 5. Set final lead status
-      await this.leadsService.updateStatus(leadId, LeadStatus.ENRICHED);
-      this.webSocketService.emitLeadUpdate(userId, {
-        id: lead.id,
-        status: LeadStatus.ENRICHED,
-        enrichment_data: finalPackage, // Send the full data on completion
-      });
+      this.logger.log(`[ENRICH_SUCCESS] Successfully finished streaming enrichment for lead ${leadId}.`);
       
-      await job.progress(100);
-      this.logger.log(`Enrichment process completed for lead ${leadId}.`);
+      // The final lead status update (e.g., to ENRICHED) will be handled
+      // by the webhook service when it receives the 'lead_enrichment_end' event.
 
-      return { success: true, leadId, message: 'Enrichment successful' };
+      return { success: true, leadId, message: 'Enrichment stream completed.' };
 
     } catch (error) {
       this.logger.error(`Enrichment process failed for lead ${leadId}: ${error.message}`, error.stack);
-      if (lead) {
-        await this.leadsService.updateStatus(leadId, LeadStatus.ENRICHMENT_FAILED);
-        this.webSocketService.emitLeadUpdate(userId, {
-          id: lead.id,
-          status: LeadStatus.ENRICHMENT_FAILED,
-          error: error.message,
-        });
-      }
-      await job.moveToFailed({ message: error.message }, true);
+      await this.leadsService.updateStatus(leadId, LeadStatus.ENRICHMENT_FAILED);
+      // Optionally, emit a specific failure event via WebSocket
+      await this.mcpWebhookService.processStreamedEvent({
+          event_type: 'pipeline_error',
+          job_id: harvesterJobId,
+          user_id: userId,
+          lead_id: leadId,
+          error_message: `Enrichment failed: ${error.message}`,
+          error_type: error.constructor.name,
+          timestamp: new Date().toISOString(),
+      });
       throw error;
     }
   }

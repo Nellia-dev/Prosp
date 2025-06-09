@@ -644,7 +644,7 @@ export class McpService implements OnModuleInit {
   }
 
   async streamEnrichmentPipeline(lead: Lead, userId: string, jobId: string): Promise<AsyncIterable<any>> {
-    const url = `${this.baseUrl}/api/v2/stream_enrichment_pipeline`;
+    const url = `${this.baseUrl}/api/v2/execute_streaming_prospect`;
     this.logger.log(`Initiating enrichment stream for lead ${lead.id} at ${url}`);
 
     const businessContext = await this.businessContextService.getContextForMcp(userId);
@@ -665,5 +665,60 @@ export class McpService implements OnModuleInit {
     );
 
     return response.data;
+  }
+
+  async executeUnifiedPipeline(
+    businessContext: BusinessContextType,
+    userId: string,
+    jobId: string,
+  ): Promise<AsyncIterable<any>> {
+    const url = `${this.baseUrl}/api/v2/execute_streaming_prospect`;
+    this.logger.log(`[MCP_SERVICE] Initiating unified pipeline stream for job ${jobId} at ${url}`);
+
+    const payload = {
+      user_id: userId,
+      job_id: jobId,
+      business_context: businessContext,
+    };
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(url, payload, {
+          responseType: 'stream',
+          timeout: 900000, // 15 minute timeout for the entire process
+        }),
+      );
+
+      // The response.data is a stream. We need to handle it as an async iterator.
+      const stream = response.data;
+      
+      return (async function* () {
+        // Buffer to handle multi-line data chunks
+        let buffer = '';
+        for await (const chunk of stream) {
+          buffer += chunk.toString();
+          let eolIndex;
+          // Process all complete events in the buffer
+          while ((eolIndex = buffer.indexOf('\n\n')) >= 0) {
+            const eventString = buffer.substring(0, eolIndex).trim();
+            buffer = buffer.substring(eolIndex + 2);
+            
+            if (eventString.startsWith('data:')) {
+              const jsonString = eventString.substring(5).trim();
+              try {
+                const event = JSON.parse(jsonString);
+                yield event;
+              } catch (e) {
+                this.logger.warn(`Failed to parse JSON from stream event: ${jsonString}`);
+              }
+            }
+          }
+        }
+      }.bind(this))();
+
+    } catch (error) {
+      this.logger.error(`[MCP_SERVICE] Failed to initiate unified pipeline stream for job ${jobId}: ${error.message}`, error.stack);
+      throw new McpApiError(`Failed to start unified pipeline: ${error.message}`);
+    }
   }
 }

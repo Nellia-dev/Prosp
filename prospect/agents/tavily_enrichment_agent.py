@@ -30,8 +30,8 @@ class TavilyEnrichmentOutput(BaseModel):
 
 
 class TavilyEnrichmentAgent(BaseAgent[TavilyEnrichmentInput, TavilyEnrichmentOutput]):
-    def __init__(self, llm_client: LLMClientBase, tavily_api_key: str):
-        super().__init__(llm_client)
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, tavily_api_key: str, **kwargs):
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
         self.tavily_api_key = tavily_api_key
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
@@ -100,7 +100,14 @@ class TavilyEnrichmentAgent(BaseAgent[TavilyEnrichmentInput, TavilyEnrichmentOut
                 )
 
             try:
-                search_queries = json.loads(llm_response_queries)
+                # Extract JSON from the response
+                match = re.search(r"```json\n(.*)\n```", llm_response_queries, re.DOTALL)
+                if match:
+                    json_str = match.group(1)
+                else:
+                    json_str = llm_response_queries
+
+                search_queries = json.loads(json_str)
                 if not isinstance(search_queries, list) or not all(isinstance(q, str) for q in search_queries):
                     raise ValueError("LLM did not return a valid list of search strings.")
             except (json.JSONDecodeError, ValueError) as e:

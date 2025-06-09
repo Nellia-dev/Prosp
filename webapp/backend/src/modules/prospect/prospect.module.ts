@@ -9,7 +9,9 @@ import { QuotaModule } from '../quota/quota.module';
 import { AuthModule } from '../auth/auth.module';
 import { LeadsModule } from '../leads/leads.module';
 import { ProspectProcessor } from '../queue/processors/prospect.processor';
+import { EnrichmentProcessor } from '../queue/processors/enrichment.processor';
 import { WebSocketModule } from '../websocket/websocket.module';
+import { McpWebhookModule } from '../mcp-webhook/mcp-webhook.module';
 
 @Module({
   imports: [
@@ -21,6 +23,7 @@ import { WebSocketModule } from '../websocket/websocket.module';
     }),
     BusinessContextModule,
     McpModule,
+    McpWebhookModule,
     UsersModule,
     QuotaModule,
     AuthModule,
@@ -28,7 +31,7 @@ import { WebSocketModule } from '../websocket/websocket.module';
     LeadsModule,
   ],
   controllers: [ProspectController],
-  providers: [ProspectService, ProspectProcessor],
+  providers: [ProspectService, ProspectProcessor, EnrichmentProcessor],
   exports: [ProspectService],
 })
 export class ProspectModule {}

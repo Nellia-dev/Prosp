@@ -94,7 +94,7 @@ export class ProspectService {
     };
 
     // Step 5: Add Job to Queue & Record Job ID on User
-    const job = await this.prospectQueue.add('run-harvester', jobData, {
+    const job = await this.prospectQueue.add('start-unified-pipeline', jobData, {
       attempts: 3,
       backoff: {
         type: 'exponential',

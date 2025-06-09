@@ -425,33 +425,9 @@ lead_search_and_qualify_agent = Agent(
     name="lead_search_and_qualify_agent",
     model="gemini-1.5-flash-8b", 
     description="""Você é um agente especializado em buscar potenciais leads na web e realizar uma qualificação inicial do seu potencial, com base nos critérios fornecidos pelo usuário. Seu objetivo é identificar páginas e conteúdos que sejam relevantes para a geração de leads.""",
-    instruction="""Você é responsável por encontrar e qualificar leads.
-    Seu processo de trabalho é o seguinte:
-
-    1.  **Execução da Busca e Qualificação Inicial:**
-        Utilize a ferramenta `search_and_qualify_leads` com a query de busca que você recebeu (já refinada). **Para evitar exceder o limite de tokens do modelo e otimizar o tempo, você DEVE limitar o número de resultados a serem raspados e qualificados para um máximo de 3 (três) ou 4 (quatro) resultados, passando o parâmetro `max_search_results_to_scrape` com este valor.** Esta ferramenta fará a busca na internet e raspará o conteúdo das páginas relevantes, retornando o conteúdo raspado e uma `qualification_summary` (resumo de qualificação) gerado pelo Gemini.
-
-    2.  **Análise e Agregação dos Resultados Qualificados:**
-        Para cada resultado retornado pela ferramenta `search_and_qualify_leads`, analise o `qualification_summary` e o `url`.
-        Filtre resultados que claramente não são relevantes ou que apresentaram erros.
-        Agrupe os leads promissores, destacando o nome da empresa (se inferível do resumo ou título), a URL, e o resumo da qualificação.
-
-    3.  **Formatação da Resposta Final:**
-        Com a lista de leads qualificados, formate essas informações em uma resposta clara, amigável e legível para o usuário.
-        Use bullet points ou uma lista numerada para apresentar cada lead potencial.
-        Se nenhum lead relevante for encontrado, informe o usuário educadamente.
-
-    Exemplo de resposta formatada com resultados:
-    "Encontrei os seguintes potenciais leads para sua solicitação:
-    - **Empresa/Título:** [Nome da Empresa ou Título da Página]
-      **URL:** [URL da Página]
-      **Qualificação:** [Resumo da qualificação do Gemini]
-    Se precisar de mais detalhes ou da extração de dados específicos (e-mail, telefone) para esses, me diga!"
-
-    Exemplo de resposta formatada sem resultados:
-    "Desculpe, não consegui encontrar potenciais leads relevantes com os critérios fornecidos. Por favor, tente reformular sua pergunta ou forneça mais detalhes para a busca."
-
-    Garanta que todas as etapas sejam executadas sequencialmente e que os dados sejam processados de forma precisa em cada fase.""",
+    instruction="""Sua única tarefa é usar a ferramenta `search_and_qualify_leads` com a query fornecida.
+    Use o parâmetro `max_search_results_to_scrape` para limitar a busca a 3 ou 4 resultados para otimizar o processo.
+    Retorne a saída da ferramenta diretamente.""",
     tools=[search_and_qualify_leads]
 )
 
@@ -460,34 +436,9 @@ structured_lead_extractor_agent = Agent(
     name="structured_lead_extractor_agent",
     model="gemini-1.5-flash-8b", 
     description="""Você é um agente altamente especializado na extração de dados estruturados de leads a partir de conteúdo web. Sua função é buscar informações detalhadas como nome da empresa, site, e-mails de contato, telefones, setor e tamanho, e apresentá-las em um formato padronizado.""",
-    instruction="""Você é o ponto de entrada para extrair informações de leads em um formato estruturado.
-    Seu processo de trabalho é o seguinte:
-
-    1.  **Execução da Busca e Extração Estruturada:**
-        Utilize a ferramenta `find_and_extract_structured_leads` com a query de busca que você recebeu. **Para otimizar o processamento, você DEVE limitar o número de resultados a serem processados para um máximo de 3 (três) ou 4 (quatro) resultados, passando o parâmetro `max_search_results_to_process` com este valor.** Esta ferramenta fará a busca na internet, raspará o conteúdo das páginas e tentará extrair informações detalhadas de leads usando uma combinação de Regex e inteligência do Gemini. O resultado será uma lista de objetos JSON, cada um representando um lead.
-
-    2.  **Formatação da Resposta Final:**
-        Com a lista de leads estruturados retornada pela ferramenta `find_and_extract_structured_leads`:
-        - Se leads forem encontrados, apresente-os claramente ao usuário. O formato ideal é uma lista de leads, onde cada lead é apresentado com seus campos (Nome da Empresa, Site, E-mails, Telefones, etc.). Você pode usar um formato textual amigável ou, se a complexidade for alta, indicar que os dados estão prontos para exportação.
-        - Se a ferramenta retornar um erro ou uma lista vazia, informe o usuário educadamente sobre a falha e sugira reformular a busca ou verificar os critérios.
-
-    Exemplo de resposta formatada com sucesso:
-    "Encontrei os seguintes leads com informações estruturadas:
-    - **Empresa:** [Nome da Empresa 1]
-      **Site:** [Site 1]
-      **E-mails:** [email1@empresa.com, email2@empresa.com]
-      **Telefones:** [telefone1, telefone2]
-      **Setor:** [Setor 1]
-      **Descrição:** [Breve descrição 1]
-      **Fonte:** [URL da fonte]
-    - **Empresa:** [Nome da Empresa 2]
-      ...
-    Esses dados podem ser exportados para um CRM ou planilha, se desejar."
-
-    Exemplo de resposta formatada sem sucesso:
-    "Desculpe, não consegui extrair informações de leads estruturadas com base na sua solicitação. Por favor, tente refinar a query ou fornecer mais detalhes para a busca. [Mensagem de erro da ferramenta, se houver]"
-
-    Garanta que todas as etapas sejam executadas sequencialmente e que os dados sejam processados de forma precisa em cada fase.""",
+    instruction="""Sua única tarefa é usar a ferramenta `find_and_extract_structured_leads` com a query fornecida.
+    Use o parâmetro `max_search_results_to_process` para limitar a busca a 3 ou 4 resultados.
+    Retorne a saída da ferramenta diretamente.""",
     tools=[find_and_extract_structured_leads]
 )
 
@@ -496,34 +447,7 @@ direct_url_lead_processor_agent = Agent(
     name="direct_url_lead_processor_agent",
     model="gemini-1.5-flash-8b", 
     description="""Você é um agente especializado em processar diretamente uma lista de URLs fornecidas pelo usuário para extrair informações de leads. Para cada URL, você raspará o conteúdo e usará o Google Gemini para analisar e extrair dados de leads, gerenciando a taxa de chamadas da API.""",
-    instruction="""Você é o ponto de entrada para processamento de URLs para extração de leads.
-    Seu processo de trabalho é o seguinte:
-
-    1.  **Entendimento e Extração de URLs e Instrução de Análise:**
-        Ao receber a solicitação do usuário, sua primeira tarefa é identificar e extrair *todas as URLs* presentes na mensagem.
-        As URLs podem ser fornecidas em uma lista, separadas por vírgulas, espaços ou em formato de texto livre.
-        Você também deve identificar qual é a *instrução de análise detalhada* que o usuário deseja que o Gemini aplique a cada link para extração de leads (ex: "extraia nome da empresa, site e e-mail", "identifique o CEO e o tamanho da empresa"). Se nenhuma instrução de análise específica for dada, use a instrução padrão para extração de leads.
-
-    2.  **Execução da Ferramenta de Processamento:**
-        Utilize a ferramenta `process_provided_urls_for_leads`. Passe a lista de URLs extraídas para o parâmetro `urls` e a instrução de análise (se identificada) para o parâmetro `lead_analysis_instruction`. Esta ferramenta fará a raspagem de cada URL, chamará o Gemini para análise e extração de leads, e gerenciará os limites de taxa entre as chamadas.
-
-    3.  **Formatação da Resposta Final:**
-        Com a lista de resultados retornada pela ferramenta `process_provided_urls_for_leads`, formate as informações em uma resposta clara, amigável e legível para o usuário. Para cada URL processada, apresente o título da página (se disponível), a URL original e os dados de leads extraídos.
-        Se a ferramenta retornar um erro ou se nenhum dado de lead for processado, informe o usuário educadamente.
-
-    Exemplo de resposta formatada com resultados:
-    "Analisei os seguintes links e extraí as informações de leads:
-    - **Link:** [URL do Link 1]
-      **Título:** [Título da Página 1]
-      **Dados do Lead:** [Nome da Empresa: ABC, Site: abc.com, E-mail: contato@abc.com]
-    - **Link:** [URL do Link 2]
-      **Título:** [Título da Página 2]
-      **Dados do Lead:** [Nome da Empresa: XYZ, Setor: Finanças]
-    Se precisar de mais análises ou da exportação desses dados, por favor, me diga."
-
-    Exemplo de resposta formatada sem resultados ou com erro:
-    "Desculpe, não consegui processar os links fornecidos para extração de leads. Por favor, verifique as URLs e tente novamente, ou forneça mais detalhes sobre o que você gostaria de analisar. Se houve um erro, a chave da API Gemini pode não estar configurada corretamente ou os limites de quota foram atingidos."
-
-    Garanta que todas as etapas sejam executadas sequencialmente e que os dados sejam processados de forma precisa em cada fase.""",
+    instruction="""Sua única tarefa é extrair todas as URLs da query do usuário e usar a ferramenta `process_provided_urls_for_leads` com a lista de URLs extraídas.
+    Retorne a saída da ferramenta diretamente.""",
     tools=[process_provided_urls_for_leads]
 )

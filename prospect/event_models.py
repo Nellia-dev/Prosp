@@ -34,8 +34,6 @@ class PipelineStartEvent(BaseEvent):
     initial_query: str
     max_leads_to_generate: int
     
-    def __post_init__(self):
-        self.event_type = "pipeline_start"
     
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
@@ -54,8 +52,6 @@ class PipelineEndEvent(BaseEvent):
     success: bool
     error_message: Optional[str] = None
     
-    def __post_init__(self):
-        self.event_type = "pipeline_end"
     
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
@@ -75,8 +71,6 @@ class AgentStartEvent(BaseEvent):
     agent_description: str
     input_query: str
     
-    def __post_init__(self):
-        self.event_type = "agent_start"
     
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
@@ -97,8 +91,6 @@ class AgentEndEvent(BaseEvent):
     final_response: Optional[str] = None
     error_message: Optional[str] = None
     
-    def __post_init__(self):
-        self.event_type = "agent_end"
     
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
@@ -119,8 +111,6 @@ class ToolCallStartEvent(BaseEvent):
     agent_name: str
     tool_args: Dict[str, Any]
     
-    def __post_init__(self):
-        self.event_type = "tool_call_start"
     
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
@@ -140,8 +130,6 @@ class ToolCallOutputEvent(BaseEvent):
     output_snippet: str  # Potentially chunked output
     is_final: bool = False
     
-    def __post_init__(self):
-        self.event_type = "tool_call_output"
     
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
@@ -163,8 +151,6 @@ class ToolCallEndEvent(BaseEvent):
     success: bool
     error_message: Optional[str] = None
     
-    def __post_init__(self):
-        self.event_type = "tool_call_end"
     
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
@@ -181,19 +167,55 @@ class ToolCallEndEvent(BaseEvent):
 @dataclass
 class LeadGeneratedEvent(BaseEvent):
     """Event emitted when a lead is successfully generated."""
+    lead_id: str # Unique ID for this lead throughout its lifecycle
     lead_data: Dict[str, Any]
     source_url: str
     agent_name: str
     
-    def __post_init__(self):
-        self.event_type = "lead_generated"
     
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
         data.update({
+            "lead_id": self.lead_id,
             "lead_data": self.lead_data,
             "source_url": self.source_url,
             "agent_name": self.agent_name
+        })
+        return data
+
+
+@dataclass
+class LeadEnrichmentStartEvent(BaseEvent):
+    """Event emitted when the enrichment process starts for a specific lead."""
+    lead_id: str
+    company_name: str
+
+
+    def to_dict(self) -> Dict[str, Any]:
+        data = super().to_dict()
+        data.update({
+            "lead_id": self.lead_id,
+            "company_name": self.company_name,
+        })
+        return data
+
+
+@dataclass
+class LeadEnrichmentEndEvent(BaseEvent):
+    """Event emitted when the enrichment process for a lead completes."""
+    lead_id: str
+    success: bool
+    final_package: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+
+
+    def to_dict(self) -> Dict[str, Any]:
+        data = super().to_dict()
+        data.update({
+            "lead_id": self.lead_id,
+            "success": self.success,
+            "final_package": self.final_package,
+            "error_message": self.error_message,
         })
         return data
 
@@ -205,8 +227,6 @@ class StatusUpdateEvent(BaseEvent):
     agent_name: Optional[str] = None
     progress_percentage: Optional[float] = None
     
-    def __post_init__(self):
-        self.event_type = "status_update"
     
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
@@ -226,8 +246,6 @@ class PipelineErrorEvent(BaseEvent):
     agent_name: Optional[str] = None
     tool_name: Optional[str] = None
     
-    def __post_init__(self):
-        self.event_type = "pipeline_error"
     
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
@@ -252,6 +270,8 @@ EVENT_TYPES = {
     "lead_generated": LeadGeneratedEvent,
     "status_update": StatusUpdateEvent,
     "pipeline_error": PipelineErrorEvent,
+    "lead_enrichment_start": LeadEnrichmentStartEvent,
+    "lead_enrichment_end": LeadEnrichmentEndEvent,
 }
 
 
