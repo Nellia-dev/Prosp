@@ -172,8 +172,15 @@ class PipelineOrchestrator:
         """
         logger.info(f"[{self.job_id}] Starting harvester...")
         
-        runner = Runner(
+        query_refiner_runner = Runner(
             app_name=ADK_APP_NAME,
+            agent=harvester_query_refiner_agent,
+            session_service=ADK_SESSION_SERVICE,
+        )
+        
+        search_runner = Runner(
+            app_name=ADK_APP_NAME,
+            agent=harvester_search_agent,
             session_service=ADK_SESSION_SERVICE,
         )
 
@@ -186,8 +193,7 @@ class PipelineOrchestrator:
             session_id = str(uuid.uuid4())
             refined_query_response = None
             # Refine the query
-            for refined_query_response in runner.run(
-                agent=harvester_query_refiner_agent,
+            async for refined_query_response in query_refiner_runner.run_stream(
                 user_id=self.user_id,
                 session_id=session_id,
                 new_message=initial_query,
@@ -211,8 +217,7 @@ class PipelineOrchestrator:
             # Search for leads
             max_leads = self.business_context.get("max_leads_to_generate", 10)
             lead_count = 0
-            async for lead_chunk in runner.run_stream(
-                agent=harvester_search_agent,
+            async for lead_chunk in search_runner.run_stream(
                 user_id=self.user_id,
                 session_id=session_id,
                 new_message=search_query,
