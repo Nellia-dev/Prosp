@@ -37,6 +37,8 @@ class DetailedApproachPlanOutput(BaseModel):
 class DetailedApproachPlanAgent(BaseAgent[DetailedApproachPlanInput, DetailedApproachPlanOutput]):
     def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
         super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
+        from loguru import logger
+        self.logger = logger
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""

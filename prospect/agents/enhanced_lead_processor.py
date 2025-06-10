@@ -264,15 +264,37 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             objection_handling_output, events = await get_agent_result(self.objection_handling_agent, ObjectionHandlingInput(detailed_approach_plan_text=detailed_approach_plan_output.model_dump_json() if detailed_approach_plan_output else "{}", persona_profile=persona_profile_str, product_service_offered=self.product_service_context, company_name=company_name), "Preparing objection handling")
             for event in events: yield event
 
+            # Handle lead qualification mapping - rename confidence_score to qualification_score
+            lead_qual_data = None
+            if qualification_output:
+                qual_dict = qualification_output.model_dump()
+                # Map confidence_score to qualification_score if present
+                if 'confidence_score' in qual_dict and qual_dict['confidence_score'] is not None:
+                    qual_dict['qualification_score'] = qual_dict['confidence_score']
+                else:
+                    # Provide a default qualification_score based on tier
+                    tier_map = {
+                        'Alto Potencial': 0.9,
+                        'Potencial Médio': 0.6,
+                        'Baixo Potencial': 0.3,
+                        'Não Qualificado': 0.1
+                    }
+                    qual_dict['qualification_score'] = tier_map.get(qual_dict.get('qualification_tier', ''), 0.5)
+                lead_qual_data = qual_dict
+
             enhanced_strategy = EnhancedStrategy(
-                external_intelligence=external_intel, contact_information=contact_info, pain_point_analysis=pain_analysis_output,
-                competitor_intelligence=competitor_intel_output, purchase_triggers=purchase_triggers_output, lead_qualification=qualification_output,
-                tot_generated_strategies=tot_generation_output.proposed_strategies if tot_generation_output else [],
-                tot_evaluated_strategies=tot_evaluation_output.evaluated_strategies if tot_evaluation_output else [],
-                tot_synthesized_action_plan=tot_synthesis_output,
-                detailed_approach_plan=detailed_approach_plan_output,
-                value_propositions=value_props_output.custom_propositions if value_props_output else [],
-                objection_framework=objection_handling_output,
+                external_intelligence=external_intel,
+                contact_information=contact_info.model_dump() if contact_info else None,
+                pain_point_analysis=pain_analysis_output.model_dump() if pain_analysis_output else None,
+                competitor_intelligence=competitor_intel_output.model_dump() if competitor_intel_output else None,
+                purchase_triggers=purchase_triggers_output.model_dump() if purchase_triggers_output else None,
+                lead_qualification=lead_qual_data,
+                tot_generated_strategies=[s.model_dump() for s in tot_generation_output.proposed_strategies] if tot_generation_output and tot_generation_output.proposed_strategies else [],
+                tot_evaluated_strategies=[e.model_dump() for e in tot_evaluation_output.evaluated_strategies] if tot_evaluation_output and tot_evaluation_output.evaluated_strategies else [],
+                tot_synthesized_action_plan=tot_synthesis_output.model_dump() if tot_synthesis_output else None,
+                detailed_approach_plan=detailed_approach_plan_output.model_dump() if detailed_approach_plan_output else None,
+                value_propositions=[p.model_dump() for p in value_props_output.custom_propositions] if value_props_output and value_props_output.custom_propositions else [],
+                objection_framework=objection_handling_output.model_dump() if objection_handling_output else None,
                 strategic_questions=strategic_questions_output.generated_questions if strategic_questions_output else []
             )
             

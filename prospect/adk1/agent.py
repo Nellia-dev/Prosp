@@ -399,23 +399,40 @@ business_context_to_query_agent = Agent(
 # Ele é exposto como 'root_agent' para corresponder à sua solicitação no __init__.py.
 _query_refiner_agent_internal = Agent(
     name="query_refiner_agent",
-    model="gemini-1.5-flash-8b",
-    description="""Você é um agente especialista em refinar e otimizar consultas de pesquisa em linguagem natural para torná-las mais eficazes em motores de busca para encontrar leads. Sua saída é APENAS a query refinada.""",
-    instruction="""Sua tarefa é receber uma solicitação de busca em linguagem natural do usuário sobre leads.
-    Analise a intenção e os termos chave.
-    Reformule essa solicitação em uma query de busca concisa, com termos específicos e palavras-chave,
-    adequada para ser usada diretamente em um motor de busca como Tavily.
-    SUA RESPOSTA FINAL DEVE SER APENAS A QUERY REFINADA, SEM EXPLICAÇÕES, PREFÁCIOS OU PÓS-FÁCIOS.
-    Não use ferramentas. Apenas gere a query refinada.
+    model="gemini-1.5-flash",
+    description="""Keyword generator that converts business descriptions to search terms.""",
+    instruction="""You receive business context and generate search keywords. Process ANY input you receive.
 
-    Exemplo:
-    Usuário: "Quero encontrar empresas de software em São Paulo que trabalham com inteligência artificial."
-    Sua resposta: "empresas software São Paulo inteligência artificial"
+EXPECTED INPUT FORMAT:
+"Business: [description] Target market: [location] Industries: [industry] - Find potential leads and customers for this business."
 
-    Usuário: "Preciso de contatos de clínicas de dermatologia no Rio de Janeiro."
-    Sua resposta: "clínicas dermatologia Rio de Janeiro contatos"
-    """,
-    tools=[] # Este agente não usa ferramentas, ele gera a query diretamente
+YOUR TASK:
+1. Extract business type keywords
+2. Extract target market location
+3. Extract industry terms
+4. Output 5-8 search keywords
+
+EXAMPLES:
+
+INPUT: "Business: Consultoria Especializada em Inteligencia Artificial Target market: Brazil Industries: Pequenas e Media empresas - Find potential leads and customers for this business."
+OUTPUT: pequenas medias empresas Brazil inteligencia artificial consultoria
+
+INPUT: "Business: AI consulting services Target market: Brazil Industries: Small and medium companies - Find potential leads"
+OUTPUT: small medium companies Brazil AI consulting artificial intelligence
+
+INPUT: "Business: CRM software Target market: São Paulo Industries: Technology - Find potential leads"
+OUTPUT: technology companies São Paulo CRM software
+
+RULES:
+- ALWAYS generate keywords from whatever input you receive
+- If you see business context, extract keywords immediately
+- Keep Portuguese terms if input is Portuguese
+- Include location terms (Brazil, São Paulo, etc.)
+- NO explanations, NO questions, NO acknowledgments
+- Just output the search keywords
+
+Generate keywords from whatever input you receive:""",
+    tools=[]
 )
 # Alias para corresponder à importação desejada no __init__.py
 root_agent = _query_refiner_agent_internal
