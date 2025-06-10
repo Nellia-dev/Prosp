@@ -12,6 +12,9 @@ from datetime import datetime, timedelta
 from loguru import logger
 import math
 
+# from sentence_transformers import SentenceTransformer # (example for embeddings)
+# from some_llm_client import LLMClient # (e.g., openai, google.generativeai)
+# import numpy as np # (example if using faiss.IndexFlatL2.add with numpy)
 
 class AdvancedProspectProfiler:
     """
@@ -19,6 +22,13 @@ class AdvancedProspectProfiler:
     """
     
     def __init__(self):
+        # Ensure logger is available if this class is instantiated elsewhere independently
+        # from loguru import logger # Already imported at module level
+
+        # Conceptual: Initialize actual models here if they were to be used.
+        self.embedding_model = None # Placeholder: e.g., SentenceTransformer('all-MiniLM-L6-v2')
+        self.llm_client = None      # Placeholder: e.g., OpenAI() or GeminiClient()
+
         self.prospect_signals = {
             'high_intent': {
                 'keywords': ['hiring', 'expanding', 'growing', 'funding', 'investment', 'acquisition'],
@@ -51,7 +61,7 @@ class AdvancedProspectProfiler:
             'education': 0.8
         }
     
-    def create_advanced_prospect_profile(self, lead_data: Dict[str, Any], business_context: Dict[str, Any]) -> Dict[str, Any]:
+    def create_advanced_prospect_profile(self, lead_data: Dict[str, Any], enriched_context: Dict[str, Any], rag_vector_store: Optional[Dict] = None) -> Dict[str, Any]:
         """Create comprehensive AI-powered prospect profile"""
         
         # Extract text content for analysis
@@ -61,10 +71,10 @@ class AdvancedProspectProfiler:
         intent_score = self._analyze_buying_intent(text_content)
         
         # Analyze pain point alignment
-        pain_alignment = self._analyze_pain_alignment(text_content, business_context)
+        pain_alignment = self._analyze_pain_alignment(text_content, enriched_context)
         
         # Predict conversion probability
-        conversion_probability = self._predict_conversion_probability(lead_data, business_context, intent_score, pain_alignment)
+        conversion_probability = self._predict_conversion_probability(lead_data, enriched_context, intent_score, pain_alignment)
         
         # Calculate urgency score
         urgency_score = self._calculate_urgency_score(text_content, lead_data)
@@ -83,8 +93,8 @@ class AdvancedProspectProfiler:
             'urgency_score': urgency_score,
             'optimal_timing': optimal_timing,
             'engagement_strategy': engagement_strategy,
-            'predictive_insights': self._generate_predictive_insights(lead_data, business_context),
-            'competitive_analysis': self._analyze_competitive_landscape(text_content, business_context)
+            'predictive_insights': self._generate_predictive_insights(lead_data, enriched_context, rag_vector_store),
+            'competitive_analysis': self._analyze_competitive_landscape(text_content, enriched_context)
         }
     
     def _extract_all_text(self, lead_data: Dict[str, Any]) -> str:
@@ -113,11 +123,19 @@ class AdvancedProspectProfiler:
         
         return min(intent_score / max(total_weight, 1.0), 1.0) if total_weight > 0 else 0.0
     
-    def _analyze_pain_alignment(self, text_content: str, business_context: Dict[str, Any]) -> float:
+    def _analyze_pain_alignment(self, text_content: str, enriched_context: Dict[str, Any]) -> float:
         """Analyze how well prospect's pain points align with our solutions"""
-        our_solutions = business_context.get('pain_points', []) + [business_context.get('value_proposition', '')]
-        solution_keywords = []
+        # Simplified RAG: Selectively using 'problems_we_solve' and 'value_proposition' from the broader enriched_context.
+        lead_qualification_criteria = enriched_context.get('lead_qualification_criteria', {})
+        business_offering = enriched_context.get('business_offering', {})
         
+        problems_we_solve = lead_qualification_criteria.get('problems_we_solve', [])
+        value_proposition = business_offering.get('value_proposition', '')
+
+        our_solutions = problems_we_solve + ([value_proposition] if value_proposition else [])
+        logger.info(f"Profiler: Analyzing pain alignment using {len(our_solutions)} solution points from loaded context.")
+
+        solution_keywords = []
         for solution in our_solutions:
             if solution:
                 solution_keywords.extend(str(solution).lower().split())
@@ -128,12 +146,12 @@ class AdvancedProspectProfiler:
         # Count alignment indicators
         alignment_count = 0
         for keyword in solution_keywords:
-            if len(keyword) > 3 and keyword in text_content:
+            if len(keyword) > 3 and keyword in text_content: # Basic check to avoid common short words
                 alignment_count += 1
         
-        return min(alignment_count / len(solution_keywords), 1.0)
+        return min(alignment_count / len(solution_keywords), 1.0) if solution_keywords else 0.5
     
-    def _predict_conversion_probability(self, lead_data: Dict[str, Any], business_context: Dict[str, Any], 
+    def _predict_conversion_probability(self, lead_data: Dict[str, Any], enriched_context: Dict[str, Any],
                                       intent_score: float, pain_alignment: float) -> float:
         """Predict probability of lead conversion using multiple factors"""
         
@@ -144,10 +162,10 @@ class AdvancedProspectProfiler:
         size_factor = self._estimate_company_size_factor(lead_data)
         
         # Adjust for industry alignment
-        industry_factor = self._calculate_industry_alignment(lead_data, business_context)
+        industry_factor = self._calculate_industry_alignment(lead_data, enriched_context)
         
         # Adjust for geographic alignment
-        geo_factor = self._calculate_geographic_alignment(lead_data, business_context)
+        geo_factor = self._calculate_geographic_alignment(lead_data, enriched_context)
         
         # Combined probability with diminishing returns
         probability = base_probability * size_factor * industry_factor * geo_factor
@@ -235,45 +253,108 @@ class AdvancedProspectProfiler:
             'follow_up_cadence': self._determine_follow_up_cadence(intent_score, urgency_score)
         }
     
-    def _generate_predictive_insights(self, lead_data: Dict[str, Any], business_context: Dict[str, Any]) -> List[str]:
-        """Generate AI-powered predictive insights"""
-        insights = []
+    def _generate_predictive_insights(self, lead_data: Dict[str, Any], enriched_context: Dict[str, Any], rag_vector_store: Optional[Dict] = None) -> List[str]:
+        """
+        Generate AI-powered predictive insights using a RAG-simulated approach.
+        Conceptual: This method now simulates a full RAG pipeline:
+        1. Query Formulation from lead_data.
+        2. Query Embedding (placeholder).
+        3. Vector Store Search (placeholder, using the conceptual rag_vector_store).
+        4. LLM Prompt Formulation with retrieved context.
+        5. LLM Call and Response Processing (placeholder).
+        """
+        lead_text_snippet = (self._extract_all_text(lead_data)[:1000]).lower() # Limit for query, already lowercased
+
+        # Default insights if RAG components are not fully available
+        insights = ["Default insight: Further analysis pending full RAG implementation or component initialization."]
+
+        if not rag_vector_store or not self.embedding_model or not self.llm_client:
+            # Conceptual: In a real system, self.embedding_model and self.llm_client would be initialized.
+            # For this simulation, we allow it to proceed if rag_vector_store is present,
+            # as embedding_model and llm_client are placeholders for actual calls.
+            # A stricter check might be:
+            # if not rag_vector_store or not self.embedding_model or not self.llm_client:
+            # However, to allow the simulation of vector search and LLM call with placeholders for model/client:
+            if not rag_vector_store:
+                 logger.warning(f"Profiler: RAG vector store not available for lead {lead_data.get('company_name', 'N/A')}. Skipping RAG-based insights.")
+                 return insights
+            logger.warning(f"Profiler: One or more RAG components (embedding model, LLM client) not initialized for lead {lead_data.get('company_name', 'N/A')}. Proceeding with conceptual RAG.")
+
+        # 1. Formulate Query from lead_data
+        # Conceptual: Query formulation could be more sophisticated.
+        query = f"Generate predictive sales insights for a company: {lead_data.get('company_name', 'N/A')}, described as: {lead_text_snippet}"
+        logger.info(f"Profiler RAG Query: {query}")
+
+        # 2. Embed Query (Conceptual)
+        # Conceptual: Actual call to an embedding model.
+        # query_embedding = self.embedding_model.encode(query)
+        query_embedding = [0.1] * 384 # Placeholder embedding, assuming 384 dimensions like all-MiniLM-L6-v2
+        logger.info("Profiler: Query embedding generated (conceptually).")
+
+        # 3. Search Vector Store (Conceptual)
+        retrieved_chunks_texts = []
+        if rag_vector_store and isinstance(rag_vector_store.get("embeddings"), list) and isinstance(rag_vector_store.get("chunks"), list):
+            # Conceptual: Actual vector search using the query_embedding against rag_vector_store["embeddings"].
+            # This would involve calculating similarities (e.g., cosine similarity) and getting top_k results.
+            # Example with FAISS:
+            # import numpy as np
+            # embeddings_matrix = np.array(rag_vector_store["embeddings"]).astype('float32')
+            # # Assuming vector_store_faiss_index is your FAISS index object built from these embeddings
+            # D, I = vector_store_faiss_index.search(np.array([query_embedding]).astype('float32'), k=3) # k=top 3 chunks
+            # for idx in I[0]: retrieved_chunks_texts.append(rag_vector_store["chunks"][idx])
+
+            logger.info("Profiler: Simulating vector search... (conceptual: picking first 2 chunks if available)")
+            retrieved_chunks_texts = rag_vector_store["chunks"][:2] # Simplified: pick first 2 chunks as placeholder
+        else:
+            logger.warning(f"Profiler: RAG vector store for lead {lead_data.get('company_name', 'N/A')} is missing expected 'embeddings' or 'chunks', or they are not lists.")
         
-        text_content = self._extract_all_text(lead_data)
-        
-        # Technology adoption insights
-        if any(tech in text_content for tech in ['digital', 'technology', 'automation', 'ai']):
-            insights.append("Company shows interest in technology adoption - emphasize innovation benefits")
-        
-        # Growth stage insights
-        if any(growth in text_content for growth in ['expanding', 'growing', 'scaling', 'new']):
-            insights.append("Company in growth phase - highlight scalability and efficiency gains")
-        
-        # Competition insights
-        competitors = business_context.get('competitors', [])
-        for competitor in competitors:
-            if competitor and competitor.lower() in text_content:
-                insights.append(f"Potential competitive displacement opportunity - mentions {competitor}")
-        
-        # Budget insights
-        if any(budget in text_content for budget in ['investment', 'funding', 'budget', 'cost']):
-            insights.append("Budget considerations mentioned - prepare ROI justification")
-        
-        return insights
-    
-    def _analyze_competitive_landscape(self, text_content: str, business_context: Dict[str, Any]) -> Dict[str, Any]:
+        logger.info(f"Profiler: Retrieved {len(retrieved_chunks_texts)} context chunks (conceptually).")
+        retrieved_context_str = "\n---\n".join(retrieved_chunks_texts) if retrieved_chunks_texts else "No specific context retrieved."
+
+        # 4. Formulate LLM Prompt with Retrieved Context
+        # Conceptual: Prompt engineering is key here.
+        llm_prompt = f"""As an expert B2B sales analyst, provide 3-4 concise predictive insights for the following lead.
+Lead Name: {lead_data.get('company_name', 'N/A')}
+Lead Description (snippet): {lead_text_snippet}
+
+Retrieved Context from our Business Strategy Document:
+---
+{retrieved_context_str}
+---
+Based ONLY on the lead data and the retrieved context above, what are the key predictive insights?
+Insights:"""
+        logger.info(f"Profiler RAG LLM Prompt for _generate_predictive_insights:\n{llm_prompt}")
+
+        # 5. Call LLM (Conceptual) and Return Response
+        # Conceptual: Actual call to an LLM client.
+        # actual_llm_response = self.llm_client.generate(llm_prompt)
+        # insights = self._parse_llm_insights(actual_llm_response) # Helper to parse LLM output into List[str]
+
+        # Placeholder response based on conceptual RAG pipeline
+        insights = [
+            f"Conceptual Insight 1 (RAG): Lead '{lead_data.get('company_name', 'N/A')}' aligns with strategy aspect: '{retrieved_chunks_texts[0][:50]}...'." if retrieved_chunks_texts else f"Conceptual Insight 1 (RAG): Lead '{lead_data.get('company_name', 'N/A')}' requires analysis against general strategy as no specific context chunks were retrieved.",
+            f"Conceptual Insight 2 (RAG): Their description '{lead_text_snippet[:50]}...' suggests potential for our solutions based on overall context."
+        ]
+        if len(retrieved_chunks_texts) > 1:
+            insights.append(f"Conceptual Insight 3 (RAG): Further synergy indicated by context: '{retrieved_chunks_texts[1][:50]}...'.")
+
+        logger.info(f"Profiler: LLM response received (conceptually): {insights}")
+        return insights[:3] # Ensure we return 3 insights as per original intent if possible
+
+    def _analyze_competitive_landscape(self, text_content: str, enriched_context: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze competitive landscape and positioning"""
-        competitors = business_context.get('competitors', [])
+        lead_qualification_criteria = enriched_context.get('lead_qualification_criteria', {})
+        competitors = lead_qualification_criteria.get('avoid_competitors', [])
         competitive_mentions = []
         
         for competitor in competitors:
-            if competitor and competitor.lower() in text_content:
-                competitive_mentions.append(competitor)
+            if competitor and str(competitor).lower() in text_content: # Ensure competitor is string
+                competitive_mentions.append(str(competitor))
         
         return {
             'competitor_mentions': competitive_mentions,
             'competitive_threat_level': 'high' if competitive_mentions else 'low',
-            'differentiation_opportunities': self._identify_differentiation_opportunities(text_content, business_context),
+            'differentiation_opportunities': self._identify_differentiation_opportunities(text_content, enriched_context),
             'positioning_strategy': 'competitive_displacement' if competitive_mentions else 'value_creation'
         }
     
@@ -289,29 +370,39 @@ class AdvancedProspectProfiler:
         else:
             return 1.0  # Medium/unknown size
     
-    def _calculate_industry_alignment(self, lead_data: Dict[str, Any], business_context: Dict[str, Any]) -> float:
+    def _calculate_industry_alignment(self, lead_data: Dict[str, Any], enriched_context: Dict[str, Any]) -> float:
         """Calculate industry alignment factor"""
-        target_industries = business_context.get('industry_focus', [])
+        prospect_targeting = enriched_context.get('prospect_targeting', {})
+        target_industries = prospect_targeting.get('industry_focus', [])
+        logger.info(f"Profiler: Calculating industry alignment with {len(target_industries)} target industries from loaded context.")
+
         if not target_industries:
             return 1.0
         
         text_content = self._extract_all_text(lead_data)
         
         for industry in target_industries:
-            if str(industry).lower() in text_content:
+            if str(industry).lower() in text_content: # Ensure industry is string
                 return 1.2  # Boost for target industry match
         
         return 0.9  # Slight penalty for non-target industry
     
-    def _calculate_geographic_alignment(self, lead_data: Dict[str, Any], business_context: Dict[str, Any]) -> float:
+    def _calculate_geographic_alignment(self, lead_data: Dict[str, Any], enriched_context: Dict[str, Any]) -> float:
         """Calculate geographic alignment factor"""
-        target_geos = business_context.get('geographic_focus', [])
+        prospect_targeting = enriched_context.get('prospect_targeting', {})
+        target_geos = prospect_targeting.get('geographic_focus', [])
+        logger.info(f"Profiler: Calculating geographic alignment with {len(target_geos)} target geos from loaded context.")
+
         if not target_geos:
             return 1.0
         
         # Would need to implement geographic detection from lead data
-        # For now, assume alignment
-        return 1.0
+        # For now, assume alignment if any target_geos are present but not specifically detected.
+        # A more sophisticated approach would parse lead_data for location info.
+        # If lead_data has location and it matches any in target_geos, return 1.2.
+        # If lead_data has location and it does NOT match, return 0.8.
+        # If lead_data has no location or target_geos is empty, return 1.0.
+        return 1.0 # Placeholder for more advanced geo detection logic
     
     def _recommend_channels(self, intent_score: float, urgency_score: float) -> List[str]:
         """Recommend optimal communication channels"""
@@ -331,13 +422,15 @@ class AdvancedProspectProfiler:
         else:
             return 'nurture'    # Bi-weekly/monthly
     
-    def _identify_differentiation_opportunities(self, text_content: str, business_context: Dict[str, Any]) -> List[str]:
+    def _identify_differentiation_opportunities(self, text_content: str, enriched_context: Dict[str, Any]) -> List[str]:
         """Identify opportunities for differentiation"""
         opportunities = []
         
-        value_prop = business_context.get('value_proposition', '').lower()
-        competitive_advantage = business_context.get('competitive_advantage', '').lower()
-        
+        business_offering = enriched_context.get('business_offering', {})
+        value_prop = business_offering.get('value_proposition', '').lower()
+        competitive_advantage = business_offering.get('competitive_advantage', '').lower()
+        logger.info("Profiler: Identifying differentiation opportunities using value prop and competitive advantage from loaded context.")
+
         # Look for pain points we can uniquely address
         if 'custom' in text_content and 'custom' in value_prop:
             opportunities.append("Emphasize customization capabilities")
@@ -345,9 +438,14 @@ class AdvancedProspectProfiler:
         if 'support' in text_content and 'support' in competitive_advantage:
             opportunities.append("Highlight superior support offering")
         
-        if 'price' in text_content or 'cost' in text_content:
-            opportunities.append("Present value-based pricing proposition")
-        
+        if 'price' in text_content or 'cost' in text_content: # Basic keyword check
+            # More sophisticated logic might check if our value_prop or competitive_advantage addresses cost-effectiveness
+            if "price" in value_prop or "cost" in value_prop or "affordable" in value_prop or \
+               "price" in competitive_advantage or "cost" in competitive_advantage or "affordable" in competitive_advantage:
+                opportunities.append("Present value-based pricing or cost-effectiveness proposition")
+            else:
+                opportunities.append("Acknowledge price/cost sensitivity if mentioned by prospect")
+
         return opportunities
     
     def _calculate_overall_prospect_score(self, intent_score: float, pain_alignment: float, urgency_score: float) -> float:
@@ -484,6 +582,9 @@ class ProspectIntentScorer:
     """
     
     def __init__(self):
+        # Ensure logger is available if this class is instantiated elsewhere independently
+        # from loguru import logger # Already imported at module level
+
         self.intent_indicators = {
             'explicit_intent': {
                 'keywords': ['looking for', 'need', 'require', 'seeking', 'want', 'searching'],
@@ -503,7 +604,7 @@ class ProspectIntentScorer:
             }
         }
     
-    def calculate_intent_score(self, lead_data: Dict[str, Any], business_context: Dict[str, Any]) -> Dict[str, Any]:
+    def calculate_intent_score(self, lead_data: Dict[str, Any], enriched_context: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate comprehensive intent score"""
         
         text_content = self._extract_text_content(lead_data)
@@ -512,7 +613,7 @@ class ProspectIntentScorer:
         base_score = self._calculate_base_intent(text_content)
         
         # Apply contextual adjustments
-        context_adjusted_score = self._apply_contextual_adjustments(base_score, text_content, business_context)
+        context_adjusted_score = self._apply_contextual_adjustments(base_score, text_content, enriched_context)
         
         # Calculate intent confidence
         confidence = self._calculate_confidence(text_content)
@@ -554,29 +655,37 @@ class ProspectIntentScorer:
         
         return total_score / max(total_weight, 1.0) if total_weight > 0 else 0.0
     
-    def _apply_contextual_adjustments(self, base_score: float, text_content: str, business_context: Dict[str, Any]) -> float:
+    def _apply_contextual_adjustments(self, base_score: float, text_content: str, enriched_context: Dict[str, Any]) -> float:
         """Apply contextual adjustments to base score"""
+        # Simplified RAG: Selectively using 'industry_focus' and 'business_offering' details from the broader enriched_context.
         adjusted_score = base_score
         
+        prospect_targeting = enriched_context.get('prospect_targeting', {})
+        business_offering = enriched_context.get('business_offering', {})
+
         # Industry relevance adjustment
-        target_industries = business_context.get('industry_focus', [])
+        target_industries = prospect_targeting.get('industry_focus', [])
         for industry in target_industries:
-            if str(industry).lower() in text_content:
+            if str(industry).lower() in text_content: # Ensure industry is string
                 adjusted_score *= 1.2  # Boost for industry match
                 break
         
         # Solution relevance adjustment
         our_keywords = []
-        for field in ['business_description', 'product_service_description', 'value_proposition']:
-            if field in business_context and business_context[field]:
-                our_keywords.extend(str(business_context[field]).lower().split())
+        for field_key in ['description', 'product_service', 'value_proposition']: # Corrected keys for business_offering
+            field_value = business_offering.get(field_key, '')
+            if field_value:
+                our_keywords.extend(str(field_value).lower().split())
         
-        relevant_keywords = sum(1 for keyword in our_keywords if len(keyword) > 3 and keyword in text_content)
-        if relevant_keywords > 0:
-            relevance_boost = min(relevant_keywords / len(our_keywords), 0.3)
-            adjusted_score += relevance_boost
+        logger.info("Scorer: Applying contextual adjustments using industry focus and business offering from loaded context.")
+
+        if our_keywords: # Ensure our_keywords is not empty before division
+            relevant_keywords = sum(1 for keyword in our_keywords if len(keyword) > 3 and keyword in text_content)
+            if relevant_keywords > 0:
+                relevance_boost = min(relevant_keywords / len(our_keywords), 0.3) # Cap boost
+                adjusted_score += relevance_boost
         
-        return min(adjusted_score, 1.0)
+        return min(adjusted_score, 1.0) # Ensure score doesn't exceed 1.0
     
     def _calculate_confidence(self, text_content: str) -> float:
         """Calculate confidence in intent assessment"""

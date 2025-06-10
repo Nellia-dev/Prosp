@@ -4,9 +4,14 @@ import asyncio
 import traceback
 import os
 import time
-from typing import Dict, Any, AsyncIterator, List
+from typing import Dict, Any, AsyncIterator, List, Tuple # Added Tuple
 from datetime import datetime
 import uuid
+
+# from sentence_transformers import SentenceTransformer # (example for embeddings)
+# import faiss # (example for local vector store)
+# from some_text_splitter import RecursiveCharacterTextSplitter # (example)
+# import numpy as np # (example if using faiss.IndexFlatL2.add with numpy)
 
 from loguru import logger
 
@@ -38,6 +43,7 @@ from core_logic.llm_client import LLMClientFactory
 # ADK Runner
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
+import re
 from google.genai import types
 
 # Constants
@@ -180,6 +186,13 @@ class PipelineOrchestrator:
         
         # Initialize a single LLM client to be shared by all agents
         self.llm_client = LLMClientFactory.create_from_env()
+
+        # RAG Setup Placeholders
+        # Conceptual: In a real scenario, initialize the embedding model here.
+        # self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.embedding_model = None # Placeholder: e.g., SentenceTransformer('all-MiniLM-L6-v2')
+        # Conceptual: This would store actual vector store instances (e.g., FAISS index) per job.
+        self.job_vector_stores = {} # Stores job_id -> vector_store_instance (conceptual)
         
         # Initialize the Enhanced Processor agents here
         self.lead_intake_agent = LeadIntakeAgent(
@@ -577,6 +590,223 @@ class PipelineOrchestrator:
                 
         return "all_sizes"
 
+    @staticmethod
+    def _chunk_text(text: str, chunk_size: int = 500, chunk_overlap: int = 50) -> List[str]:
+        """
+        Conceptual text chunker.
+        In a real implementation, use a more robust library like RecursiveCharacterTextSplitter.
+        This basic version splits by paragraphs then tries to respect chunk_size.
+        """
+        # Conceptual: Replace with a more robust text splitter like RecursiveCharacterTextSplitter.
+        chunks = []
+        if not text:
+            return chunks
+
+        # Simple split by paragraph, then by sentence, then join sentences to approx chunk_size
+        paragraphs = text.split('\n\n')
+        current_chunk = ""
+        for paragraph in paragraphs:
+            sentences = re.split(r'(?<=[.!?])\s+', paragraph) # Split by sentences
+            for sentence in sentences:
+                if len(current_chunk) + len(sentence) + 1 > chunk_size and current_chunk:
+                    chunks.append(current_chunk)
+                    # Overlap: start next chunk with part of the current one (e.g. last few sentences)
+                    overlap_material = " ".join(current_chunk.split()[-chunk_overlap // (len(current_chunk.split()) if current_chunk else 1) :]) if chunk_overlap > 0 and current_chunk else ""
+                    current_chunk = overlap_material
+
+                if current_chunk:
+                    current_chunk += " " + sentence
+                else:
+                    current_chunk = sentence
+            # Add any remaining part of a paragraph if it fits or starts a new chunk
+            if current_chunk and (len(current_chunk) > chunk_size or len(chunks) == 0):
+                 chunks.append(current_chunk)
+                 current_chunk = ""
+            elif current_chunk: # Paragraph ended, but chunk not full
+                pass # Keep accumulating
+
+        if current_chunk: # Add the last remaining chunk
+            chunks.append(current_chunk)
+
+        if not chunks and text: # If no chunks were made but text exists (e.g. very short text)
+            chunks.append(text)
+
+        return chunks
+
+    async def _setup_rag_for_job(self, job_id: str, context_filepath: str) -> bool:
+        """
+        Conceptual: Sets up RAG by loading context, chunking, embedding, and creating a vector store.
+        """
+        logger.info(f"[{job_id}] Setting up RAG: Reading context from {context_filepath}")
+        try:
+            with open(context_filepath, "r", encoding="utf-8") as f:
+                document_content = f.read()
+        except FileNotFoundError:
+            logger.error(f"[{job_id}] RAG setup failed: Context file {context_filepath} not found.")
+            return False
+        except Exception as e:
+            logger.error(f"[{job_id}] RAG setup failed: Error reading context file {context_filepath}: {e}")
+            return False
+
+        if not document_content.strip():
+            logger.warning(f"[{job_id}] RAG setup: Context file {context_filepath} is empty. No RAG data to process.")
+            return False
+
+        # Chunk Text
+        text_chunks = self._chunk_text(document_content)
+        if not text_chunks:
+            logger.warning(f"[{job_id}] RAG setup: No text chunks generated from {context_filepath}.")
+            return False
+        logger.info(f"[{job_id}] RAG setup: Document chunked into {len(text_chunks)} pieces.")
+
+        # Generate Embeddings (Conceptual)
+        logger.info(f"[{job_id}] Generating embeddings for {len(text_chunks)} chunks...")
+        if not self.embedding_model: # Conceptual check for actual model
+            logger.warning(f"[{job_id}] Embedding model not initialized. Skipping RAG setup (embeddings generation).")
+            # In a real scenario, you might return False or handle this differently.
+            # For this conceptual step, we'll proceed with placeholder embeddings if no model,
+            # but a real system would require an embedding model.
+            # return False
+            pass # Allow to proceed with placeholder if model is None for conceptual demo
+
+        chunk_embeddings = [] # Placeholder for actual embeddings
+        # Conceptual: This loop simulates embedding generation.
+        for i, chunk in enumerate(text_chunks):
+            if self.embedding_model:
+                # chunk_embedding = self.embedding_model.encode(chunk) # Actual call
+                # chunk_embeddings.append(chunk_embedding)
+                # Using placeholder for now even if model was 'initialized' as None
+                chunk_embeddings.append([0.1 + (i*0.001)] * 384) # Placeholder, unique-ish per chunk
+            else:
+                # If no model, use very basic placeholder embeddings
+                chunk_embeddings.append([0.05 + (i*0.001)] * 384) # Different placeholder if no model
+
+        logger.info(f"[{job_id}] Embeddings generated (conceptually).")
+
+        # Initialize and Populate Vector Store (Conceptual)
+        # Conceptual: In a real application, you'd use a library like FAISS or a managed vector DB.
+        # Example with FAISS (requires faiss-cpu or faiss-gpu and numpy):
+        # import numpy as np
+        # dimension = 384 # Assuming all-MiniLM-L6-v2
+        # vector_store_index = faiss.IndexFlatL2(dimension)
+        # if chunk_embeddings: # Ensure there are embeddings to add
+        #     vector_store_index.add(np.array(chunk_embeddings).astype('float32'))
+
+        # For this conceptual placeholder, we store embeddings and chunks together.
+        # A real vector store would handle efficient similarity search.
+        conceptual_vector_store = {
+            "embeddings": chunk_embeddings, # List of embedding vectors
+            "chunks": text_chunks          # Corresponding text chunks
+        }
+        self.job_vector_stores[job_id] = conceptual_vector_store
+
+        logger.info(f"[{job_id}] RAG setup complete. Conceptual vector store initialized and populated for job.")
+        return True
+
+    def _load_and_parse_enriched_context(self, job_id: str) -> Dict[str, Any]:
+        """
+        Loads and parses the enriched context Markdown file for a given job_id.
+        """
+        filename = f"./enriched_context_{job_id}.md"
+        parsed_context = {}
+        try:
+            with open(filename, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+            current_top_level_key = None
+            current_sub_level_key = None
+            active_list = None
+
+            # Regex patterns
+            top_level_header_re = re.compile(r"^##\s+(.+)$")
+            sub_level_kv_re = re.compile(r"^\-\s+\*\*(.+?)\*\*:\s*(.+)?$") # Group 2 can be None if it's a list key
+            list_item_re = re.compile(r"^\s{2,}\-\s+`(.+?)`$") # Captures item within backticks
+            list_item_na_re = re.compile(r"^\s{2,}\-\s+N/A$") # Handles N/A list items
+
+            for line_num, line in enumerate(lines):
+                line = line.strip()
+                if not line or line.startswith("# Enriched Search Context for Job:"):
+                    continue
+
+                match_top_level = top_level_header_re.match(line)
+                if match_top_level:
+                    current_top_level_key = match_top_level.group(1).replace(' ', '_').lower()
+                    parsed_context[current_top_level_key] = {} # Initialize as dict, can be changed if it's a direct value
+                    current_sub_level_key = None
+                    active_list = None
+                    # Check if next line is a simple value for this top-level key
+                    if current_top_level_key in ["search_query", "search_intent"] and (line_num + 1) < len(lines):
+                        next_line_stripped = lines[line_num+1].strip()
+                        if next_line_stripped.startswith("`") and next_line_stripped.endswith("`"):
+                             simple_value = next_line_stripped[1:-1]
+                             parsed_context[current_top_level_key] = simple_value if simple_value != "N/A" else None
+                             current_top_level_key = None # Consumed
+                        elif next_line_stripped == "N/A":
+                             parsed_context[current_top_level_key] = None
+                             current_top_level_key = None # Consumed
+                    continue
+
+                if current_top_level_key is None and not line.startswith("## "): # Should be within a top-level key
+                    continue
+
+
+                match_sub_level_kv = sub_level_kv_re.match(line)
+                if match_sub_level_kv:
+                    key_name_orig = match_sub_level_kv.group(1)
+                    key_name = key_name_orig.replace(' ', '_').lower()
+                    value_str = match_sub_level_kv.group(2)
+
+                    current_sub_level_key = key_name # Store for potential list items
+                    active_list = [] # Assume it might be a list
+
+                    if value_str is not None and value_str.strip() != "": # It's a direct key-value
+                        if value_str.startswith("`") and value_str.endswith("`"):
+                            actual_value = value_str[1:-1]
+                        else:
+                            actual_value = value_str # Should not happen based on save logic, but good fallback
+
+                        parsed_context[current_top_level_key][key_name] = actual_value if actual_value != "N/A" else None
+                        active_list = None # Not a list after all
+                    else: # Value is empty, implies it's a key for a list that follows
+                        parsed_context[current_top_level_key][key_name] = active_list # Assign the list
+                    continue
+
+                match_list_item = list_item_re.match(line)
+                if match_list_item and active_list is not None and current_sub_level_key:
+                    item_value = match_list_item.group(1)
+                    active_list.append(item_value if item_value != "N/A" else None)
+                    continue
+
+                match_list_item_na = list_item_na_re.match(line)
+                if match_list_item_na and active_list is not None and current_sub_level_key:
+                    active_list.append(None) # N/A in list
+                    continue
+
+
+            # Post-process to ensure correct types for N/A in lists that were assigned early
+            for top_key, content in parsed_context.items():
+                if isinstance(content, dict):
+                    for sub_key, sub_val in content.items():
+                        if isinstance(sub_val, list) and all(item is None for item in sub_val) and len(sub_val) > 0:
+                             # This logic might be too aggressive if a list genuinely contains all Nones
+                             # For now, if a list was prepared but only got N/A items, it might reflect that.
+                             pass
+                elif isinstance(content, str) and content == "N/A": # Top level N/A that might have been missed
+                    parsed_context[top_key] = None
+
+
+            logger.info(f"[{self.job_id}] Successfully loaded and parsed enriched context from {filename}")
+            return parsed_context
+
+        except FileNotFoundError:
+            logger.error(f"[{self.job_id}] File not found: {filename}. Returning empty context.")
+            return {}
+        except Exception as e:
+            # Use self.job_id if available, otherwise use the passed job_id for logging
+            log_job_id = self.job_id if hasattr(self, 'job_id') else job_id
+            logger.error(f"[{log_job_id}] Error parsing {filename}: {e}. Returning empty context. {traceback.format_exc()}")
+            return {}
+
     async def execute_streaming_pipeline(self) -> AsyncIterator[Dict[str, Any]]:
         """
         Main entry point to run the unified pipeline.
@@ -693,7 +923,38 @@ class PipelineOrchestrator:
         # Create enriched context for better lead qualification
         enriched_context = self._create_enriched_search_context(self.business_context, search_query)
         logger.debug(f"[{self.job_id}] Enriched search context created")
-        
+
+        # Save enriched_context to a Markdown file
+        enriched_context_filename = f"./enriched_context_{self.job_id}.md" # Renamed for clarity
+        try:
+            with open(enriched_context_filename, "w", encoding="utf-8") as f:
+                markdown_string = f"# Enriched Search Context for Job: {self.job_id}\n\n"
+
+                for key, value in enriched_context.items():
+                    markdown_string += f"## {key.replace('_', ' ').title()}\n"
+                    if isinstance(value, dict):
+                        for sub_key, sub_value in value.items():
+                            if isinstance(sub_value, list):
+                                markdown_string += f"- **{sub_key.replace('_', ' ').title()}**:\n"
+                                for item in sub_value:
+                                    markdown_string += f"  - `{item}`\n" if item else "  - N/A\n"
+                            else:
+                                markdown_string += f"- **{sub_key.replace('_', ' ').title()}**: `{sub_value}`\n" if sub_value else f"- **{sub_key.replace('_', ' ').title()}**: N/A\n"
+                    elif isinstance(value, list):
+                        for item in value:
+                            markdown_string += f"- `{item}`\n" if item else "- N/A\n"
+                    else:
+                        markdown_string += f"`{value}`\n" if value else "N/A\n"
+                    markdown_string += "\n"
+
+                f.write(markdown_string)
+            logger.info(f"[{self.job_id}] Enriched search context saved to {enriched_context_filename}")
+            # Setup RAG resources for this job using the saved context file
+            await self._setup_rag_for_job(self.job_id, enriched_context_filename)
+        except IOError as e:
+            logger.error(f"[{self.job_id}] Failed to write enriched context to file {enriched_context_filename}: {e}")
+            # If file saving fails, RAG setup for this context will be skipped.
+
         # Initialize the search agent runner
         search_runner = Runner(
             app_name=ADK_APP_NAME,
@@ -823,18 +1084,47 @@ class PipelineOrchestrator:
                                     
                                     # Phase 4: Apply AI-powered prospect intelligence
                                     if self.ai_intelligence_enabled:
+                                        # Load the enriched context from file for AI agents
+                                        parsed_enriched_context = self._load_and_parse_enriched_context(self.job_id)
+                                        if not parsed_enriched_context:
+                                            logger.warning(f"[{self.job_id}] AI intelligence using fallback business_context as enriched_context was empty.")
+                                            # Create a structure that somewhat mirrors what AI agents expect from enriched_context,
+                                            # but derived from self.business_context. This is a simplified fallback.
+                                            parsed_enriched_context = {
+                                                "business_offering": {
+                                                    "description": self.business_context.get('business_description', ''),
+                                                    "product_service": self.business_context.get('product_service_description', ''),
+                                                    "value_proposition": self.business_context.get('value_proposition', ''),
+                                                    "competitive_advantage": self.business_context.get('competitive_advantage', '')
+                                                },
+                                                "prospect_targeting": {
+                                                    "industry_focus": self.business_context.get('industry_focus', []),
+                                                    "geographic_focus": self.business_context.get('geographic_focus', [])
+                                                },
+                                                "lead_qualification_criteria": {
+                                                    "problems_we_solve": self.business_context.get('pain_points', []),
+                                                    "avoid_competitors": self.business_context.get('competitors', [])
+                                                }
+                                            }
+                                        else:
+                                            logger.info(f"[{self.job_id}] Successfully loaded enriched context for AI intelligence agents.")
+
                                         try:
                                             # AI Prospect Analysis
+                                            rag_vector_store = self.job_vector_stores.get(self.job_id)
+                                            if rag_vector_store is None:
+                                                logger.warning(f"[{self.job_id}] RAG vector store not found for job. AI insights might be limited.")
+
                                             ai_profile = self.prospect_profiler.create_advanced_prospect_profile(
-                                                normalized_lead, self.business_context
+                                                normalized_lead, parsed_enriched_context, rag_vector_store
                                             )
                                             
-                                            # AI Buying Signal Prediction
+                                            # AI Buying Signal Prediction (does not use business_context/enriched_context or RAG store yet)
                                             buying_signals = self.signal_predictor.predict_buying_signals(normalized_lead)
                                             
                                             # AI Intent Scoring
                                             intent_analysis = self.intent_scorer.calculate_intent_score(
-                                                normalized_lead, self.business_context
+                                                normalized_lead, parsed_enriched_context
                                             )
                                             
                                             # Add AI intelligence to lead data
