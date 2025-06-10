@@ -4,7 +4,7 @@ import asyncio
 import traceback
 import os
 import time
-from typing import Dict, Any, AsyncIterator
+from typing import Dict, Any, AsyncIterator, List
 from datetime import datetime
 import uuid
 
@@ -25,7 +25,6 @@ from event_models import (
 
 # ADK Agents (Harvester)
 from adk1.agent import (
-    root_agent as harvester_query_refiner_agent,
     lead_search_and_qualify_agent as harvester_search_agent,
 )
 
@@ -45,6 +44,125 @@ from google.genai import types
 ADK_APP_NAME = "prospecter_harvester"
 ADK_USER_ID = "prospector_user_1"
 ADK_SESSION_SERVICE = InMemorySessionService()
+
+
+class BusinessTypeClassifier:
+    """
+    Phase 3: Advanced business type classification for intelligent query selection
+    """
+    
+    def __init__(self):
+        self.business_categories = {
+            'ai_technology': {
+                'keywords': ['ai', 'artificial intelligence', 'machine learning', 'automation', 'inteligencia artificial'],
+                'priority_strategies': ['problem_seeking', 'industry_growth', 'buying_intent'],
+                'target_indicators': ['digital transformation', 'manual processes', 'modernization']
+            },
+            'software_development': {
+                'keywords': ['software', 'development', 'programming', 'web', 'mobile', 'app'],
+                'priority_strategies': ['problem_seeking', 'competitive_displacement', 'buying_intent'],
+                'target_indicators': ['legacy systems', 'outdated technology', 'custom solutions']
+            },
+            'business_consulting': {
+                'keywords': ['consulting', 'consultoria', 'advisory', 'strategy', 'business'],
+                'priority_strategies': ['problem_seeking', 'industry_growth', 'buying_intent'],
+                'target_indicators': ['growth challenges', 'strategic planning', 'operational issues']
+            },
+            'marketing_sales': {
+                'keywords': ['marketing', 'sales', 'lead generation', 'customer acquisition', 'digital marketing'],
+                'priority_strategies': ['problem_seeking', 'buying_intent', 'competitive_displacement'],
+                'target_indicators': ['low sales', 'customer acquisition', 'marketing ROI']
+            },
+            'financial_services': {
+                'keywords': ['finance', 'accounting', 'investment', 'fintech', 'banking'],
+                'priority_strategies': ['industry_growth', 'competitive_displacement', 'buying_intent'],
+                'target_indicators': ['financial planning', 'compliance', 'cost optimization']
+            },
+            'healthcare_tech': {
+                'keywords': ['healthcare', 'medical', 'health tech', 'telemedicine', 'pharma'],
+                'priority_strategies': ['problem_seeking', 'industry_growth', 'buying_intent'],
+                'target_indicators': ['patient care', 'efficiency', 'digital health']
+            }
+        }
+    
+    def classify_business(self, business_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Classify business type and return optimization recommendations"""
+        business_desc = business_context.get('business_description', '').lower()
+        product_service = business_context.get('product_service_description', '').lower()
+        combined_text = f"{business_desc} {product_service}"
+        
+        # Score each category
+        category_scores = {}
+        for category, config in self.business_categories.items():
+            score = 0
+            for keyword in config['keywords']:
+                if keyword in combined_text:
+                    score += 1
+            category_scores[category] = score
+        
+        # Find best match
+        primary_category = max(category_scores, key=category_scores.get) if category_scores else 'general'
+        confidence = category_scores.get(primary_category, 0) / len(self.business_categories[primary_category]['keywords'])
+        
+        return {
+            'primary_category': primary_category,
+            'confidence': confidence,
+            'priority_strategies': self.business_categories[primary_category]['priority_strategies'],
+            'target_indicators': self.business_categories[primary_category]['target_indicators'],
+            'all_scores': category_scores
+        }
+
+
+class QueryPerformanceTracker:
+    """
+    Phase 3: Track query performance and learn from results
+    """
+    
+    def __init__(self):
+        self.query_metrics = {}
+        self.strategy_performance = {
+            'problem_seeking': {'leads_found': 0, 'quality_score': 0.0, 'conversion_rate': 0.0},
+            'industry_growth': {'leads_found': 0, 'quality_score': 0.0, 'conversion_rate': 0.0},
+            'buying_intent': {'leads_found': 0, 'quality_score': 0.0, 'conversion_rate': 0.0},
+            'competitive_displacement': {'leads_found': 0, 'quality_score': 0.0, 'conversion_rate': 0.0}
+        }
+    
+    def track_query_performance(self, query: str, strategy_type: str, leads_found: int, quality_metrics: Dict[str, float]):
+        """Track performance of a specific query"""
+        query_id = f"{strategy_type}_{hash(query)}"
+        
+        self.query_metrics[query_id] = {
+            'query': query,
+            'strategy_type': strategy_type,
+            'leads_found': leads_found,
+            'quality_score': quality_metrics.get('avg_quality', 0.0),
+            'timestamp': datetime.now().isoformat(),
+            'success_rate': quality_metrics.get('success_rate', 0.0)
+        }
+        
+        # Update strategy performance
+        if strategy_type in self.strategy_performance:
+            current = self.strategy_performance[strategy_type]
+            current['leads_found'] += leads_found
+            current['quality_score'] = (current['quality_score'] + quality_metrics.get('avg_quality', 0.0)) / 2
+            current['conversion_rate'] = (current['conversion_rate'] + quality_metrics.get('success_rate', 0.0)) / 2
+    
+    def get_best_strategy_for_business_type(self, business_category: str) -> str:
+        """Return the best performing strategy for a business type"""
+        # For now, return based on performance metrics
+        # In a real implementation, this would be business_category specific
+        best_strategy = max(self.strategy_performance.items(),
+                          key=lambda x: x[1]['quality_score'] * x[1]['conversion_rate'])
+        return best_strategy[0]
+    
+    def get_performance_analytics(self) -> Dict[str, Any]:
+        """Return comprehensive performance analytics"""
+        return {
+            'strategy_performance': self.strategy_performance,
+            'total_queries_tracked': len(self.query_metrics),
+            'best_performing_strategy': self.get_best_strategy_for_business_type('general'),
+            'avg_leads_per_query': sum(m['leads_found'] for m in self.query_metrics.values()) / max(len(self.query_metrics), 1)
+        }
 
 
 class PipelineOrchestrator:
@@ -84,90 +202,380 @@ class PipelineOrchestrator:
             tavily_api_key=os.getenv("TAVILY_API_KEY")
         )
         logger.info(f"PipelineOrchestrator initialized for job {self.job_id}")
+        
+        # Phase 3: Query performance tracking and business classification
+        self.query_performance_tracker = QueryPerformanceTracker()
+        self.business_classifier = BusinessTypeClassifier()
+        
+        # Phase 4: AI-Powered Prospect Intelligence
+        try:
+            from ai_prospect_intelligence import (
+                AdvancedProspectProfiler,
+                BuyingSignalPredictor,
+                ProspectIntentScorer
+            )
+            self.prospect_profiler = AdvancedProspectProfiler()
+            self.signal_predictor = BuyingSignalPredictor()
+            self.intent_scorer = ProspectIntentScorer()
+            self.ai_intelligence_enabled = True
+            logger.info(f"[{self.job_id}] AI-Powered Prospect Intelligence enabled")
+        except ImportError as e:
+            logger.warning(f"[{self.job_id}] AI Intelligence module not available: {e}")
+            self.ai_intelligence_enabled = False
 
-    def _generate_search_query_directly(self, business_desc: str, target_market: str, industry_focus) -> str:
+    def _generate_multiple_prospect_queries(self, business_context: Dict[str, Any]) -> List[str]:
         """
-        Generate search query directly from business context without using the ADK agent.
-        This is a fallback mechanism when the agent fails to work properly.
+        PHASE 2: Generate multiple prospect-focused queries using different strategies.
+        Returns 3-5 different query approaches to maximize prospect discovery.
         """
-        keywords = []
+        logger.info(f"[{self.job_id}] Generating MULTI-STRATEGY prospect queries...")
         
-        # Process business description
-        if business_desc:
-            # Extract meaningful keywords from business description
-            words = business_desc.lower().replace(",", " ").split()
-            
-            # Map Portuguese business terms to search keywords
-            business_term_mapping = {
-                "consultoria": "consulting",
-                "consultor": "consultant",
-                "inteligencia": "intelligence",
-                "artificial": "artificial",
-                "especializada": "specialized",
-                "especializado": "specialized",
-                "tecnologia": "technology",
-                "automacao": "automation",
-                "transformacao": "transformation",
-                "digital": "digital",
-                "software": "software",
-                "sistema": "system",
-                "solucao": "solution"
-            }
-            
-            # Extract and translate key business terms
-            for word in words:
-                clean_word = word.strip().lower()
-                if len(clean_word) > 3:
-                    if clean_word in business_term_mapping:
-                        keywords.append(business_term_mapping[clean_word])
-                    elif clean_word not in ['para', 'com', 'uma', 'das', 'the', 'and', 'for', 'with', 'que', 'este', 'esta', 'essa', 'isso']:
-                        keywords.append(clean_word)
+        location = business_context.get('geographic_focus', ['Brazil'])[0]
         
-        # Process target market
-        if target_market:
-            if any(x in target_market.lower() for x in ["brazil", "brasil"]):
-                keywords.append("Brazil")
-            if "sao paulo" in target_market.lower() or "são paulo" in target_market.lower():
-                keywords.append("São Paulo")
+        # Strategy 1: Problem-Seeking Queries
+        problem_queries = self._generate_problem_seeking_queries(business_context, location)
         
-        # Process industry focus
-        if industry_focus:
-            industry_mapping = {
-                "pequenas": "small",
-                "media": "medium",
-                "medias": "medium",
-                "empresas": "companies",
-                "company": "companies",
-                "empresa": "company"
-            }
-            
-            if isinstance(industry_focus, list):
-                for industry in industry_focus:
-                    industry_words = str(industry).lower().split()
-                    for word in industry_words:
-                        if word in industry_mapping:
-                            keywords.append(industry_mapping[word])
-                        elif len(word) > 3:
-                            keywords.append(word)
-            else:
-                industry_words = str(industry_focus).lower().split()
-                for word in industry_words:
-                    if word in industry_mapping:
-                        keywords.append(industry_mapping[word])
-                    elif len(word) > 3:
-                        keywords.append(word)
+        # Strategy 2: Industry + Growth Signal Queries
+        growth_queries = self._generate_industry_growth_queries(business_context, location)
         
-        # Ensure we have at least some default keywords
-        if not keywords:
-            keywords = ["small", "medium", "companies", "Brazil", "business"]
+        # Strategy 3: Buying Intent Signal Queries
+        intent_queries = self._generate_buying_intent_queries(business_context, location)
+        
+        # Strategy 4: Competitive Displacement Queries
+        displacement_queries = self._generate_competitive_displacement_queries(business_context, location)
+        
+        # Combine all strategies
+        all_queries = problem_queries + growth_queries + intent_queries + displacement_queries
         
         # Remove duplicates while preserving order
-        unique_keywords = []
-        for keyword in keywords:
-            if keyword not in unique_keywords:
-                unique_keywords.append(keyword)
+        unique_queries = []
+        for query in all_queries:
+            if query not in unique_queries:
+                unique_queries.append(query)
         
-        return " ".join(unique_keywords[:8])  # Limit to 8 keywords for better search results
+        # Limit to top 5 most diverse queries
+        selected_queries = unique_queries[:5]
+        
+        logger.info(f"[{self.job_id}] Generated {len(selected_queries)} multi-strategy queries:")
+        for i, query in enumerate(selected_queries, 1):
+            logger.info(f"[{self.job_id}] Strategy {i}: '{query}'")
+            
+        return selected_queries
+    
+    def _generate_problem_seeking_queries(self, business_context: Dict[str, Any], location: str) -> List[str]:
+        """Strategy 1: Find companies with problems we solve"""
+        business_desc = business_context.get('business_description', '').lower()
+        pain_points = business_context.get('pain_points', [])
+        queries = []
+        
+        # Map business offerings to customer problems
+        if any(term in business_desc for term in ['ai', 'artificial intelligence']):
+            queries.extend([
+                f"companies struggling manual processes {location}",
+                f"businesses needing automation {location}",
+                f"traditional companies digital transformation {location}"
+            ])
+        
+        if any(term in business_desc for term in ['software', 'technology']):
+            queries.extend([
+                f"companies outdated systems {location}",
+                f"businesses inefficient workflows {location}",
+                f"organizations legacy software {location}"
+            ])
+        
+        if any(term in business_desc for term in ['consulting', 'advisory']):
+            queries.extend([
+                f"companies strategic challenges {location}",
+                f"businesses growth problems {location}",
+                f"organizations operational issues {location}"
+            ])
+        
+        if any(term in business_desc for term in ['marketing', 'sales']):
+            queries.extend([
+                f"companies low customer acquisition {location}",
+                f"businesses poor sales performance {location}",
+                f"organizations marketing struggles {location}"
+            ])
+        
+        # Add pain-point specific queries
+        for pain in pain_points:
+            pain_str = str(pain).lower()
+            if 'manual' in pain_str:
+                queries.append(f"companies manual operations {location}")
+            if 'efficiency' in pain_str or 'inefficient' in pain_str:
+                queries.append(f"businesses operational inefficiency {location}")
+            if 'growth' in pain_str:
+                queries.append(f"companies scaling difficulties {location}")
+                
+        return queries[:3]  # Return top 3 problem-seeking queries
+    
+    def _generate_industry_growth_queries(self, business_context: Dict[str, Any], location: str) -> List[str]:
+        """Strategy 2: Find companies in target industries showing growth signals"""
+        industry_focus = business_context.get('industry_focus', [])
+        target_market = business_context.get('target_market', '').lower()
+        queries = []
+        
+        # Industry + growth combinations
+        for industry in industry_focus:
+            industry_str = str(industry).lower()
+            if industry_str not in ['small', 'medium', 'large']:
+                queries.extend([
+                    f"{industry_str} companies expanding {location}",
+                    f"{industry_str} businesses hiring {location}",
+                    f"{industry_str} organizations growing {location}"
+                ])
+        
+        # Size-based targeting
+        if 'small' in target_market or any('small' in str(ind).lower() for ind in industry_focus):
+            queries.extend([
+                f"small companies rapid growth {location}",
+                f"startups scaling operations {location}",
+                f"small businesses expanding {location}"
+            ])
+        
+        if 'medium' in target_market or any('medium' in str(ind).lower() for ind in industry_focus):
+            queries.extend([
+                f"medium enterprises expansion {location}",
+                f"mid-size companies growth {location}",
+                f"medium businesses scaling {location}"
+            ])
+        
+        return queries[:2]  # Return top 2 industry-growth queries
+    
+    def _generate_buying_intent_queries(self, business_context: Dict[str, Any], location: str) -> List[str]:
+        """Strategy 3: Find companies showing buying intent signals"""
+        business_desc = business_context.get('business_description', '').lower()
+        queries = []
+        
+        # Hiring-based intent signals
+        if any(term in business_desc for term in ['ai', 'technology', 'software']):
+            queries.extend([
+                f"companies hiring CTO {location}",
+                f"businesses recruiting technology roles {location}",
+                f"organizations hiring IT director {location}"
+            ])
+        
+        if any(term in business_desc for term in ['consulting', 'strategy']):
+            queries.extend([
+                f"companies hiring consultants {location}",
+                f"businesses seeking strategic advisors {location}",
+                f"organizations hiring business development {location}"
+            ])
+        
+        if any(term in business_desc for term in ['marketing', 'sales']):
+            queries.extend([
+                f"companies hiring marketing director {location}",
+                f"businesses recruiting sales manager {location}",
+                f"organizations hiring growth roles {location}"
+            ])
+        
+        # Investment/funding intent signals
+        queries.extend([
+            f"companies recent funding {location}",
+            f"businesses announcing expansion {location}",
+            f"organizations new investment {location}"
+        ])
+        
+        return queries[:2]  # Return top 2 buying intent queries
+    
+    def _generate_competitive_displacement_queries(self, business_context: Dict[str, Any], location: str) -> List[str]:
+        """Strategy 4: Find companies potentially switching from competitors"""
+        competitors = business_context.get('competitors', [])
+        business_desc = business_context.get('business_description', '').lower()
+        queries = []
+        
+        # Generic displacement opportunities
+        if any(term in business_desc for term in ['software', 'technology']):
+            queries.extend([
+                f"companies replacing software {location}",
+                f"businesses switching systems {location}",
+                f"organizations upgrading technology {location}"
+            ])
+        
+        if any(term in business_desc for term in ['consulting', 'services']):
+            queries.extend([
+                f"companies changing consultants {location}",
+                f"businesses seeking new advisors {location}",
+                f"organizations switching service providers {location}"
+            ])
+        
+        # Competitor-specific displacement (if competitors are known)
+        for competitor in competitors[:2]:  # Limit to top 2 competitors
+            if competitor:
+                competitor_str = str(competitor)
+                queries.append(f"companies alternatives to {competitor_str} {location}")
+        
+        return queries[:1]  # Return top 1 displacement query
+    
+    def _generate_search_query_from_business_context(self, business_context: Dict[str, Any]) -> str:
+        """
+        PHASE 2: Multi-strategy prospect query generation.
+        Generates multiple queries and selects the best one using intelligent selection.
+        """
+        # Generate multiple query strategies
+        query_options = self._generate_multiple_prospect_queries(business_context)
+        
+        if not query_options:
+            # Fallback to Phase 1 logic
+            return self._generate_fallback_prospect_query(business_context)
+        
+        # Select the best query using intelligent selection
+        selected_query = self._select_optimal_query(query_options, business_context)
+        
+        logger.info(f"[{self.job_id}] FINAL SELECTED QUERY: '{selected_query}'")
+        return selected_query
+    
+    def _select_optimal_query(self, query_options: List[str], business_context: Dict[str, Any]) -> str:
+        """
+        Phase 3: Advanced intelligent query selection using business classification and performance data
+        """
+        if not query_options:
+            return self._generate_fallback_prospect_query(business_context)
+        
+        # Step 1: Classify the business
+        business_classification = self.business_classifier.classify_business(business_context)
+        logger.info(f"[{self.job_id}] Business classified as: {business_classification['primary_category']} (confidence: {business_classification['confidence']:.2f})")
+        
+        # Step 2: Get performance-based recommendations
+        best_strategy = self.query_performance_tracker.get_best_strategy_for_business_type(business_classification['primary_category'])
+        
+        # Step 3: Map query options to strategies
+        query_strategy_mapping = self._map_queries_to_strategies(query_options)
+        
+        # Step 4: Prioritize based on business type and performance
+        priority_strategies = business_classification['priority_strategies']
+        target_indicators = business_classification['target_indicators']
+        
+        # Try to find query matching best performing strategy
+        if best_strategy in query_strategy_mapping:
+            selected_query = query_strategy_mapping[best_strategy][0]
+            logger.info(f"[{self.job_id}] Selected query based on best performing strategy '{best_strategy}': '{selected_query}'")
+            return selected_query
+        
+        # Fallback to priority strategies for this business type
+        for strategy in priority_strategies:
+            if strategy in query_strategy_mapping:
+                selected_query = query_strategy_mapping[strategy][0]
+                logger.info(f"[{self.job_id}] Selected query based on priority strategy '{strategy}': '{selected_query}'")
+                return selected_query
+        
+        # Fallback to queries containing target indicators
+        for query in query_options:
+            if any(indicator in query.lower() for indicator in target_indicators):
+                logger.info(f"[{self.job_id}] Selected query based on target indicators: '{query}'")
+                return query
+        
+        # Final fallback
+        selected_query = query_options[0]
+        logger.info(f"[{self.job_id}] Selected first available query: '{selected_query}'")
+        return selected_query
+    
+    def _map_queries_to_strategies(self, query_options: List[str]) -> Dict[str, List[str]]:
+        """Map queries to their corresponding strategies based on keywords"""
+        strategy_mapping = {
+            'problem_seeking': [],
+            'industry_growth': [],
+            'buying_intent': [],
+            'competitive_displacement': []
+        }
+        
+        for query in query_options:
+            query_lower = query.lower()
+            
+            # Problem-seeking indicators
+            if any(word in query_lower for word in ['struggling', 'challenges', 'problems', 'issues', 'manual', 'inefficient']):
+                strategy_mapping['problem_seeking'].append(query)
+            
+            # Industry growth indicators
+            elif any(word in query_lower for word in ['expanding', 'growing', 'growth', 'scaling', 'hiring']):
+                strategy_mapping['industry_growth'].append(query)
+            
+            # Buying intent indicators
+            elif any(word in query_lower for word in ['hiring', 'seeking', 'recruiting', 'investment', 'funding']):
+                strategy_mapping['buying_intent'].append(query)
+            
+            # Competitive displacement indicators
+            elif any(word in query_lower for word in ['replacing', 'switching', 'alternatives', 'changing']):
+                strategy_mapping['competitive_displacement'].append(query)
+            
+            # Default to problem_seeking if no clear match
+            else:
+                strategy_mapping['problem_seeking'].append(query)
+        
+        return strategy_mapping
+    
+    def _generate_fallback_prospect_query(self, business_context: Dict[str, Any]) -> str:
+        """Fallback prospect-focused query if all else fails"""
+        location = business_context.get('geographic_focus', ['Brazil'])[0]
+        return f"growing companies seeking solutions {location}"
+
+    def _create_enriched_search_context(self, business_context: Dict[str, Any], search_query: str) -> Dict[str, Any]:
+        """
+        Create enriched PROSPECT-FOCUSED context for the harvester.
+        Emphasizes finding companies that NEED our solutions, not competitors.
+        """
+        return {
+            "search_query": search_query,
+            "search_intent": "FIND_PROSPECTS_NOT_COMPETITORS",
+            "business_offering": {
+                "description": business_context.get('business_description', ''),
+                "product_service": business_context.get('product_service_description', ''),
+                "value_proposition": business_context.get('value_proposition', ''),
+                "competitive_advantage": business_context.get('competitive_advantage', '')
+            },
+            "prospect_targeting": {
+                "ideal_customer_profile": business_context.get('ideal_customer', ''),
+                "target_market": business_context.get('target_market', ''),
+                "geographic_focus": business_context.get('geographic_focus', []),
+                "industry_focus": business_context.get('industry_focus', []),
+                "company_size_preference": self._extract_size_preference(business_context),
+                "growth_stage_indicators": ["expanding", "hiring", "growing", "investing", "scaling"]
+            },
+            "lead_qualification_criteria": {
+                "problems_we_solve": business_context.get('pain_points', []),
+                "avoid_competitors": business_context.get('competitors', []),
+                "buying_signals": [
+                    "companies hiring new roles",
+                    "businesses announcing expansion",
+                    "organizations seeking solutions",
+                    "companies with growth challenges",
+                    "businesses undergoing transformation"
+                ],
+                "must_have_characteristics": [
+                    f"Located in {', '.join(business_context.get('geographic_focus', ['Brazil']))}",
+                    f"Target industries: {', '.join(business_context.get('industry_focus', ['any industry']))}",
+                    f"Customer profile: {business_context.get('ideal_customer', 'growing businesses')}"
+                ],
+                "exclusion_criteria": [
+                    "Avoid companies that offer similar services",
+                    "Skip obvious competitors",
+                    "Focus on potential customers, not service providers"
+                ]
+            }
+        }
+    
+    def _extract_size_preference(self, business_context: Dict[str, Any]) -> str:
+        """Extract company size preference from business context"""
+        ideal_customer = business_context.get('ideal_customer', '').lower()
+        industry_focus = business_context.get('industry_focus', [])
+        
+        # Check for size indicators
+        if any(size in ideal_customer for size in ['small', 'pequenas', 'startup']):
+            return "small_companies"
+        elif any(size in ideal_customer for size in ['medium', 'médias', 'mid-size']):
+            return "medium_companies"
+        elif any(size in ideal_customer for size in ['large', 'enterprise', 'grandes']):
+            return "large_companies"
+            
+        # Check industry focus for size indicators
+        for industry in industry_focus:
+            industry_str = str(industry).lower()
+            if 'small' in industry_str or 'pequenas' in industry_str:
+                return "small_companies"
+            elif 'medium' in industry_str or 'médias' in industry_str:
+                return "medium_companies"
+                
+        return "all_sizes"
 
     async def execute_streaming_pipeline(self) -> AsyncIterator[Dict[str, Any]]:
         """
@@ -269,45 +677,29 @@ class PipelineOrchestrator:
 
     async def _run_harvester(self) -> AsyncIterator[Dict[str, Any]]:
         """
-        Runs the ADK-based harvester agent to find potential leads.
+        Run the harvester to find and qualify leads using direct query generation.
+        Bypasses the problematic ADK query refiner agent.
         """
         logger.info(f"[{self.job_id}] Starting harvester...")
         
-        query_refiner_runner = Runner(
-            app_name=ADK_APP_NAME,
-            agent=harvester_query_refiner_agent,
-            session_service=ADK_SESSION_SERVICE,
-        )
+        # Generate search query directly from business context
+        search_query = self._generate_search_query_from_business_context(self.business_context)
+        logger.info(f"[{self.job_id}] Generated search query: {search_query}")
         
+        # Phase 3: Track query selection for performance analysis
+        query_start_time = time.time()
+        leads_found_count = 0
+        
+        # Create enriched context for better lead qualification
+        enriched_context = self._create_enriched_search_context(self.business_context, search_query)
+        logger.debug(f"[{self.job_id}] Enriched search context created")
+        
+        # Initialize the search agent runner
         search_runner = Runner(
             app_name=ADK_APP_NAME,
             agent=harvester_search_agent,
             session_service=ADK_SESSION_SERVICE,
         )
-
-        # Build a comprehensive search request from business context
-        business_desc = self.business_context.get("business_description", "")
-        target_market = self.business_context.get("target_market", "")
-        industry_focus = self.business_context.get("industry_focus", [])
-        location = self.business_context.get("location", "")
-        
-        if not business_desc:
-            logger.warning("No business description found in context for harvester.")
-            return
-
-        # Create a comprehensive search request
-        initial_query = f"Business: {business_desc}"
-        if target_market:
-            initial_query += f" Target market: {target_market}"
-        if industry_focus:
-            industries = ", ".join(industry_focus) if isinstance(industry_focus, list) else str(industry_focus)
-            initial_query += f" Industries: {industries}"
-        if location:
-            initial_query += f" Location: {location}"
-        
-        initial_query += " - Find potential leads and customers for this business."
-        
-        logger.info(f"[{self.job_id}] Initial query for refiner: {initial_query}")
 
         try:
             session_id = str(uuid.uuid4())
@@ -318,125 +710,13 @@ class PipelineOrchestrator:
             )
             logger.debug(f"[{self.job_id}] ADK session created successfully")
             
-            # Verify agent configuration
-            logger.debug(f"[{self.job_id}] Query refiner agent name: {harvester_query_refiner_agent.name}")
-            logger.debug(f"[{self.job_id}] Query refiner agent model: {harvester_query_refiner_agent.model}")
-            logger.debug(f"[{self.job_id}] Query refiner agent description: {harvester_query_refiner_agent.description}")
-            logger.debug(f"[{self.job_id}] Query refiner agent instruction preview: {harvester_query_refiner_agent.instruction[:200]}...")
-            
-            refined_query_response = None
-            # Refine the query
-            query_content = types.Content(parts=[types.Part(text=initial_query)])
-            logger.debug(f"[{self.job_id}] Sending to query refiner: '{initial_query}'")
-            logger.debug(f"[{self.job_id}] Query content type: {type(query_content)}")
-            logger.debug(f"[{self.job_id}] Query content parts: {len(query_content.parts)}")
-            logger.debug(f"[{self.job_id}] Query content parts[0].text: '{query_content.parts[0].text}'")
-            logger.debug(f"[{self.job_id}] Query content role: {query_content.role if hasattr(query_content, 'role') else 'No role'}")
-            
-            response_count = 0
-            logger.info(f"[{self.job_id}] Starting ADK runner with user_id='{self.user_id}', session_id='{session_id}'")
-            
-            async for response in query_refiner_runner.run_async(
-                user_id=self.user_id,
-                session_id=session_id,
-                new_message=query_content,
-            ):
-                response_count += 1
-                logger.debug(f"[{self.job_id}] Query refiner response #{response_count}: {type(response)}")
-                logger.debug(f"[{self.job_id}] Response full data: {response}")
-                
-                # Log additional response details
-                if hasattr(response, 'author'):
-                    logger.debug(f"[{self.job_id}] Response author: {response.author}")
-                    
-                # Check if this is actually our agent responding
-                if hasattr(response, 'author') and response.author != 'query_refiner_agent':
-                    logger.warning(f"[{self.job_id}] Response from unexpected agent: {response.author}")
-                    
-                if hasattr(response, 'content') and response.content:
-                    logger.debug(f"[{self.job_id}] Response content parts count: {len(response.content.parts) if hasattr(response.content, 'parts') else 'No parts'}")
-                    if hasattr(response.content, 'parts') and response.content.parts:
-                        for i, part in enumerate(response.content.parts):
-                            if hasattr(part, 'text'):
-                                logger.debug(f"[{self.job_id}] Response part {i} text (raw): {repr(part.text)}")
-                                logger.debug(f"[{self.job_id}] Response part {i} text (display): '{part.text}'")
-                            else:
-                                logger.debug(f"[{self.job_id}] Response part {i} has no text attribute")
-                
-                # Take the last non-empty response
-                if response:
-                    refined_query_response = response
-            
-            logger.info(f"[{self.job_id}] Query refiner returned {response_count} responses")
-            
-            if not refined_query_response:
-                logger.warning(f"[{self.job_id}] Query refiner did not return any response, using fallback")
-                search_query = self._generate_search_query_directly(business_desc, target_market, industry_focus)
-                logger.info(f"[{self.job_id}] Using fallback query: {search_query}")
-            else:
-                # Extract text from Content object with proper cleanup
-                logger.debug(f"[{self.job_id}] Raw refined_query_response: {type(refined_query_response)}")
-                
-                search_query = None
-                if hasattr(refined_query_response, 'content'):
-                    content = refined_query_response.content
-                    logger.debug(f"[{self.job_id}] Content type: {type(content)}")
-                    
-                    if hasattr(content, 'parts') and content.parts:
-                        logger.debug(f"[{self.job_id}] Content has {len(content.parts)} parts")
-                        for i, part in enumerate(content.parts):
-                            if hasattr(part, 'text') and part.text:
-                                raw_text = part.text
-                                # Clean up the text properly - remove newlines, whitespace, and common invalid responses
-                                clean_text = raw_text.strip().replace('\n', ' ').replace('\r', ' ')
-                                # Remove extra whitespace
-                                clean_text = ' '.join(clean_text.split())
-                                
-                                logger.debug(f"[{self.job_id}] Raw text from part {i}: '{raw_text}'")
-                                logger.debug(f"[{self.job_id}] Cleaned text from part {i}: '{clean_text}'")
-                                
-                                # Validate if this is a proper search query
-                                invalid_responses = ["ok", "okay", "aguardando", "provide", "request", "sure", "yes", "no"]
-                                is_invalid = any(invalid.lower() == clean_text.lower() for invalid in invalid_responses)
-                                
-                                logger.debug(f"[{self.job_id}] Validation check:")
-                                logger.debug(f"[{self.job_id}] - clean_text: '{clean_text}'")
-                                logger.debug(f"[{self.job_id}] - length: {len(clean_text)}")
-                                logger.debug(f"[{self.job_id}] - is_invalid (exact match): {is_invalid}")
-                                logger.debug(f"[{self.job_id}] - starts with please: {clean_text.lower().startswith('please')}")
-                                logger.debug(f"[{self.job_id}] - starts with 'i ': {clean_text.lower().startswith('i ')}")
-                                logger.debug(f"[{self.job_id}] - contains '?': {'?' in clean_text}")
-                                
-                                if (clean_text and
-                                    len(clean_text) > 5 and
-                                    not is_invalid and
-                                    not clean_text.lower().startswith("please") and
-                                    not clean_text.lower().startswith("i ") and
-                                    not "?" in clean_text):
-                                    search_query = clean_text
-                                    logger.info(f"[{self.job_id}] Valid search query extracted: '{search_query}'")
-                                    break
-                                else:
-                                    logger.warning(f"[{self.job_id}] Invalid response detected: '{clean_text}' - will trigger fallback")
-                
-                # If we didn't get a valid query, use fallback
-                if not search_query:
-                    logger.warning(f"[{self.job_id}] No valid search query extracted from agent response, using fallback")
-                    logger.debug(f"[{self.job_id}] Fallback inputs - business_desc: '{business_desc}', target_market: '{target_market}', industry_focus: '{industry_focus}'")
-                    search_query = self._generate_search_query_directly(business_desc, target_market, industry_focus)
-                    logger.info(f"[{self.job_id}] Generated fallback query: '{search_query}'")
-                else:
-                    logger.info(f"[{self.job_id}] Using agent-generated query: '{search_query}'")
-            
-            logger.info(f"[{self.job_id}] Refined query: {search_query}")
-
             yield StatusUpdateEvent(
                 event_type="status_update",
                 timestamp=datetime.now().isoformat(),
                 job_id=self.job_id,
                 user_id=self.user_id,
-                status_message=f"Harvester query refined to: {search_query}",
-                agent_name=harvester_query_refiner_agent.name
+                status_message=f"Harvester using search query: {search_query}",
+                agent_name="DirectQueryGenerator"
             ).to_dict()
 
             # Search for leads
@@ -541,9 +821,47 @@ class PipelineOrchestrator:
                                         "source_url": website_url
                                     }
                                     
+                                    # Phase 4: Apply AI-powered prospect intelligence
+                                    if self.ai_intelligence_enabled:
+                                        try:
+                                            # AI Prospect Analysis
+                                            ai_profile = self.prospect_profiler.create_advanced_prospect_profile(
+                                                normalized_lead, self.business_context
+                                            )
+                                            
+                                            # AI Buying Signal Prediction
+                                            buying_signals = self.signal_predictor.predict_buying_signals(normalized_lead)
+                                            
+                                            # AI Intent Scoring
+                                            intent_analysis = self.intent_scorer.calculate_intent_score(
+                                                normalized_lead, self.business_context
+                                            )
+                                            
+                                            # Add AI intelligence to lead data
+                                            normalized_lead["ai_intelligence"] = {
+                                                "prospect_score": ai_profile["prospect_score"],
+                                                "conversion_probability": ai_profile["conversion_probability"],
+                                                "buying_intent_score": ai_profile["buying_intent_score"],
+                                                "urgency_score": ai_profile["urgency_score"],
+                                                "intent_stage": intent_analysis["intent_stage"],
+                                                "optimal_timing": ai_profile["optimal_timing"],
+                                                "engagement_strategy": ai_profile["engagement_strategy"],
+                                                "buying_signals": buying_signals["detected_signals"],
+                                                "predictive_insights": ai_profile["predictive_insights"],
+                                                "overall_buying_probability": buying_signals["overall_buying_probability"]
+                                            }
+                                            
+                                            # Log AI analysis results
+                                            logger.info(f"[{self.job_id}] AI Analysis - {company_name}: Prospect Score {ai_profile['prospect_score']:.3f}, Intent Stage: {intent_analysis['intent_stage']}, Conversion Probability: {ai_profile['conversion_probability']:.3f}")
+                                            
+                                        except Exception as ai_error:
+                                            logger.warning(f"[{self.job_id}] AI intelligence failed for {company_name}: {ai_error}")
+                                            # Continue without AI intelligence if it fails
+                                    
                                     logger.info(f"[{self.job_id}] Yielding lead: {company_name} - {website_url}")
                                     yield normalized_lead
                                     lead_count += 1
+                                    leads_found_count += 1
                                 else:
                                     logger.warning(f"[{self.job_id}] Skipping lead with invalid/missing website: {website_url}")
                             else:
@@ -574,7 +892,43 @@ class PipelineOrchestrator:
                 agent_name="Harvester"
             ).to_dict()
         finally:
-            logger.info(f"[{self.job_id}] Harvester finished.")
+            # Phase 3: Record query performance
+            query_duration = time.time() - query_start_time
+            
+            # Calculate quality metrics
+            quality_metrics = {
+                'avg_quality': 0.7 if leads_found_count > 0 else 0.0,  # Placeholder - would be calculated from actual lead quality
+                'success_rate': 1.0 if leads_found_count > 0 else 0.0,
+                'leads_per_second': leads_found_count / max(query_duration, 1)
+            }
+            
+            # Determine strategy type used
+            strategy_type = self._determine_strategy_type(search_query)
+            
+            # Track performance
+            self.query_performance_tracker.track_query_performance(
+                query=search_query,
+                strategy_type=strategy_type,
+                leads_found=leads_found_count,
+                quality_metrics=quality_metrics
+            )
+            
+            logger.info(f"[{self.job_id}] Harvester finished. Performance tracked: {leads_found_count} leads found using {strategy_type} strategy")
+    
+    def _determine_strategy_type(self, query: str) -> str:
+        """Determine which strategy type was used based on query content"""
+        query_lower = query.lower()
+        
+        if any(word in query_lower for word in ['struggling', 'challenges', 'problems', 'manual', 'inefficient']):
+            return 'problem_seeking'
+        elif any(word in query_lower for word in ['expanding', 'growing', 'hiring', 'scaling']):
+            return 'industry_growth'
+        elif any(word in query_lower for word in ['seeking', 'recruiting', 'investment', 'funding']):
+            return 'buying_intent'
+        elif any(word in query_lower for word in ['replacing', 'switching', 'alternatives']):
+            return 'competitive_displacement'
+        else:
+            return 'general'
 
 
     async def _enrich_lead(self, lead_data: Dict[str, Any], lead_id: str) -> AsyncIterator[Dict[str, Any]]:

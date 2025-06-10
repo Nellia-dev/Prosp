@@ -61,6 +61,9 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
         self.description = description
         self.config = config or {}
         
+        # Initialize logger instance for agent use
+        self.logger = logger.bind(agent=name)
+        
         # Initialize LLM client
         if llm_client:
             self.llm_client = llm_client
@@ -70,7 +73,7 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
         # Initialize metrics
         self.metrics = []
         
-        logger.info(f"Initialized agent: {self.name}")
+        self.logger.info(f"Initialized agent: {self.name}")
     
     @abstractmethod
     def process(self, input_data: TInput) -> TOutput:
@@ -228,11 +231,27 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
         Raises:
             Exception: If LLM generation fails
         """
+        logger.debug(f"[{self.name}] Starting LLM generation with prompt length: {len(prompt)} chars")
+        
         try:
+            # Log prompt stats for debugging
+            logger.debug(f"[{self.name}] LLM prompt preview: {prompt[:200]}...")
+            
             response = self.llm_client.generate(prompt)
+            
+            # Log response stats
+            response_length = len(response.content) if response.content else 0
+            logger.info(f"[{self.name}] LLM generation successful - response length: {response_length} chars")
+            logger.debug(f"[{self.name}] LLM response preview: {response.content[:200] if response.content else 'Empty response'}...")
+            
+            if not response.content:
+                logger.warning(f"[{self.name}] LLM returned empty response")
+                
             return response.content
         except Exception as e:
             logger.error(f"[{self.name}] LLM generation failed: {e}")
+            logger.error(f"[{self.name}] Failed prompt length: {len(prompt)} chars")
+            logger.debug(f"[{self.name}] Failed prompt preview: {prompt[:200]}...")
             raise
     
     def parse_llm_json_response(self, response: str, expected_type: type) -> Any:
@@ -249,35 +268,53 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
         Raises:
             ValueError: If JSON parsing fails
         """
+        logger.debug(f"[{self.name}] Starting JSON parsing for response length: {len(response)} chars")
+        
         try:
             # Try to extract JSON from the response
             # LLMs often wrap JSON in markdown code blocks
+            json_str = ""
+            extraction_method = ""
+            
             if "```json" in response:
                 start = response.find("```json") + 7
                 end = response.find("```", start)
                 json_str = response[start:end].strip()
+                extraction_method = "markdown_json_block"
             elif "```" in response:
                 start = response.find("```") + 3
                 end = response.find("```", start)
                 json_str = response[start:end].strip()
+                extraction_method = "markdown_code_block"
             else:
                 json_str = response.strip()
+                extraction_method = "raw_response"
+            
+            logger.debug(f"[{self.name}] JSON extraction method: {extraction_method}, extracted length: {len(json_str)} chars")
+            logger.debug(f"[{self.name}] Extracted JSON preview: {json_str[:200]}...")
             
             # Parse JSON
             data = json.loads(json_str)
+            logger.info(f"[{self.name}] JSON parsing successful - parsed object type: {type(data)}")
             
             # Validate if expected type is provided
             if expected_type and hasattr(expected_type, 'parse_obj'):
-                return expected_type.parse_obj(data)
+                logger.debug(f"[{self.name}] Validating against expected type: {expected_type.__name__}")
+                validated_data = expected_type.parse_obj(data)
+                logger.info(f"[{self.name}] JSON validation successful")
+                return validated_data
             
             return data
             
         except json.JSONDecodeError as e:
             logger.error(f"[{self.name}] Failed to parse JSON from LLM response: {e}")
-            logger.debug(f"Response: {response[:500]}...")
+            logger.error(f"[{self.name}] Extraction method used: {extraction_method}")
+            logger.error(f"[{self.name}] JSON string that failed: {json_str[:500] if json_str else 'Empty'}...")
+            logger.debug(f"[{self.name}] Full response: {response[:1000]}...")
             raise ValueError(f"Invalid JSON in LLM response: {e}")
         except ValidationError as e:
             logger.error(f"[{self.name}] JSON validation failed: {e}")
+            logger.error(f"[{self.name}] Parsed data: {data}")
             raise ValueError(f"JSON validation failed: {e}")
     
     def get_metrics_summary(self) -> Dict[str, Any]:

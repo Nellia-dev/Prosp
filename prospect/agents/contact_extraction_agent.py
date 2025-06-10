@@ -34,8 +34,12 @@ class ContactExtractionAgent(BaseAgent[ContactExtractionInput, ContactExtraction
         emails = []
         instagram_profiles = []
         tavily_suggestion = ""
+        
+        self.logger.info(f"📧 CONTACT EXTRACTION STARTING for company: {input_data.company_name}")
+        self.logger.info(f"📊 Input data: text_length={len(input_data.extracted_text)}, service={input_data.product_service_offered}")
 
         try:
+            self.logger.debug("🤖 Generating LLM prompt for contact extraction")
             prompt_template = """
                 Analise o seguinte texto extraído para a empresa '{company_name}' que oferece '{product_service_offered}'.
                 Extraia todos os endereços de e-mail e perfis do Instagram que encontrar.
@@ -65,53 +69,57 @@ class ContactExtractionAgent(BaseAgent[ContactExtractionInput, ContactExtraction
             llm_response_str = self.generate_llm_response(formatted_prompt)
 
             if not llm_response_str:
+                self.logger.error("❌ LLM call returned no response for contact extraction")
                 return ContactExtractionOutput(
                     error_message="LLM call returned no response."
                 )
+
+            self.logger.debug(f"✅ LLM returned response, length: {len(llm_response_str)}")
 
             # Attempt to parse the LLM response as JSON
             parsed_output = self.parse_llm_json_response(llm_response_str, ContactExtractionOutput)
 
             # Check if parsing failed or if the essential fields are missing
-            # (parse_llm_json_response might return a model with default values if parsing fails but doesn't raise an exception,
-            # or it might set an error_message in the returned model itself if designed that way)
             if parsed_output.error_message or not (parsed_output.emails_found or parsed_output.instagram_profiles_found or parsed_output.tavily_search_suggestion):
                 # Retain existing error message from parsing if available
                 current_error = parsed_output.error_message or f"LLM response was not valid JSON or essential fields missing. Raw: {llm_response_str[:200]}"
                 
-                # Fallback: Try to extract emails and Instagram profiles using regex
-                self.logger.warning(f"JSON parsing for ContactExtractionOutput failed or returned empty. Attempting regex fallback. Error: {current_error}")
+                self.logger.warning(f"⚠️  JSON parsing failed or returned empty, attempting regex fallback. Error: {current_error}")
                 
+                # Fallback: Try to extract emails and Instagram profiles using regex
                 raw_emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', llm_response_str)
                 raw_instagram = re.findall(r'@[\w\.]+', llm_response_str)
                 
-                # Use fallback data only if parsing truly yielded nothing for those specific fields
-                # And only if the original parsed_output didn't already populate them.
-                # This logic can get complex if parse_llm_json_response partially populates.
-                # Assuming parse_llm_json_response returns default empty lists if specific fields fail.
+                self.logger.debug(f"🔍 Regex fallback found: emails={len(raw_emails)}, instagram={len(raw_instagram)}")
                 
                 final_emails = parsed_output.emails_found
                 if not final_emails and raw_emails:
                     final_emails = list(set(raw_emails))
+                    self.logger.debug(f"📧 Using regex emails: {final_emails}")
                 
                 final_instagram = parsed_output.instagram_profiles_found
                 if not final_instagram and raw_instagram:
                     final_instagram = list(set(raw_instagram))
+                    self.logger.debug(f"📱 Using regex Instagram: {final_instagram}")
 
                 # If regex also found nothing and parsing failed, the error message reflects that.
                 if not final_emails and not final_instagram:
-                     error_message = f"JSON parsing failed ({current_error}), and no contacts found via regex."
+                    error_message = f"JSON parsing failed ({current_error}), and no contacts found via regex."
+                    self.logger.warning(f"❌ No contacts found through any method")
                 else: # Some data extracted with regex, or parsing partially succeeded
-                     error_message = f"JSON parsing issues ({current_error}), but some data might be from regex fallback."
+                    error_message = f"JSON parsing issues ({current_error}), but some data might be from regex fallback."
+                    self.logger.info(f"⚠️  Partial success with fallback: emails={len(final_emails)}, instagram={len(final_instagram)}")
                 
                 return ContactExtractionOutput(
                     emails_found=final_emails,
                     instagram_profiles_found=final_instagram,
-                    tavily_search_suggestion=parsed_output.tavily_search_suggestion, # Keep what was parsed for this
+                    tavily_search_suggestion=parsed_output.tavily_search_suggestion,
                     error_message=error_message
                 )
             
-            return parsed_output # Successfully parsed JSON
+            # Successfully parsed JSON
+            self.logger.info(f"✅ Contact extraction successful: emails={len(parsed_output.emails_found)}, instagram={len(parsed_output.instagram_profiles_found)}")
+            return parsed_output
 
         except Exception as e:
             self.logger.error(f"An unexpected error occurred in ContactExtractionAgent: {e}")

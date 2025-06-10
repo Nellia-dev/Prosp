@@ -108,7 +108,7 @@ def _initialize_gemini_model():
 
 # --- FERRAMENTAS COMPOSITAS (Adaptadas para Geração de Leads) ---
 
-def search_and_qualify_leads(query: str, max_search_results_to_scrape: int = MAX_SCRAPE_RESULTS) -> List[Dict[str, Any]]:
+def search_and_qualify_leads(query: str, max_search_results_to_scrape: int) -> List[Dict[str, Any]]:
     """
     Realiza uma busca web por potenciais leads, raspa o conteúdo e faz uma qualificação inicial
     usando o Gemini, retornando o conteúdo raspado com um resumo de qualificação.
@@ -129,7 +129,9 @@ def search_and_qualify_leads(query: str, max_search_results_to_scrape: int = MAX
     print(f"--- DEBUG (search_and_qualify_leads): Chamado com query: '{query}' e max_results_to_scrape: {max_search_results_to_scrape} ---")
     try:
         model = _initialize_gemini_model()
-        # Busca o dobro de resultados do que será raspado para ter uma margem de URLs válidas
+        # Use default value if not provided, and busca o dobro de resultados do que será raspado para ter uma margem de URLs válidas
+        if max_search_results_to_scrape is None:
+            max_search_results_to_scrape = MAX_SCRAPE_RESULTS
         search_results = _tavily_search_internal(query=query, max_results=max_search_results_to_scrape * 2)
 
         if not search_results:
@@ -188,7 +190,7 @@ def search_and_qualify_leads(query: str, max_search_results_to_scrape: int = MAX
         return [{"error": f"Um erro inesperado ocorreu na ferramenta composta: {e}"}]
 
 
-def find_and_extract_structured_leads(query: str, max_search_results_to_process: int = MAX_SCRAPE_RESULTS) -> List[Dict[str, Any]]:
+def find_and_extract_structured_leads(query: str, max_search_results_to_process: int) -> List[Dict[str, Any]]:
     """
     Realiza uma busca profunda por leads, raspa o conteúdo e extrai informações estruturadas de leads
     (nome da empresa, site, e-mails, telefones, etc.) usando Regex e Gemini.
@@ -212,7 +214,10 @@ def find_and_extract_structured_leads(query: str, max_search_results_to_process:
     extracted_leads = []
     try:
         model = _initialize_gemini_model()
-        search_results = _tavily_search_internal(query=query, max_results=max_search_results_to_process * 2) 
+        # Use default value if not provided
+        if max_search_results_to_process is None:
+            max_search_results_to_process = MAX_SCRAPE_RESULTS
+        search_results = _tavily_search_internal(query=query, max_results=max_search_results_to_process * 2)
 
         if not search_results:
             print("--- DEBUG (find_and_extract_structured_leads): Nenhuns resultados da busca Tavily. ---")
@@ -307,7 +312,7 @@ def find_and_extract_structured_leads(query: str, max_search_results_to_process:
         return [{"error": f"Um erro inesperado ocorreu na ferramenta composta: {e}"}]
 
 
-def process_provided_urls_for_leads(urls: List[str], lead_analysis_instruction: str = "Analise este conteúdo para identificar e extrair informações de leads como nome da empresa, site, e-mails de contato e números de telefone. Apresente como um objeto JSON com os campos: company_name, website, contact_emails (lista), contact_phones (lista), industry, description, size. Se uma informação não for encontrada, use null.") -> List[Dict[str, Any]]:
+def process_provided_urls_for_leads(urls: List[str], lead_analysis_instruction: str) -> List[Dict[str, Any]]:
     """
     Raspa o conteúdo de uma lista de URLs fornecidas pelo usuário e usa o Google Gemini para analisar e extrair
     informações estruturadas de leads. Inclui limitação de taxa.
@@ -321,6 +326,11 @@ def process_provided_urls_for_leads(urls: List[str], lead_analysis_instruction: 
         Retorna uma lista vazia se nenhum lead for encontrado ou se ocorrer um erro.
     """
     print(f"--- DEBUG (process_provided_urls_for_leads): Processando {len(urls)} URLs. ---")
+    
+    # Use default value if not provided
+    if lead_analysis_instruction is None:
+        lead_analysis_instruction = "Analise este conteúdo para identificar e extrair informações de leads como nome da empresa, site, e-mails de contato e números de telefone. Apresente como um objeto JSON com os campos: company_name, website, contact_emails (lista), contact_phones (lista), industry, description, size. Se uma informação não for encontrada, use null."
+    
     results = []
     try:
         model = _initialize_gemini_model()
@@ -400,38 +410,16 @@ business_context_to_query_agent = Agent(
 _query_refiner_agent_internal = Agent(
     name="query_refiner_agent",
     model="gemini-1.5-flash",
-    description="""Keyword generator that converts business descriptions to search terms.""",
-    instruction="""You receive business context and generate search keywords. Process ANY input you receive.
+    description="""Simple keyword repeater.""",
+    instruction="""Just output keywords from any input you receive. No other text.
 
-EXPECTED INPUT FORMAT:
-"Business: [description] Target market: [location] Industries: [industry] - Find potential leads and customers for this business."
+Input: AI consulting Brazil small companies
+Output: AI consulting Brazil small companies
 
-YOUR TASK:
-1. Extract business type keywords
-2. Extract target market location
-3. Extract industry terms
-4. Output 5-8 search keywords
+Input: technology software
+Output: technology software
 
-EXAMPLES:
-
-INPUT: "Business: Consultoria Especializada em Inteligencia Artificial Target market: Brazil Industries: Pequenas e Media empresas - Find potential leads and customers for this business."
-OUTPUT: pequenas medias empresas Brazil inteligencia artificial consultoria
-
-INPUT: "Business: AI consulting services Target market: Brazil Industries: Small and medium companies - Find potential leads"
-OUTPUT: small medium companies Brazil AI consulting artificial intelligence
-
-INPUT: "Business: CRM software Target market: São Paulo Industries: Technology - Find potential leads"
-OUTPUT: technology companies São Paulo CRM software
-
-RULES:
-- ALWAYS generate keywords from whatever input you receive
-- If you see business context, extract keywords immediately
-- Keep Portuguese terms if input is Portuguese
-- Include location terms (Brazil, São Paulo, etc.)
-- NO explanations, NO questions, NO acknowledgments
-- Just output the search keywords
-
-Generate keywords from whatever input you receive:""",
+Just extract and output the main keywords.""",
     tools=[]
 )
 # Alias para corresponder à importação desejada no __init__.py
@@ -440,11 +428,20 @@ root_agent = _query_refiner_agent_internal
 
 lead_search_and_qualify_agent = Agent(
     name="lead_search_and_qualify_agent",
-    model="gemini-1.5-flash-8b", 
-    description="""Você é um agente especializado em buscar potenciais leads na web e realizar uma qualificação inicial do seu potencial, com base nos critérios fornecidos pelo usuário. Seu objetivo é identificar páginas e conteúdos que sejam relevantes para a geração de leads.""",
-    instruction="""Sua única tarefa é usar a ferramenta `search_and_qualify_leads` com a query fornecida.
-    Use o parâmetro `max_search_results_to_scrape` para limitar a busca a 3 ou 4 resultados para otimizar o processo.
-    Retorne a saída da ferramenta diretamente.""",
+    model="gemini-1.5-flash-8b",
+    description="""Você é um agente especializado em buscar potenciais leads na web usando EXATAMENTE a query fornecida pelo usuário. Você NÃO deve modificar, interpretar ou alterar a query de busca de forma alguma.""",
+    instruction="""INSTRUÇÕES CRÍTICAS:
+    1. Use EXATAMENTE a query fornecida pelo usuário, sem modificações
+    2. NÃO interprete, traduza ou altere a query de busca
+    3. Use a ferramenta `search_and_qualify_leads` com a query EXATA fornecida
+    4. Use max_search_results_to_scrape=3 para otimizar o processo
+    5. Retorne a saída da ferramenta diretamente
+    
+    EXEMPLO:
+    Input: "businesses announcing expansion"
+    Ação: search_and_qualify_leads(query="businesses announcing expansion", max_search_results_to_scrape=3)
+    
+    IMPORTANTE: NÃO mude a query para "marketing agency" ou qualquer outra coisa!""",
     tools=[search_and_qualify_leads]
 )
 

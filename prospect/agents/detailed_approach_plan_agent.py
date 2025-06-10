@@ -1,5 +1,5 @@
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 from agents.base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
@@ -20,10 +20,26 @@ class ContactStepDetail(BaseModel):
     step_number: int
     channel: str
     objective: str
-    key_topics_arguments: List[str]
+    key_topics_arguments: List[str] = Field(default_factory=list)
     key_questions: List[str] = Field(default_factory=list)
     cta: str
     supporting_materials: Optional[str] = None
+    
+    @validator('key_questions', pre=True)
+    def validate_key_questions(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [v] if v.strip() else []
+        return v if isinstance(v, list) else []
+    
+    @validator('key_topics_arguments', pre=True)
+    def validate_key_topics_arguments(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [v] if v.strip() else []
+        return v if isinstance(v, list) else []
 
 class DetailedApproachPlanOutput(BaseModel):
     main_objective: str = "Não especificado"
