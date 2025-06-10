@@ -4,14 +4,15 @@ import asyncio
 import traceback
 import os
 import time
-from typing import Dict, Any, AsyncIterator, List, Tuple # Added Tuple
+from typing import Dict, Any, AsyncIterator, List, Tuple, Optional # Added Optional
 from datetime import datetime
 import uuid
 
-# from sentence_transformers import SentenceTransformer # (example for embeddings)
-# import faiss # (example for local vector store)
-# from some_text_splitter import RecursiveCharacterTextSplitter # (example)
-# import numpy as np # (example if using faiss.IndexFlatL2.add with numpy)
+# Conceptual RAG Imports - these would be needed for a real implementation
+# from sentence_transformers import SentenceTransformer # For generating embeddings
+# import faiss # For local vector store (faiss-cpu or faiss-gpu)
+# import numpy as np # For FAISS array operations
+# from some_text_splitter import RecursiveCharacterTextSplitter # Example for robust text splitting
 
 from loguru import logger
 
@@ -188,9 +189,13 @@ class PipelineOrchestrator:
         self.llm_client = LLMClientFactory.create_from_env()
 
         # RAG Setup Placeholders
-        # Conceptual: In a real scenario, initialize the embedding model here.
+        # Conceptual: Actual initialization would download the model if not cached.
         # self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-        self.embedding_model = None # Placeholder: e.g., SentenceTransformer('all-MiniLM-L6-v2')
+        # logger.info("Conceptual: SentenceTransformer model loaded (placeholder).")
+        self.embedding_model = None # Keep as None for now to avoid execution errors
+        logger.info("Conceptual: self.embedding_model placeholder for SentenceTransformer.")
+        logger.info("To use real embeddings, uncomment SentenceTransformer initialization and ensure library is installed.")
+
         # Conceptual: This would store actual vector store instances (e.g., FAISS index) per job.
         self.job_vector_stores = {} # Stores job_id -> vector_store_instance (conceptual)
         
@@ -633,6 +638,49 @@ class PipelineOrchestrator:
 
         return chunks
 
+    async def _generate_embeddings(self, text_chunks: List[str]) -> Optional[np.ndarray]:
+        """
+        Conceptual: Generates embeddings for text chunks using self.embedding_model.
+        In a real implementation, this would use a SentenceTransformer model.
+        Returns a numpy array of embeddings or None if an error occurs.
+        """
+        # This import would be at the top of the file in a real scenario
+        # import numpy as np
+
+        if not self.embedding_model:
+            logger.warning("Conceptual: Embedding model not initialized. Cannot generate real embeddings. Returning placeholder numpy array.")
+            # Simulate a numpy array structure even for placeholder for type consistency if downstream expects it
+            try:
+                # Attempt to import numpy for placeholder structure, fail gracefully if not installed
+                import numpy as np
+                return np.array([[0.0] * 384 for _ in text_chunks], dtype=np.float32)
+            except ImportError:
+                logger.error("Conceptual: Numpy is not installed. Cannot create placeholder numpy array for embeddings. Returning None.")
+                return None
+
+        try:
+            logger.info(f"Conceptual: Generating embeddings for {len(text_chunks)} chunks using SentenceTransformer (simulated)...")
+            # In a real implementation:
+            # Ensure embedding_model is not None before calling encode
+            # actual_embeddings_np = self.embedding_model.encode(text_chunks, convert_to_tensor=False, show_progress_bar=True)
+            # return actual_embeddings_np.astype('float32')
+
+            # Simulating numpy array output for blueprint structure
+            # This requires numpy to be available.
+            import numpy as np # Ensure numpy is imported for this placeholder
+            placeholder_embeddings = np.array(
+                [[float(i+1)/100.0] * 384 for i, _ in enumerate(text_chunks)],
+                dtype=np.float32
+            )
+            logger.info("Conceptual: Embeddings generated (simulated numpy array).")
+            return placeholder_embeddings
+        except ImportError: # Specifically for numpy if it's not installed for the placeholder
+            logger.error("Conceptual: Numpy is not installed. Cannot create placeholder numpy array for embeddings. Returning None.")
+            return None
+        except Exception as e:
+            logger.error(f"Conceptual: Error during (simulated) embedding generation: {e}")
+            return None
+
     async def _setup_rag_for_job(self, job_id: str, context_filepath: str) -> bool:
         """
         Conceptual: Sets up RAG by loading context, chunking, embedding, and creating a vector store.
@@ -659,49 +707,45 @@ class PipelineOrchestrator:
             return False
         logger.info(f"[{job_id}] RAG setup: Document chunked into {len(text_chunks)} pieces.")
 
-        # Generate Embeddings (Conceptual)
-        logger.info(f"[{job_id}] Generating embeddings for {len(text_chunks)} chunks...")
-        if not self.embedding_model: # Conceptual check for actual model
-            logger.warning(f"[{job_id}] Embedding model not initialized. Skipping RAG setup (embeddings generation).")
-            # In a real scenario, you might return False or handle this differently.
-            # For this conceptual step, we'll proceed with placeholder embeddings if no model,
-            # but a real system would require an embedding model.
-            # return False
-            pass # Allow to proceed with placeholder if model is None for conceptual demo
+        # Generate Embeddings
+        # Note: SentenceTransformer's encode is CPU-bound and typically synchronous.
+        # If it were truly I/O bound or a very long CPU task, consider asyncio.to_thread.
+        # For this blueprint, direct await on an async method is fine.
+        chunk_embeddings_np = await self._generate_embeddings(text_chunks)
 
-        chunk_embeddings = [] # Placeholder for actual embeddings
-        # Conceptual: This loop simulates embedding generation.
-        for i, chunk in enumerate(text_chunks):
-            if self.embedding_model:
-                # chunk_embedding = self.embedding_model.encode(chunk) # Actual call
-                # chunk_embeddings.append(chunk_embedding)
-                # Using placeholder for now even if model was 'initialized' as None
-                chunk_embeddings.append([0.1 + (i*0.001)] * 384) # Placeholder, unique-ish per chunk
-            else:
-                # If no model, use very basic placeholder embeddings
-                chunk_embeddings.append([0.05 + (i*0.001)] * 384) # Different placeholder if no model
+        if chunk_embeddings_np is None or chunk_embeddings_np.size == 0:
+            logger.error(f"[{job_id}] Failed to generate embeddings. Skipping RAG setup.")
+            return False
 
-        logger.info(f"[{job_id}] Embeddings generated (conceptually).")
+        embedding_dim = chunk_embeddings_np.shape[1]
 
-        # Initialize and Populate Vector Store (Conceptual)
-        # Conceptual: In a real application, you'd use a library like FAISS or a managed vector DB.
-        # Example with FAISS (requires faiss-cpu or faiss-gpu and numpy):
-        # import numpy as np
-        # dimension = 384 # Assuming all-MiniLM-L6-v2
-        # vector_store_index = faiss.IndexFlatL2(dimension)
-        # if chunk_embeddings: # Ensure there are embeddings to add
-        #     vector_store_index.add(np.array(chunk_embeddings).astype('float32'))
+        # Initialize and Populate Vector Store (using FAISS example, conceptually)
+        try:
+            # logger.info(f"[{job_id}] Initializing FAISS Index (IndexFlatL2) with dimension {embedding_dim}.")
+            # index = faiss.IndexFlatL2(embedding_dim) # Actual FAISS index creation
+            # logger.info(f"[{job_id}] Adding {chunk_embeddings_np.shape[0]} embeddings to FAISS index.")
+            # index.add(chunk_embeddings_np) # Actual adding of embeddings
+            # self.job_vector_stores[job_id] = {
+            #     "index": index, # Store the actual FAISS index
+            #     "chunks": text_chunks, # Store original chunks for retrieval
+            #     "embedding_dim": embedding_dim
+            # }
+            # logger.info(f"[{job_id}] RAG setup complete. FAISS index populated for job.")
 
-        # For this conceptual placeholder, we store embeddings and chunks together.
-        # A real vector store would handle efficient similarity search.
-        conceptual_vector_store = {
-            "embeddings": chunk_embeddings, # List of embedding vectors
-            "chunks": text_chunks          # Corresponding text chunks
-        }
-        self.job_vector_stores[job_id] = conceptual_vector_store
-
-        logger.info(f"[{job_id}] RAG setup complete. Conceptual vector store initialized and populated for job.")
-        return True
+            # Placeholder for blueprint structure without actual FAISS execution:
+            logger.info(f"[{job_id}] Conceptual: FAISS Index (IndexFlatL2) with dimension {embedding_dim} would be initialized here.")
+            logger.info(f"[{job_id}] Conceptual: {chunk_embeddings_np.shape[0]} embeddings would be added to FAISS index.")
+            self.job_vector_stores[job_id] = {
+                "index": "placeholder_faiss_index_object", # Placeholder for the FAISS index object
+                "chunks": text_chunks,
+                "embedding_dim": embedding_dim,
+                "embeddings_for_debug": chunk_embeddings_np.tolist() # Store numpy array as list for conceptual view
+            }
+            logger.info(f"[{job_id}] RAG setup complete (conceptually). FAISS index structure prepared for job.")
+            return True
+        except Exception as e:
+            logger.error(f"[{job_id}] Error during conceptual FAISS index setup: {e}")
+            return False
 
     def _load_and_parse_enriched_context(self, job_id: str) -> Dict[str, Any]:
         """

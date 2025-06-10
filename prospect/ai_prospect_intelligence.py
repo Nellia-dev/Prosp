@@ -11,10 +11,14 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timedelta
 from loguru import logger
 import math
+from typing import Dict, Any, List, Optional, Tuple # Ensure Optional is imported
 
-# from sentence_transformers import SentenceTransformer # (example for embeddings)
-# from some_llm_client import LLMClient # (e.g., openai, google.generativeai)
-# import numpy as np # (example if using faiss.IndexFlatL2.add with numpy)
+# Conceptual RAG Imports - these would be needed for a real implementation
+# import numpy as np # For FAISS array operations and query_embedding_np
+# from sentence_transformers import SentenceTransformer # For generating embeddings
+# import google.generativeai as genai # For Google Gemini LLM
+# import os # To access API keys from environment variables
+
 
 class AdvancedProspectProfiler:
     """
@@ -25,9 +29,28 @@ class AdvancedProspectProfiler:
         # Ensure logger is available if this class is instantiated elsewhere independently
         # from loguru import logger # Already imported at module level
 
-        # Conceptual: Initialize actual models here if they were to be used.
-        self.embedding_model = None # Placeholder: e.g., SentenceTransformer('all-MiniLM-L6-v2')
-        self.llm_client = None      # Placeholder: e.g., OpenAI() or GeminiClient()
+        # Conceptual: Actual initialization would download the model if not cached.
+        # self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        # logger.info("Conceptual: SentenceTransformer model loaded in Profiler (placeholder).")
+        self.embedding_model = None # Keep as None for now
+        logger.info("Conceptual: Profiler.embedding_model placeholder for SentenceTransformer.")
+
+        # Conceptual: Initialize LLM Client (e.g., Google Gemini)
+        # try:
+        #     gemini_api_key = os.getenv("GEMINI_API_KEY")
+        #     if not gemini_api_key:
+        #         logger.warning("GEMINI_API_KEY not found in environment variables. LLM will not be initialized.")
+        #         self.llm_client = None
+        #     else:
+        #         genai.configure(api_key=gemini_api_key)
+        #         self.llm_client = genai.GenerativeModel('gemini-pro') # Or other suitable Gemini model
+        #         logger.info("Conceptual: Google Gemini LLM client initialized (placeholder).")
+        # except Exception as e:
+        #     logger.error(f"Error initializing Gemini LLM client: {e}")
+        #     self.llm_client = None
+        self.llm_client = None # Keep as None for now
+        logger.info("Conceptual: Profiler.llm_client placeholder for Gemini.")
+        logger.info("To use real LLM, uncomment Gemini initialization, set GEMINI_API_KEY, and ensure library is installed.")
 
         self.prospect_signals = {
             'high_intent': {
@@ -128,7 +151,7 @@ class AdvancedProspectProfiler:
         # Simplified RAG: Selectively using 'problems_we_solve' and 'value_proposition' from the broader enriched_context.
         lead_qualification_criteria = enriched_context.get('lead_qualification_criteria', {})
         business_offering = enriched_context.get('business_offering', {})
-        
+
         problems_we_solve = lead_qualification_criteria.get('problems_we_solve', [])
         value_proposition = business_offering.get('value_proposition', '')
 
@@ -258,61 +281,78 @@ class AdvancedProspectProfiler:
         Generate AI-powered predictive insights using a RAG-simulated approach.
         Conceptual: This method now simulates a full RAG pipeline:
         1. Query Formulation from lead_data.
-        2. Query Embedding (placeholder).
-        3. Vector Store Search (placeholder, using the conceptual rag_vector_store).
+        2. Query Embedding (placeholder for SentenceTransformer).
+        3. Vector Store Search (placeholder for FAISS, using the conceptual rag_vector_store).
         4. LLM Prompt Formulation with retrieved context.
-        5. LLM Call and Response Processing (placeholder).
+        5. LLM Call and Response Processing (placeholder for Google Gemini).
         """
         lead_text_snippet = (self._extract_all_text(lead_data)[:1000]).lower() # Limit for query, already lowercased
 
-        # Default insights if RAG components are not fully available
-        insights = ["Default insight: Further analysis pending full RAG implementation or component initialization."]
+        final_insights = ["Default insight: Further analysis pending full RAG implementation or component initialization."]
 
-        if not rag_vector_store or not self.embedding_model or not self.llm_client:
-            # Conceptual: In a real system, self.embedding_model and self.llm_client would be initialized.
-            # For this simulation, we allow it to proceed if rag_vector_store is present,
-            # as embedding_model and llm_client are placeholders for actual calls.
-            # A stricter check might be:
-            # if not rag_vector_store or not self.embedding_model or not self.llm_client:
-            # However, to allow the simulation of vector search and LLM call with placeholders for model/client:
-            if not rag_vector_store:
-                 logger.warning(f"Profiler: RAG vector store not available for lead {lead_data.get('company_name', 'N/A')}. Skipping RAG-based insights.")
-                 return insights
-            logger.warning(f"Profiler: One or more RAG components (embedding model, LLM client) not initialized for lead {lead_data.get('company_name', 'N/A')}. Proceeding with conceptual RAG.")
+        if not rag_vector_store:
+            logger.warning(f"Profiler: RAG vector store not available for lead {lead_data.get('company_name', 'N/A')}. Skipping RAG-based insights.")
+            return final_insights
+
+        # Conceptual: Check for actual model initialization if they were live
+        # if not self.embedding_model or not self.llm_client:
+        #     logger.warning(f"Profiler: Embedding model or LLM client not initialized. Skipping RAG-based insights for {lead_data.get('company_name', 'N/A')}.")
+        #     return final_insights
+        # For this blueprint, we proceed even if self.embedding_model/self.llm_client are None, as their calls are commented out.
 
         # 1. Formulate Query from lead_data
-        # Conceptual: Query formulation could be more sophisticated.
         query = f"Generate predictive sales insights for a company: {lead_data.get('company_name', 'N/A')}, described as: {lead_text_snippet}"
         logger.info(f"Profiler RAG Query: {query}")
 
-        # 2. Embed Query (Conceptual)
-        # Conceptual: Actual call to an embedding model.
-        # query_embedding = self.embedding_model.encode(query)
-        query_embedding = [0.1] * 384 # Placeholder embedding, assuming 384 dimensions like all-MiniLM-L6-v2
-        logger.info("Profiler: Query embedding generated (conceptually).")
+        # 2. Embed Query (Conceptual: using SentenceTransformer example)
+        query_embedding_np = None
+        try:
+            # This import would be at the top in a real file.
+            import numpy as np
+            # Actual call:
+            # if self.embedding_model:
+            #     query_embedding_np = self.embedding_model.encode([query])[0].astype(np.float32)
+            #     logger.info("Query embedding generated using SentenceTransformer (conceptually).")
+            # else:
+            #     logger.warning("Profiler: Embedding model not available for query encoding. Using placeholder.")
+            #     query_embedding_np = np.array([0.1] * rag_vector_store.get("embedding_dim", 384), dtype=np.float32)
 
-        # 3. Search Vector Store (Conceptual)
+            # Using placeholder for blueprint structure, ensure it matches expected dimension from vector store
+            query_embedding_np = np.array([0.1] * rag_vector_store.get("embedding_dim", 384), dtype=np.float32)
+            logger.info("Query embedding generated (placeholder numpy array).")
+        except ImportError:
+            logger.error("Profiler: Numpy import failed. Cannot create placeholder query embedding.")
+            return final_insights # Cannot proceed without query embedding
+        except Exception as e:
+            logger.error(f"Profiler: Error during conceptual query embedding: {e}")
+            return final_insights
+
+
+        # 3. Search Vector Store (Conceptual: using FAISS example)
         retrieved_chunks_texts = []
-        if rag_vector_store and isinstance(rag_vector_store.get("embeddings"), list) and isinstance(rag_vector_store.get("chunks"), list):
-            # Conceptual: Actual vector search using the query_embedding against rag_vector_store["embeddings"].
-            # This would involve calculating similarities (e.g., cosine similarity) and getting top_k results.
-            # Example with FAISS:
-            # import numpy as np
-            # embeddings_matrix = np.array(rag_vector_store["embeddings"]).astype('float32')
-            # # Assuming vector_store_faiss_index is your FAISS index object built from these embeddings
-            # D, I = vector_store_faiss_index.search(np.array([query_embedding]).astype('float32'), k=3) # k=top 3 chunks
-            # for idx in I[0]: retrieved_chunks_texts.append(rag_vector_store["chunks"][idx])
+        faiss_index_placeholder = rag_vector_store.get("index") # This is "placeholder_faiss_index_object"
+        stored_chunks = rag_vector_store.get("chunks")
 
-            logger.info("Profiler: Simulating vector search... (conceptual: picking first 2 chunks if available)")
-            retrieved_chunks_texts = rag_vector_store["chunks"][:2] # Simplified: pick first 2 chunks as placeholder
+        if faiss_index_placeholder and stored_chunks and query_embedding_np is not None and query_embedding_np.size > 0:
+            # try:
+            #     # Actual FAISS search:
+            #     # Ensure faiss_index is the actual FAISS index object, not the placeholder string.
+            #     # For this to work, FAISS library must be imported and faiss_index must be a faiss.Index.
+            #     # D, I = faiss_index.search(np.expand_dims(query_embedding_np, axis=0), k=min(3, len(stored_chunks)))
+            #     # retrieved_chunks_texts = [stored_chunks[i] for i in I[0] if i < len(stored_chunks)]
+            #     # logger.info(f"Retrieved {len(retrieved_chunks_texts)} chunks from FAISS.")
+            # except Exception as e:
+            #     logger.error(f"Error searching FAISS index: {e}")
+            #     retrieved_chunks_texts = stored_chunks[:1] # Fallback to first chunk on error
+            logger.info("Conceptual: FAISS search would happen here. Using first 2 stored chunks as placeholder for retrieved_chunks_texts.")
+            retrieved_chunks_texts = stored_chunks[:2] # Placeholder retrieval
         else:
-            logger.warning(f"Profiler: RAG vector store for lead {lead_data.get('company_name', 'N/A')} is missing expected 'embeddings' or 'chunks', or they are not lists.")
+            logger.warning(f"Profiler: FAISS index placeholder, stored chunks not available, or query embedding failed for lead {lead_data.get('company_name', 'N/A')}. Using minimal context.")
         
         logger.info(f"Profiler: Retrieved {len(retrieved_chunks_texts)} context chunks (conceptually).")
         retrieved_context_str = "\n---\n".join(retrieved_chunks_texts) if retrieved_chunks_texts else "No specific context retrieved."
 
         # 4. Formulate LLM Prompt with Retrieved Context
-        # Conceptual: Prompt engineering is key here.
         llm_prompt = f"""As an expert B2B sales analyst, provide 3-4 concise predictive insights for the following lead.
 Lead Name: {lead_data.get('company_name', 'N/A')}
 Lead Description (snippet): {lead_text_snippet}
@@ -325,21 +365,38 @@ Based ONLY on the lead data and the retrieved context above, what are the key pr
 Insights:"""
         logger.info(f"Profiler RAG LLM Prompt for _generate_predictive_insights:\n{llm_prompt}")
 
-        # 5. Call LLM (Conceptual) and Return Response
-        # Conceptual: Actual call to an LLM client.
-        # actual_llm_response = self.llm_client.generate(llm_prompt)
-        # insights = self._parse_llm_insights(actual_llm_response) # Helper to parse LLM output into List[str]
+        # 5. Call LLM (Conceptual: Google Gemini example) and Return Response
+        # try:
+        #     if self.llm_client:
+        #         logger.info("Attempting to call Google Gemini LLM...")
+        #         # The prompt sent to Gemini might need to be just the user query part,
+        #         # and the "retrieved context" could be part of a specific structure if using multi-turn chat,
+        #         # or simply prepended to the main query for simpler text generation models.
+        #         # For gemini-pro (non-chat), the prompt is a direct string.
+        #         response = self.llm_client.generate_content(llm_prompt) # llm_prompt is the full augmented prompt
+        #         llm_output = response.text
+        #         # Basic parsing of LLM output
+        #         final_insights = [line.strip() for line in llm_output.split('\n') if line.strip() and not line.lower().startswith(("insights:", "predictive insights:"))]
+        #         if not final_insights and llm_output: # Handle cases where output is single block
+        #             final_insights.append(llm_output.strip())
+        #         logger.info(f"Insights from Gemini LLM (conceptual): {final_insights}")
+        #     else:
+        #         logger.warning("LLM client (Gemini) not initialized. Using placeholder insights.")
+        #         # Fallback to dynamic placeholders if LLM not available is handled below
+        # except Exception as e:
+        #     logger.error(f"Error calling Gemini LLM: {e}")
+        #     final_insights = [f"Error generating insights from Gemini: {str(e)}"]
 
-        # Placeholder response based on conceptual RAG pipeline
-        insights = [
-            f"Conceptual Insight 1 (RAG): Lead '{lead_data.get('company_name', 'N/A')}' aligns with strategy aspect: '{retrieved_chunks_texts[0][:50]}...'." if retrieved_chunks_texts else f"Conceptual Insight 1 (RAG): Lead '{lead_data.get('company_name', 'N/A')}' requires analysis against general strategy as no specific context chunks were retrieved.",
-            f"Conceptual Insight 2 (RAG): Their description '{lead_text_snippet[:50]}...' suggests potential for our solutions based on overall context."
-        ]
-        if len(retrieved_chunks_texts) > 1:
-            insights.append(f"Conceptual Insight 3 (RAG): Further synergy indicated by context: '{retrieved_chunks_texts[1][:50]}...'.")
+        # Current placeholder return, made more dynamic based on retrieved context
+        # This block acts as a fallback if the try-except for LLM call is commented out or if self.llm_client is None.
+        if not final_insights or final_insights[0].startswith("Default insight:") : # Check if not populated by conceptual LLM call
+            logger.info("Conceptual: Google Gemini LLM call would happen here. Generating dynamic placeholder insights.")
+            dynamic_placeholder1 = f"Lead '{lead_data.get('company_name', 'N/A')}' shows potential due to: '{retrieved_chunks_texts[0][:60]}...'." if retrieved_chunks_texts else "Generic insight: Lead data aligns with general business strategy."
+            dynamic_placeholder2 = f"Consider their description '{lead_text_snippet[:60]}...' against our ICP and value proposition."
+            dynamic_placeholder3 = f"Opportunity to leverage our competitive advantage regarding mentioned factors."
+            final_insights = [dynamic_placeholder1, dynamic_placeholder2, dynamic_placeholder3]
 
-        logger.info(f"Profiler: LLM response received (conceptually): {insights}")
-        return insights[:3] # Ensure we return 3 insights as per original intent if possible
+        return final_insights[:3] # Ensure we return up to 3 insights
 
     def _analyze_competitive_landscape(self, text_content: str, enriched_context: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze competitive landscape and positioning"""
