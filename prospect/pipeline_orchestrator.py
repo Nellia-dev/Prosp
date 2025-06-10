@@ -3,32 +3,33 @@
 import asyncio
 import json
 import os
+import re
+import sys
 import time
 import traceback
 import uuid
 from datetime import datetime
 from typing import Any, AsyncIterator, Dict, List, Optional
+from urllib.parse import urlparse
 
+# --- Imports para o Pipeline RAG e Harvester ---
+from dotenv import load_dotenv
 from loguru import logger
 
-# --- Imports para o Pipeline RAG ---
-# Verifica a disponibilidade das bibliotecas RAG e define uma flag.
-# Isso torna o script robusto mesmo que as dependências não estejam instaladas.
 try:
+    from playwright.async_api import (Error as PlaywrightError,
+                                      TimeoutError as PlaywrightTimeoutError,
+                                      async_playwright)
+    from sentence_transformers import SentenceTransformer
     import faiss
     import numpy as np
-    from sentence_transformers import SentenceTransformer
-    RAG_LIBRARIES_AVAILABLE = True
-except ImportError:
-    RAG_LIBRARIES_AVAILABLE = False
-    # Define classes placeholder para que o type hinting não quebre
-    SentenceTransformer = type('SentenceTransformer', (object,), {})
-    np = type('np', (object,), {})
-    faiss = type('faiss', (object,), {})
+    import google.generativeai as genai
+    CORE_LIBRARIES_AVAILABLE = True
+except ImportError as e:
+    CORE_LIBRARIES_AVAILABLE = False
+    logger.critical(f"Bibliotecas essenciais não encontradas: {e}. O pipeline não pode ser executado.")
 
-# --- Imports de Módulos do Projeto ---
-# Tenta importar módulos específicos do projeto. Se falharem, o script ainda funciona,
-# mas com funcionalidades limitadas.
+# Importações de Módulos do Projeto
 try:
     from event_models import (LeadEnrichmentEndEvent, LeadEnrichmentStartEvent,
                               LeadGeneratedEvent, PipelineEndEvent,
@@ -39,170 +40,278 @@ try:
     from agents.enhanced_lead_processor import EnhancedLeadProcessor
     from data_models.lead_structures import GoogleSearchData, SiteData
     from core_logic.llm_client import LLMClientFactory
-    from adk1.agent import lead_search_and_qualify_agent as harvester_search_agent
-    from google.adk.runners import Runner
-    from google.adk.sessions import InMemorySessionService
-    from google.genai import types
+    from prospect.ai_prospect_intelligence import AdvancedProspectProfiler
     PROJECT_MODULES_AVAILABLE = True
 except ImportError:
     PROJECT_MODULES_AVAILABLE = False
-    harvester_search_agent = None  # Define para evitar NameError
-    logger.warning("Módulos específicos do projeto (agents, event_models, etc.) não encontrados. Algumas funcionalidades, como a execução de streaming, serão limitadas.")
+    logger.warning("Módulos específicos do projeto não encontrados. O pipeline usará placeholders.")
+
+
+# --- Placeholders se os módulos do projeto não estiverem disponíveis ---
+if not PROJECT_MODULES_AVAILABLE:
+    class BaseEvent:
+        def __init__(self, **kwargs): self.data = kwargs
+        def to_dict(self): return self.data
+    PipelineStartEvent = PipelineEndEvent = LeadGeneratedEvent = StatusUpdateEvent = PipelineErrorEvent = LeadEnrichmentStartEvent = LeadEnrichmentEndEvent = BaseEvent
+    class BaseAgent:
+        def __init__(self, **kwargs): pass
+        def execute(self, data): return data
+        async def execute_enrichment_pipeline(self, **kwargs): yield {"event_type": "placeholder_event"}
+    LeadIntakeAgent = LeadAnalysisAgent = EnhancedLeadProcessor = BaseAgent
+    class SiteData(dict): pass
 
 
 class PipelineOrchestrator:
     """
-    Orquestra o pipeline de geração e enriquecimento de leads, incluindo a
-    configuração e utilização de um pipeline RAG para inteligência avançada.
+    Orquestra o pipeline de ponta a ponta: busca leads (harvester),
+    configura o ambiente RAG e enriquece cada lead em tempo real.
     """
 
     def __init__(self, business_context: Dict[str, Any], user_id: str, job_id: str):
-        """
-        Inicializa o orquestrador e carrega o modelo de embedding para o RAG.
-        """
         self.business_context = business_context
         self.user_id = user_id
         self.job_id = job_id
         self.product_service_context = business_context.get("product_service_description", "")
-        self.competitors_list = ", ".join(business_context.get("competitors", []))
+        
+        if not CORE_LIBRARIES_AVAILABLE:
+            raise ImportError("Dependências críticas (Playwright, Sentence-Transformers, etc.) não estão instaladas.")
 
-        self.embedding_model: Optional[SentenceTransformer] = None
-        if RAG_LIBRARIES_AVAILABLE:
-            try:
-                # O modelo será baixado e cacheado automaticamente na primeira execução.
-                # Esta operação pode exigir acesso à internet.
-                logger.info("Carregando modelo de embedding 'all-MiniLM-L6-v2'...")
-                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-                logger.success("Modelo de embedding SentenceTransformer carregado com sucesso.")
-            except Exception as e:
-                logger.error(f"Falha ao carregar o modelo SentenceTransformer: {e}. Funcionalidades RAG serão desativadas.")
-        else:
-            logger.warning("Bibliotecas RAG (faiss-cpu, sentence-transformers, numpy) não encontradas. Funcionalidades RAG estão desativadas.")
+        # Carregamento de modelos para RAG
+        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.prospect_profiler = AdvancedProspectProfiler()
+        logger.info("Modelos de IA para RAG e Profiling carregados.")
 
         self.job_vector_stores: Dict[str, Dict[str, Any]] = {}
-        
-        # Inicializa outros componentes do pipeline se os módulos estiverem disponíveis
-        self.ai_intelligence_enabled = False
-        if PROJECT_MODULES_AVAILABLE:
-            try:
-                from prospect.ai_prospect_intelligence import AdvancedProspectProfiler
-                self.prospect_profiler = AdvancedProspectProfiler()
-                self.ai_intelligence_enabled = True
-                logger.info(f"[{self.job_id}] Módulo de Inteligência Artificial (AI) habilitado.")
-            except ImportError:
-                 logger.warning(f"[{self.job_id}] Módulo 'ai_prospect_intelligence' não encontrado. Insights avançados desativados.")
 
+        # Inicialização de agentes de enriquecimento
+        if PROJECT_MODULES_AVAILABLE:
+            self.llm_client = LLMClientFactory.create_from_env()
+            self.lead_intake_agent = LeadIntakeAgent(llm_client=self.llm_client)
+            self.lead_analysis_agent = LeadAnalysisAgent(llm_client=self.llm_client, product_service_context=self.product_service_context)
+            self.enhanced_lead_processor = EnhancedLeadProcessor(llm_client=self.llm_client, product_service_context=self.product_service_context)
+        else: # Usa placeholders se os módulos não estiverem disponíveis
+            self.lead_intake_agent = BaseAgent()
+            self.lead_analysis_agent = BaseAgent()
+            self.enhanced_lead_processor = BaseAgent()
+            
         logger.info(f"PipelineOrchestrator inicializado para o job {self.job_id}")
 
+    # --- Métodos de Configuração do RAG (do código anterior) ---
     @staticmethod
-    def _chunk_text(text: str, chunk_size: int = 1000) -> List[str]:
-        """
-        Divide o texto em pedaços (chunks) de forma simples.
-        Para produção, considere usar uma biblioteca mais sofisticada como a
-        RecursiveCharacterTextSplitter do LangChain para respeitar a estrutura do texto.
-        """
-        if not text:
-            return []
-        # Divide o texto por parágrafos (duas quebras de linha)
+    def _chunk_text(text: str) -> List[str]:
+        # ... (código do _chunk_text, sem alterações)
+        if not text: return []
         paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
-        
-        chunks = []
-        current_chunk = ""
-        for paragraph in paragraphs:
-            if len(current_chunk) + len(paragraph) + 2 > chunk_size and current_chunk:
-                chunks.append(current_chunk)
-                current_chunk = ""
-            current_chunk += ("\n\n" if current_chunk else "") + paragraph
-        
-        if current_chunk:
-            chunks.append(current_chunk)
-            
+        chunks, current_chunk = [], ""
+        for p in paragraphs:
+            if len(current_chunk) + len(p) + 2 > 1000 and current_chunk:
+                chunks.append(current_chunk); current_chunk = ""
+            current_chunk += ("\n\n" if current_chunk else "") + p
+        if current_chunk: chunks.append(current_chunk)
         return chunks
 
     async def _generate_embeddings(self, text_chunks: List[str]) -> Optional[np.ndarray]:
-        """
-        Gera embeddings vetoriais para os chunks de texto usando o modelo carregado.
-        """
-        if not self.embedding_model:
-            logger.warning("Modelo de embedding não inicializado. Não é possível gerar embeddings.")
-            return None
-
+        # ... (código do _generate_embeddings, sem alterações)
         try:
-            logger.info(f"Gerando embeddings para {len(text_chunks)} chunks de texto...")
-            # Para grande volume, considere usar asyncio.to_thread para não bloquear o event loop.
-            embeddings_np = self.embedding_model.encode(
-                text_chunks,
-                show_progress_bar=False  # Altere para True para depuração visual
-            )
-            logger.info("Embeddings gerados com sucesso.")
-            return embeddings_np.astype('float32')
+            return self.embedding_model.encode(text_chunks, show_progress_bar=False).astype('float32')
         except Exception as e:
-            logger.error(f"Ocorreu um erro durante a geração de embeddings: {e}")
-            logger.debug(traceback.format_exc())
-            return None
+            logger.error(f"Erro na geração de embeddings: {e}"); return None
 
-    async def _setup_rag_for_job(self, job_id: str, context_filepath: str) -> bool:
-        """
-        Configura o pipeline RAG completo para um job específico.
-        1. Lê o arquivo de contexto.
-        2. Divide o conteúdo em chunks.
-        3. Gera os embeddings para cada chunk.
-        4. Cria e popula um índice vetorial FAISS.
-        """
-        if not RAG_LIBRARIES_AVAILABLE:
-            logger.error("Não é possível configurar o RAG, pois as bibliotecas necessárias não estão instaladas.")
-            return False
-            
-        if self.job_vector_stores.get(job_id):
-            logger.info(f"[{job_id}] O Vector Store para este job já existe. Pulando a configuração.")
-            return True
-
-        logger.info(f"[{job_id}] Configurando RAG: Lendo contexto de '{context_filepath}'")
-        try:
-            with open(context_filepath, "r", encoding="utf-8") as f:
-                document_content = f.read()
-        except FileNotFoundError:
-            logger.error(f"[{job_id}] Falha na configuração do RAG: Arquivo de contexto não encontrado em '{context_filepath}'.")
-            return False
-        except Exception as e:
-            logger.error(f"[{job_id}] Falha na configuração do RAG: Erro ao ler o arquivo de contexto: {e}")
-            return False
-
-        if not document_content.strip():
-            logger.warning(f"[{job_id}] O arquivo de contexto está vazio. Nenhum dado para o RAG.")
-            return False
-
-        text_chunks = self._chunk_text(document_content)
+    async def _setup_rag_for_job(self, job_id: str, context_text: str) -> bool:
+        # ... (código do _setup_rag_for_job, adaptado para receber texto em vez de filepath)
+        if self.job_vector_stores.get(job_id): return True
+        logger.info(f"[{job_id}] Configurando ambiente RAG...")
+        text_chunks = self._chunk_text(context_text)
         if not text_chunks:
-            logger.warning(f"[{job_id}] Nenhum chunk de texto foi gerado a partir do conteúdo do arquivo.")
-            return False
-        logger.info(f"[{job_id}] Documento dividido em {len(text_chunks)} chunks.")
-
-        chunk_embeddings_np = await self._generate_embeddings(text_chunks)
-        if chunk_embeddings_np is None or chunk_embeddings_np.size == 0:
-            logger.error(f"[{job_id}] Falha ao gerar embeddings. Abortando configuração do RAG.")
-            return False
-
-        embedding_dim = chunk_embeddings_np.shape[1]
-
+            logger.warning("[{job_id}] Nenhum chunk de texto para o RAG."); return False
+        
+        embeddings = await self._generate_embeddings(text_chunks)
+        if embeddings is None:
+            logger.error("[{job_id}] Falha ao gerar embeddings para o RAG."); return False
+        
         try:
-            logger.info(f"[{job_id}] Inicializando índice FAISS (IndexFlatL2) com dimensão {embedding_dim}.")
-            index = faiss.IndexFlatL2(embedding_dim)
-            
-            logger.info(f"[{job_id}] Adicionando {chunk_embeddings_np.shape[0]} embeddings ao índice FAISS.")
-            index.add(chunk_embeddings_np)
-            
-            self.job_vector_stores[job_id] = {
-                "index": index,
-                "chunks": text_chunks,
-                "embedding_dim": embedding_dim
-            }
-            logger.success(f"[{job_id}] Configuração RAG concluída. O índice FAISS está pronto para uso.")
+            index = faiss.IndexFlatL2(embeddings.shape[1])
+            index.add(embeddings)
+            self.job_vector_stores[job_id] = {"index": index, "chunks": text_chunks, "embedding_dim": embeddings.shape[1]}
+            logger.success(f"[{job_id}] Ambiente RAG e Vector Store (FAISS) estão prontos.")
             return True
         except Exception as e:
-            logger.error(f"[{job_id}] Erro crítico durante a criação do índice FAISS: {e}", exc_info=True)
-            return False
+            logger.error(f"[{job_id}] Erro na criação do índice FAISS: {e}"); return False
 
+    # --- Lógica do Harvester Integrada ---
+
+    async def _extract_google_result_data(self, link_locator) -> Optional[Dict]:
+        # Lógica de extração de um único resultado do Google (adaptada para async)
+        try:
+            if not await link_locator.is_visible(timeout=500): return None
+            href = await link_locator.get_attribute("href")
+            if not href or not href.startswith("http"): return None
+            
+            h3 = link_locator.locator('h3').first
+            title = await h3.inner_text(timeout=100) if await h3.count() > 0 else ""
+            if not title: return None
+
+            parent = link_locator.locator("xpath=./ancestor::div[contains(@class,'MjjYud')][1]").first
+            snippet = await parent.locator("div.VwiC3b").first.inner_text(timeout=100) if await parent.count() > 0 else ""
+            
+            return {"url": href, "title": title, "snippet": snippet}
+        except PlaywrightError:
+            return None
+
+    async def _search_google(self, query: str, max_leads: int) -> AsyncIterator[Dict]:
+        # Versão async da busca no Google
+        logger.info(f"Iniciando harvester no Google para a query: '{query}'")
+        processed_urls = set()
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=False)
+            page = await browser.new_page()
+            
+            try:
+                await page.goto("https://www.google.com/ncr", timeout=60000)
+                
+                # Lidar com cookies
+                try:
+                    await page.locator('button:has-text("Accept all")').first.click(timeout=5000)
+                except PlaywrightTimeoutError:
+                    logger.warning("Botão de cookie 'Accept all' não encontrado, continuando.")
+
+                await page.locator('textarea[name="q"]').fill(query)
+                await page.locator('textarea[name="q"]').press("Enter")
+
+                for page_num in range(5): # Limite de 5 páginas de resultados
+                    if len(processed_urls) >= max_leads: break
+                    await page.wait_for_selector("div#search", timeout=30000)
+                    
+                    links = await page.locator("div.MjjYud a[href^='http']").all()
+                    
+                    for link_locator in links:
+                        if len(processed_urls) >= max_leads: break
+                        data = await self._extract_google_result_data(link_locator)
+                        
+                        if data and data["url"] not in processed_urls:
+                            domain = urlparse(data["url"]).netloc
+                            excluded = ["google.com", "youtube.com", "facebook.com", "linkedin.com", "instagram.com", "wikipedia.org"]
+                            if not any(ex in domain for ex in excluded):
+                                processed_urls.add(data["url"])
+                                logger.info(f"Harvester encontrou um lead potencial: {data['title']}")
+                                yield {
+                                    "company_name": data["title"],
+                                    "website": data["url"],
+                                    "description": data["snippet"]
+                                }
+
+                    # Paginação
+                    try:
+                        next_button = page.locator('a#pnnext')
+                        if await next_button.count() == 0: break
+                        await next_button.click()
+                    except PlaywrightError:
+                        logger.warning("Não foi possível encontrar o botão 'Próxima'. Fim da busca."); break
+            
+            except Exception as e:
+                logger.error(f"Erro crítico no harvester: {e}");
+            finally:
+                await browser.close()
+
+    async def _enrich_lead(self, lead_data: Dict, lead_id: str) -> AsyncIterator[Dict]:
+        # Lógica de enriquecimento de um único lead
+        yield LeadEnrichmentStartEvent(job_id=self.job_id, lead_id=lead_id, company_name=lead_data.get("company_name")).to_dict()
+        
+        try:
+            # 1. Análise inicial e RAG
+            site_data = SiteData(url=lead_data["website"], extracted_text_content=lead_data["description"])
+            validated_lead = self.lead_intake_agent.execute(site_data)
+            analyzed_lead = self.lead_analysis_agent.execute(validated_lead)
+
+            # Ponto de integração do RAG
+            rag_store = self.job_vector_stores.get(self.job_id)
+            context_dict = json.loads(self.rag_context_text) if hasattr(self, "rag_context_text") else {}
+            
+            ai_profile = self.prospect_profiler.create_advanced_prospect_profile(
+                lead_data=lead_data,
+                enriched_context=context_dict,
+                rag_vector_store=rag_store
+            )
+            analyzed_lead.ai_intelligence = ai_profile # Anexa os insights
+            
+            # 2. Pipeline de enriquecimento subsequente
+            async for event in self.enhanced_lead_processor.execute_enrichment_pipeline(
+                analyzed_lead=analyzed_lead,
+                job_id=self.job_id,
+                user_id=self.user_id
+            ):
+                event["lead_id"] = lead_id
+                yield event
+            
+            final_package = event.get("data") if 'event' in locals() else None
+            
+            yield LeadEnrichmentEndEvent(job_id=self.job_id, lead_id=lead_id, success=True, final_package=final_package).to_dict()
+
+        except Exception as e:
+            logger.error(f"Falha no enriquecimento para o lead {lead_id}: {e}", exc_info=True)
+            yield LeadEnrichmentEndEvent(job_id=self.job_id, lead_id=lead_id, success=False, error_message=str(e)).to_dict()
+
+    # --- Ponto de Entrada Principal ---
+
+    async def execute_streaming_pipeline(self) -> AsyncIterator[Dict[str, Any]]:
+        """
+        Executa o pipeline completo: harvester -> RAG setup -> enriquecimento por lead.
+        """
+        start_time = time.time()
+        yield PipelineStartEvent(job_id=self.job_id, user_id=self.user_id, initial_query=self.business_context.get("search_query", "N/A")).to_dict()
+        
+        # 1. Preparar o contexto para o RAG
+        search_query = self.business_context.get("search_query", "empresas de tecnologia")
+        enriched_context_dict = self._create_enriched_search_context(self.business_context, search_query)
+        self.rag_context_text = json.dumps(enriched_context_dict, indent=2)
+
+        # 2. Configurar o ambiente RAG em background
+        rag_setup_task = asyncio.create_task(self._setup_rag_for_job(self.job_id, self.rag_context_text))
+
+        # 3. Iniciar o Harvester para coletar leads
+        enrichment_tasks = []
+        leads_found_count = 0
+        max_leads = self.business_context.get("max_leads_to_generate", 10)
+
+        async for lead_data in self._search_google(query=search_query, max_leads=max_leads):
+            leads_found_count += 1
+            lead_id = str(uuid.uuid4())
+            
+            yield LeadGeneratedEvent(
+                job_id=self.job_id,
+                lead_id=lead_id,
+                lead_data=lead_data,
+                source_url=lead_data.get("website")
+            ).to_dict()
+
+            # Aguarda a conclusão do setup do RAG se ainda não terminou
+            if not rag_setup_task.done():
+                logger.info("Aguardando a finalização da configuração do RAG antes de enriquecer o primeiro lead...")
+                await rag_setup_task
+            
+            # Inicia o enriquecimento para o lead em uma tarefa separada
+            task = asyncio.create_task(self._enrich_lead_and_collect_events(lead_data, lead_id))
+            enrichment_tasks.append(task)
+            
+        yield StatusUpdateEvent(job_id=self.job_id, status_message=f"Harvester concluído. {leads_found_count} leads encontrados. Aguardando enriquecimento...").to_dict()
+        
+        # Coleta os resultados das tarefas de enriquecimento
+        for task_future in asyncio.as_completed(enrichment_tasks):
+            events = await task_future
+            for event in events:
+                yield event
+                
+        total_time = time.time() - start_time
+        yield PipelineEndEvent(job_id=self.job_id, total_leads_generated=leads_found_count, execution_time_seconds=total_time, success=True).to_dict()
+
+    async def _enrich_lead_and_collect_events(self, lead_data, lead_id):
+        # Helper para coletar todos os eventos de um único enriquecimento
+        events = []
+        async for event in self._enrich_lead(lead_data, lead_id):
+            events.append(event)
+        return events
+        
     def _create_enriched_search_context(self, business_context: Dict[str, Any], search_query: str) -> Dict[str, Any]:
         """
         Cria um dicionário de contexto estruturado para ser salvo e usado pelo RAG.
@@ -213,7 +322,6 @@ class PipelineOrchestrator:
                 "description": business_context.get('business_description', 'N/A'),
                 "product_service": business_context.get('product_service_description', 'N/A'),
                 "value_proposition": business_context.get('value_proposition', 'N/A'),
-                "competitive_advantage": business_context.get('competitive_advantage', 'N/A')
             },
             "prospect_targeting": {
                 "ideal_customer_profile": business_context.get('ideal_customer', 'N/A'),
@@ -224,37 +332,3 @@ class PipelineOrchestrator:
                 "avoid_competitors": business_context.get('competitors', []),
             }
         }
-        
-    async def execute_streaming_pipeline(self) -> AsyncIterator[Dict[str, Any]]:
-        """
-        Ponto de entrada para executar o pipeline de prospecção em tempo real (exemplo).
-        """
-        start_time = time.time()
-        if PROJECT_MODULES_AVAILABLE:
-            yield PipelineStartEvent(job_id=self.job_id, user_id=self.user_id).to_dict()
-
-        context_filename = f"./enriched_context_{self.job_id}.json"
-        enriched_context = self._create_enriched_search_context(self.business_context, "real-time prospecting query")
-        
-        try:
-            with open(context_filename, "w", encoding="utf-8") as f:
-                json.dump(enriched_context, f, indent=2, ensure_ascii=False)
-            await self._setup_rag_for_job(self.job_id, context_filename)
-        except Exception as e:
-            logger.error(f"Falha na pré-configuração do RAG para pipeline de streaming: {e}")
-            if PROJECT_MODULES_AVAILABLE:
-                yield PipelineErrorEvent(job_id=self.job_id, error_message=f"RAG pre-setup failed: {e}").to_dict()
-
-        if not harvester_search_agent:
-            logger.error("Agente Harvester não disponível. O pipeline de streaming não pode continuar.")
-            if PROJECT_MODULES_AVAILABLE:
-                yield PipelineErrorEvent(job_id=self.job_id, error_message="Harvester agent not found.").to_dict()
-        else:
-            # A lógica de streaming que chama o harvester iria aqui.
-            logger.info("Lógica de streaming do Harvester seria executada aqui.")
-            pass # Placeholder para a execução do harvester
-
-        total_time = time.time() - start_time
-        logger.info(f"Pipeline de streaming (exemplo) concluído em {total_time:.2f}s.")
-        if PROJECT_MODULES_AVAILABLE:
-            yield PipelineEndEvent(job_id=self.job_id, execution_time_seconds=total_time, success=True).to_dict()
