@@ -25,9 +25,8 @@ class ToTStrategyEvaluationOutput(BaseModel):
     error_message: Optional[str] = None
 
 class ToTStrategyEvaluationAgent(BaseAgent[ToTStrategyEvaluationInput, ToTStrategyEvaluationOutput]):
-    def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "ToTStrategyEvaluationAgent"
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -131,7 +130,11 @@ if __name__ == '__main__':
 
     print("Running mock test for ToTStrategyEvaluationAgent...")
     mock_llm = MockLLMClient()
-    agent = ToTStrategyEvaluationAgent(llm_client=mock_llm)
+    agent = ToTStrategyEvaluationAgent(
+        name="ToTStrategyEvaluationAgent",
+        description="Evaluates Tree-of-Thought strategies.",
+        llm_client=mock_llm
+    )
 
     test_proposed_strategies = (
         "**Estratégia 1: O Desafio da Eficiência Oculta**\n"

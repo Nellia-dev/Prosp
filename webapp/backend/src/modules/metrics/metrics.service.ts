@@ -6,12 +6,14 @@ import { Lead } from '../../database/entities/lead.entity';
 import { ProcessingStage } from '../../shared/enums/nellia.enums';
 import { ChatMessage } from '../../database/entities/chat-message.entity';
 import {
-  DashboardMetrics,
+  DashboardMetricsResponse, // Updated
+  RecentActivityItem, // Added
   AgentPerformanceData,
   PerformanceDataPoint,
   MetricsPeriod,
   AgentMetrics,
 } from '../../shared/types/nellia.types';
+import { AgentStatus as AgentStatusEnum } from '../../database/entities/agent.entity'; // Added for activeAgents
 
 @Injectable()
 export class MetricsService {
@@ -29,37 +31,54 @@ export class MetricsService {
   /**
    * Get comprehensive dashboard metrics
    */
-  async getDashboardMetrics(): Promise<DashboardMetrics> {
+  async getDashboardMetrics(): Promise<DashboardMetricsResponse> {
     try {
       const [
         totalLeads,
-        completedLeads,
-        averageProcessingTime,
-        averageRoiPotential,
-        agentMetrics,
+        completedLeads, // Used for successRate calculation
+        totalAgents,
+        activeAgents,
+        // processingRate will be a placeholder for now
+        // recentActivity will be a placeholder for now
       ] = await Promise.all([
         this.getTotalLeadsCount(),
         this.getCompletedLeadsCount(),
-        this.getAverageProcessingTime(),
-        this.getAverageRoiPotential(),
-        this.getAgentMetrics(),
+        this.getTotalAgentsCount(),
+        this.getActiveAgentsCount(),
       ]);
 
       const successRate = totalLeads > 0 ? (completedLeads / totalLeads) * 100 : 0;
+      const processingRate = 0; // Placeholder
+      const recentActivity: RecentActivityItem[] = []; // Placeholder
 
       return {
         totalLeads,
-        completedLeads,
-        averageProcessingTime,
-        averageRoiPotential,
-        successRate,
-        agentMetrics,
+        totalAgents,
+        activeAgents,
+        processingRate,
+        successRate: parseFloat(successRate.toFixed(2)),
+        recentActivity,
         lastUpdated: new Date(),
       };
     } catch (error) {
       this.logger.error('Failed to get dashboard metrics', error.stack);
-      throw new Error('Failed to retrieve dashboard metrics');
+      return this.getDefaultDashboardMetrics();
     }
+  }
+
+  /**
+   * Get default metrics when none exist or errors occur
+   */
+  private getDefaultDashboardMetrics(): DashboardMetricsResponse {
+    return {
+      totalLeads: 0,
+      totalAgents: 0,
+      activeAgents: 0,
+      processingRate: 0,
+      successRate: 0,
+      recentActivity: [],
+      lastUpdated: new Date(),
+    };
   }
 
   /**
@@ -68,35 +87,24 @@ export class MetricsService {
   async getPerformanceData(period: MetricsPeriod = '7d'): Promise<PerformanceDataPoint[]> {
     try {
       const days = this.getPeriodDays(period);
-      const endDate = new Date();
       const startDate = new Date();
-      startDate.setDate(endDate.getDate() - days);
+      startDate.setDate(startDate.getDate() - days);
 
-      const performanceData: PerformanceDataPoint[] = [];
+      const query = this.leadRepository.createQueryBuilder('lead')
+        .select("DATE(lead.created_at)", "date")
+        .addSelect("COUNT(*)", "throughput")
+        .addSelect("AVG(EXTRACT(EPOCH FROM (lead.updated_at - lead.created_at)))", "avgProcessingTime")
+        .where("lead.created_at >= :startDate", { startDate })
+        .groupBy("DATE(lead.created_at)")
+        .orderBy("date", "ASC");
 
-      for (let i = 0; i < days; i++) {
-        const date = new Date(startDate);
-        date.setDate(startDate.getDate() + i);
-        
-        const dayStart = new Date(date);
-        dayStart.setHours(0, 0, 0, 0);
-        
-        const dayEnd = new Date(date);
-        dayEnd.setHours(23, 59, 59, 999);
+      const rawData = await query.getRawMany();
 
-        const [throughput, avgProcessingTime] = await Promise.all([
-          this.getDailyThroughput(dayStart, dayEnd),
-          this.getDailyAverageProcessingTime(dayStart, dayEnd),
-        ]);
-
-        performanceData.push({
-          date: date.toISOString().split('T')[0],
-          throughput,
-          processingTime: avgProcessingTime,
-        });
-      }
-
-      return performanceData;
+      return rawData.map(item => ({
+        date: new Date(item.date).toISOString().split('T')[0],
+        throughput: parseInt(item.throughput, 10),
+        processingTime: parseFloat(item.avgProcessingTime) || 0,
+      }));
     } catch (error) {
       this.logger.error('Failed to get performance data', error.stack);
       throw new Error('Failed to retrieve performance data');
@@ -214,6 +222,14 @@ export class MetricsService {
    */
   private async getTotalLeadsCount(): Promise<number> {
     return await this.leadRepository.count();
+  }
+
+  private async getTotalAgentsCount(): Promise<number> {
+    return await this.agentRepository.count();
+  }
+
+  private async getActiveAgentsCount(): Promise<number> {
+    return await this.agentRepository.count({ where: { status: AgentStatusEnum.ACTIVE } });
   }
 
   private async getCompletedLeadsCount(): Promise<number> {

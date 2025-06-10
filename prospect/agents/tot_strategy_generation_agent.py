@@ -24,9 +24,8 @@ class ToTStrategyGenerationOutput(BaseModel):
     error_message: Optional[str] = None
 
 class ToTStrategyGenerationAgent(BaseAgent[ToTStrategyGenerationInput, ToTStrategyGenerationOutput]):
-    def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "ToTStrategyGenerationAgent"
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -139,7 +138,11 @@ if __name__ == '__main__':
 
     print("Running mock test for ToTStrategyGenerationAgent...")
     mock_llm = MockLLMClient()
-    agent = ToTStrategyGenerationAgent(llm_client=mock_llm)
+    agent = ToTStrategyGenerationAgent(
+        name="ToTStrategyGenerationAgent",
+        description="Generates Tree-of-Thought strategies.",
+        llm_client=mock_llm
+    )
 
     test_lead_summary = (
         "Lead: Empresa Exemplo (Médio porte, TI). Persona: Carlos Mendes (Diretor de Operações), focado em eficiência, ROI e integração fácil. "

@@ -7,22 +7,35 @@ import {
   AlertTriangle,
   RefreshCw 
 } from "lucide-react";
-import { useConnectionStatus, useNelliaSocket } from "../hooks/useSocketIO";
+import { useWebSocket } from "../contexts/WebSocketContext";
 
 interface ConnectionStatusIndicatorProps {
   showText?: boolean;
   compact?: boolean;
 }
 
-export const ConnectionStatusIndicator = ({ 
-  showText = true, 
-  compact = false 
+export const ConnectionStatusIndicator = ({
+  showText = true,
+  compact = false
 }: ConnectionStatusIndicatorProps) => {
-  const { status, statusColor, statusText, error } = useConnectionStatus();
-  const { connect } = useNelliaSocket();
+  const { connectionStatus, isConnected, connect } = useWebSocket();
+
+  const statusText = {
+    connecting: 'Connecting...',
+    connected: 'Connected',
+    disconnected: 'Disconnected',
+    error: 'Error',
+  }[connectionStatus];
+
+  const statusColor = {
+    connecting: 'text-yellow-400',
+    connected: 'text-green-400',
+    disconnected: 'text-gray-400',
+    error: 'text-red-400',
+  }[connectionStatus];
 
   const getIcon = () => {
-    switch (status) {
+    switch (connectionStatus) {
       case 'connected':
         return <Wifi className="w-3 h-3" />;
       case 'connecting':
@@ -35,7 +48,7 @@ export const ConnectionStatusIndicator = ({
   };
 
   const getBadgeVariant = () => {
-    switch (status) {
+    switch (connectionStatus) {
       case 'connected':
         return 'default';
       case 'connecting':
@@ -53,7 +66,7 @@ export const ConnectionStatusIndicator = ({
         <div className={statusColor}>
           {getIcon()}
         </div>
-        {status === 'error' && (
+        {connectionStatus === 'error' && (
           <Button
             size="sm"
             variant="ghost"
@@ -69,8 +82,8 @@ export const ConnectionStatusIndicator = ({
 
   return (
     <div className="flex items-center space-x-2">
-      <Badge 
-        variant={getBadgeVariant()} 
+      <Badge
+        variant={getBadgeVariant()}
         className={`text-xs ${statusColor} border-current`}
       >
         {getIcon()}
@@ -79,7 +92,7 @@ export const ConnectionStatusIndicator = ({
         )}
       </Badge>
       
-      {status === 'error' && (
+      {connectionStatus === 'error' && (
         <Button
           size="sm"
           variant="outline"
@@ -89,12 +102,6 @@ export const ConnectionStatusIndicator = ({
           <RefreshCw className="w-3 h-3 mr-1" />
           Retry
         </Button>
-      )}
-      
-      {error && !compact && (
-        <span className="text-xs text-red-400 max-w-xs truncate">
-          {error}
-        </span>
       )}
     </div>
   );

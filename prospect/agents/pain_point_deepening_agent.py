@@ -26,9 +26,8 @@ class PainPointDeepeningOutput(BaseModel):
     error_message: Optional[str] = None
 
 class PainPointDeepeningAgent(BaseAgent[PainPointDeepeningInput, PainPointDeepeningOutput]):
-    def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "PainPointDeepeningAgent"
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -37,11 +36,17 @@ class PainPointDeepeningAgent(BaseAgent[PainPointDeepeningInput, PainPointDeepen
     def process(self, input_data: PainPointDeepeningInput) -> PainPointDeepeningOutput:
         deepened_pain_points = ""
         error_message = None
+        
+        self.logger.info(f"🎯 PAIN POINT DEEPENING STARTING for company: {input_data.company_name}")
+        self.logger.info(f"📊 Input data: analysis_length={len(input_data.lead_analysis)}, persona_length={len(input_data.persona_profile)}")
+        self.logger.debug(f"🔧 Service offered: {input_data.product_service_offered}")
 
         try:
             # Truncate inputs
             truncated_analysis = self._truncate_text(input_data.lead_analysis, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 4)
             truncated_persona = self._truncate_text(input_data.persona_profile, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 4)
+            
+            self.logger.debug(f"✂️  Text truncation: analysis {len(input_data.lead_analysis)} -> {len(truncated_analysis)}, persona {len(input_data.persona_profile)} -> {len(truncated_persona)}")
             
             prompt_template = """
                 Você é um Consultor de Vendas Estratégicas especializado em identificar e aprofundar os pontos de dor de clientes B2B.
@@ -89,19 +94,26 @@ class PainPointDeepeningAgent(BaseAgent[PainPointDeepeningInput, PainPointDeepen
                 company_name=input_data.company_name
             )
 
+            self.logger.debug("🤖 Generating LLM response for pain point analysis")
             llm_response_str = self.generate_llm_response(formatted_prompt)
 
             if not llm_response_str:
+                self.logger.error("❌ LLM call returned no response for pain point deepening")
                 return PainPointDeepeningOutput(error_message="LLM call returned no response.")
 
+            self.logger.debug(f"✅ LLM returned response, length: {len(llm_response_str)}")
+            
             parsed_output = self.parse_llm_json_response(llm_response_str, PainPointDeepeningOutput)
             
             # If parsing failed, parse_llm_json_response might set parsed_output.error_message
-            # or return a default model with an error message.
             if parsed_output.error_message:
-                 self.logger.warning(f"PainPointDeepeningAgent JSON parsing failed. Raw response: {llm_response_str[:500]}")
-            # No specific regex fallback here as the structure is complex.
-            # The error from parse_llm_json_response will be propagated.
+                self.logger.warning(f"⚠️  PainPointDeepeningAgent JSON parsing failed. Raw response: {llm_response_str[:500]}")
+                self.logger.warning("❌ No regex fallback available for complex pain point structure")
+            else:
+                # Log successful parsing details
+                pain_points_count = len(parsed_output.detailed_pain_points)
+                questions_count = len(parsed_output.investigative_questions)
+                self.logger.info(f"✅ Pain point analysis successful: category={parsed_output.primary_pain_category}, points={pain_points_count}, urgency={parsed_output.urgency_level}, questions={questions_count}")
 
             return parsed_output
 

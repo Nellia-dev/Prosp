@@ -17,6 +17,8 @@ export const useAgents = () => {
   return useQuery({
     queryKey: agentKeys.lists(),
     queryFn: agentsApi.getAll,
+    select: (data) => data || [], // Ensure always array
+    placeholderData: [], // Provide placeholder while loading
   });
 };
 

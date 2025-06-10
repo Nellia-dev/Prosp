@@ -40,3 +40,16 @@
 .read-the-docs {
   color: #888;
 }
+
+@keyframes glow {
+  0% {
+    box-shadow: 0 0 2px #22c55e, 0 0 4px #22c55e, 0 0 6px #22c55e;
+  }
+  100% {
+    box-shadow: 0 0 4px #22c55e, 0 0 8px #22c55e, 0 0 12px #22c55e;
+  }
+}
+
+.glow-animation {
+  animation: glow 1.5s ease-in-out infinite alternate;
+}

@@ -23,9 +23,9 @@ const appDataSourceOptions: DataSourceOptions = {
   migrations: ['src/database/migrations/*.ts'],
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
-  ssl: { // Attempt to enable SSL; for dev, might need rejectUnauthorized: false
-    rejectUnauthorized: false, // INSECURE for production, use for local dev with self-signed certs
-  }
+  ssl: process.env.NODE_ENV === 'production'
+    ? { rejectUnauthorized: false }
+    : undefined,
 };
 console.log('APPDATASOURCE_CONSTRUCTION_OPTIONS:', JSON.stringify(appDataSourceOptions, null, 2));
 export const AppDataSource = new DataSource(appDataSourceOptions);
@@ -51,9 +51,9 @@ export const databaseConfig = (configService: any) => { // configService is typi
     migrations: ['dist/database/migrations/*.js'],
     synchronize: false,
     logging: configService.get('NODE_ENV') === 'development', // No type arguments
-    ssl: { // Attempt to enable SSL; for dev, might need rejectUnauthorized: false
-      rejectUnauthorized: false, // INSECURE for production, use for local dev with self-signed certs
-    },
+    ssl: configService.get('NODE_ENV') === 'production'
+      ? { rejectUnauthorized: false }
+      : undefined,
     // These are valid for TypeOrmModuleOptions, not strictly DataSourceOptions
     retryAttempts: 3,
     retryDelay: 3000,

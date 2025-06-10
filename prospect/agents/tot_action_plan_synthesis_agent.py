@@ -31,9 +31,8 @@ class ToTActionPlanSynthesisOutput(BaseModel):
     error_message: Optional[str] = None
 
 class ToTActionPlanSynthesisAgent(BaseAgent[ToTActionPlanSynthesisInput, ToTActionPlanSynthesisOutput]):
-    def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "ToTActionPlanSynthesisAgent"
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -148,7 +147,11 @@ if __name__ == '__main__':
 
     print("Running mock test for ToTActionPlanSynthesisAgent...")
     mock_llm = MockLLMClient()
-    agent = ToTActionPlanSynthesisAgent(llm_client=mock_llm)
+    agent = ToTActionPlanSynthesisAgent(
+        name="ToTActionPlanSynthesisAgent",
+        description="Synthesizes a final action plan from evaluated strategies.",
+        llm_client=mock_llm
+    )
 
     test_eval_strategies = (
         "**Avaliação da Estratégia 1: O Desafio da Eficiência Oculta**\n"

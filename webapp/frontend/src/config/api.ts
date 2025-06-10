@@ -10,7 +10,7 @@ export const API_CONFIG = {
 // Enhanced axios client with authentication support
 class ApiClient {
   private client: AxiosInstance;
-  private authToken: string | null = null;
+  private authToken: string | null = localStorage.getItem('authToken');
 
   constructor() {
     this.client = axios.create({
@@ -54,6 +54,11 @@ class ApiClient {
   // Set authentication token
   setAuthToken(token: string | null) {
     this.authToken = token;
+    if (token) {
+      localStorage.setItem('authToken', token);
+    } else {
+      localStorage.removeItem('authToken');
+    }
   }
 
   // Get current token

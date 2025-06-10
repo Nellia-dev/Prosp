@@ -17,9 +17,8 @@ class StrategicQuestionGenerationOutput(BaseModel):
     error_message: Optional[str] = None
 
 class StrategicQuestionGenerationAgent(BaseAgent[StrategicQuestionGenerationInput, StrategicQuestionGenerationOutput]):
-    def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "StrategicQuestionGenerationAgent"
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -112,7 +111,11 @@ if __name__ == '__main__':
 
     print("Running mock test for StrategicQuestionGenerationAgent...")
     mock_llm = MockLLMClient()
-    agent = StrategicQuestionGenerationAgent(llm_client=mock_llm)
+    agent = StrategicQuestionGenerationAgent(
+        name="StrategicQuestionGenerationAgent",
+        description="Generates strategic questions based on lead analysis.",
+        llm_client=mock_llm
+    )
 
     test_lead_analysis = "A Empresa Exemplo (médio porte, TI) foca em otimização."
     test_persona_profile = "Carlos Mendes, Diretor de Operações, focado em eficiência e ROI."

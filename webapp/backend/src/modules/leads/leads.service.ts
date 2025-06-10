@@ -2,10 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Lead } from '@/database/entities/lead.entity';
-import { QualificationTier, ProcessingStage } from '@/shared/enums/nellia.enums';
-import { 
-  LeadData, 
-  CreateLeadDto, 
+import { QualificationTier, ProcessingStage, LeadStatus } from '@/shared/enums/nellia.enums';
+import {
+  LeadData,
+  CreateLeadDto,
   UpdateLeadDto, 
   LeadFilters 
 } from '../../shared/types/nellia.types';
@@ -18,59 +18,65 @@ export class LeadsService {
   ) {}
 
   async findAll(filters?: LeadFilters): Promise<{ data: LeadData[], total: number }> {
-    const query = this.leadRepository.createQueryBuilder('lead');
+    console.log('Finding all leads with filters:', filters);
+    try {
+      const query = this.leadRepository.createQueryBuilder('lead');
 
-    // Apply filters
-    if (filters) {
-      if (filters.search) {
-        query.andWhere(
-          '(lead.company_name ILIKE :search OR lead.website ILIKE :search OR lead.company_sector ILIKE :search)',
-          { search: `%${filters.search}%` }
-        );
-      }
+      // Apply filters
+      if (filters) {
+        if (filters.search) {
+          query.andWhere(
+            '(lead.company_name ILIKE :search OR lead.website ILIKE :search OR lead.company_sector ILIKE :search)',
+            { search: `%${filters.search}%` }
+          );
+        }
 
-      if (filters.company_sector) {
-        query.andWhere('lead.company_sector = :sector', { sector: filters.company_sector });
-      }
+        if (filters.company_sector) {
+          query.andWhere('lead.company_sector = :sector', { sector: filters.company_sector });
+        }
 
-      if (filters.qualification_tier) {
-        query.andWhere('lead.qualification_tier = :tier', { tier: filters.qualification_tier });
-      }
+        if (filters.qualification_tier) {
+          query.andWhere('lead.qualification_tier = :tier', { tier: filters.qualification_tier });
+        }
 
-      if (filters.processing_stage) {
-        query.andWhere('lead.processing_stage = :stage', { stage: filters.processing_stage });
-      }
+        if (filters.processing_stage) {
+          query.andWhere('lead.processing_stage = :stage', { stage: filters.processing_stage });
+        }
 
-      if (filters.score_range) {
-        query.andWhere('lead.relevance_score BETWEEN :min AND :max', {
-          min: filters.score_range.min,
-          max: filters.score_range.max,
-        });
-      }
+        if (filters.score_range) {
+          query.andWhere('lead.relevance_score BETWEEN :min AND :max', {
+            min: filters.score_range.min,
+            max: filters.score_range.max,
+          });
+        }
 
-      // Sorting
-      if (filters.sort_by) {
-        const order = filters.sort_order?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
-        query.orderBy(`lead.${filters.sort_by}`, order);
+        // Sorting
+        if (filters.sort_by) {
+          const order = filters.sort_order?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+          query.orderBy(`lead.${filters.sort_by}`, order);
+        } else {
+          query.orderBy('lead.created_at', 'DESC');
+        }
+
+        // Pagination
+        if (filters.limit) {
+          query.take(filters.limit);
+        }
+        if (filters.offset) {
+          query.skip(filters.offset);
+        }
       } else {
         query.orderBy('lead.created_at', 'DESC');
       }
 
-      // Pagination
-      if (filters.limit) {
-        query.take(filters.limit);
-      }
-      if (filters.offset) {
-        query.skip(filters.offset);
-      }
-    } else {
-      query.orderBy('lead.created_at', 'DESC');
+      const [leads, total] = await query.getManyAndCount();
+      const data = leads.map(lead => this.convertToLeadData(lead));
+
+      return { data: data || [], total: total || 0 };
+    } catch (error) {
+      console.error('Error fetching leads:', error);
+      return { data: [], total: 0 }; // Always return structured response, never undefined
     }
-
-    const [leads, total] = await query.getManyAndCount();
-    const data = leads.map(lead => this.convertToLeadData(lead));
-
-    return { data, total };
   }
 
   async findOne(id: string): Promise<LeadData> {
@@ -83,8 +89,17 @@ export class LeadsService {
     return this.convertToLeadData(lead);
   }
 
+  async findById(id: string): Promise<Lead> {
+    const lead = await this.leadRepository.findOne({ where: { id } });
+    if (!lead) {
+      throw new NotFoundException(`Lead with ID ${id} not found`);
+    }
+    return lead;
+  }
+
   async create(createLeadDto: CreateLeadDto): Promise<LeadData> {
     const lead = this.leadRepository.create({
+      ...createLeadDto,
       company_name: createLeadDto.company_name,
       website: createLeadDto.website || '',
       company_sector: createLeadDto.company_sector || 'Unknown',
@@ -101,6 +116,7 @@ export class LeadsService {
       brazilian_market_fit: 0.5,
       qualification_tier: QualificationTier.MEDIUM_POTENTIAL,
       processing_stage: ProcessingStage.LEAD_QUALIFICATION,
+      status: LeadStatus.NEW,
     });
 
     const savedLead = await this.leadRepository.save(lead);
@@ -142,6 +158,20 @@ export class LeadsService {
     lead.processing_stage = this.mapStageToEnum(stage);
     lead.updated_at = new Date();
     
+    const savedLead = await this.leadRepository.save(lead);
+    return this.convertToLeadData(savedLead);
+  }
+
+  async updateStatus(id: string, status: LeadStatus): Promise<LeadData> {
+    const lead = await this.findById(id);
+    lead.status = status;
+    const savedLead = await this.leadRepository.save(lead);
+    return this.convertToLeadData(savedLead);
+  }
+
+  async updateEnrichmentData(id: string, enrichmentData: any): Promise<LeadData> {
+    const lead = await this.findById(id);
+    lead.enrichment_data = enrichmentData;
     const savedLead = await this.leadRepository.save(lead);
     return this.convertToLeadData(savedLead);
   }
@@ -247,7 +277,8 @@ export class LeadsService {
 
   // Convert Lead entity to LeadData for API responses
   private convertToLeadData(lead: Lead): LeadData {
-    return {
+    console.log(`Converting lead entity to DTO: ${lead.id}`);
+    const leadData = {
       id: lead.id,
       company_name: lead.company_name,
       website: lead.website,
@@ -263,8 +294,12 @@ export class LeadsService {
       pain_point_analysis: lead.pain_point_analysis,
       purchase_triggers: lead.purchase_triggers,
       processing_stage: lead.processing_stage as any,
+      status: lead.status,
+      enrichment_data: lead.enrichment_data,
       created_at: lead.created_at.toISOString(),
       updated_at: lead.updated_at.toISOString(),
     };
+    console.log(`Converted DTO:`, leadData);
+    return leadData;
   }
 }

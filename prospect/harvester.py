@@ -824,43 +824,92 @@ def extract_text_from_url(url: str) -> tuple[str | None, str | None, str | None]
     return final_text_to_return, final_screenshot_path, extraction_status_message
 
 
+def parse_command_line_args():
+    """Parse command line arguments for the harvester."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Web harvester for lead generation')
+    parser.add_argument('--query', type=str, required=True, help='Search query for Google')
+    parser.add_argument('--max-sites', type=int, default=10, help='Maximum number of sites to process (default: 10)')
+    parser.add_argument('--max-leads', type=int, help='Maximum number of leads to return (quota-aware limit)')
+    parser.add_argument('--user-id', type=str, help='User ID for logging and context')
+    parser.add_argument('--output-format', choices=['json', 'text'], default='json', help='Output format (default: json)')
+    parser.add_argument('--interactive', action='store_true', help='Run in interactive mode (prompts for input)')
+    
+    return parser.parse_args()
+
+def get_interactive_input():
+    """Get input from user interactively (legacy mode)."""
+    user_search_query = input("Digite o que você quer pesquisar no Google (ex: 'empresas de software em São Paulo'): ")
+    if not user_search_query.strip():
+        print("Nenhum termo de pesquisa fornecido. Encerrando.")
+        sys.exit(1)
+
+    NUM_SITES_TO_PROCESS = 10
+    max_possible_sites = MAX_PAGES_TO_SCRAPE_GOOGLE * MAX_RESULTS_PER_GOOGLE_PAGE_APPROX
+    while True:
+        try:
+            num_sites_str = input(f"Quantos sites você gostaria de extrair (padrão: 10, max: {max_possible_sites})? ")
+            if not num_sites_str.strip():
+                NUM_SITES_TO_PROCESS = 10
+                print(f"Usando padrão: {NUM_SITES_TO_PROCESS} sites.")
+                break
+            cleaned_num_sites_str = re.sub(r'\D', '', num_sites_str)
+            if not cleaned_num_sites_str:
+                print(f"Entrada inválida (não numérica). Usando padrão: {NUM_SITES_TO_PROCESS} sites.")
+                NUM_SITES_TO_PROCESS = 10
+                break
+            num_input = int(cleaned_num_sites_str)
+
+            if 0 < num_input <= max_possible_sites:
+                NUM_SITES_TO_PROCESS = num_input
+                break
+            elif num_input > max_possible_sites:
+                print(f"Número muito alto. O máximo permitido é {max_possible_sites}. Tente novamente.")
+            else:
+                print("Por favor, insira um número positivo. Tente novamente.")
+        except ValueError:
+            print("Entrada inválida. Por favor, insira um número. Tente novamente.")
+    
+    return user_search_query, NUM_SITES_TO_PROCESS, None, None
+
 # --- Execução Principal do Script ---
 if __name__ == "__main__":
     main_start_time = time.time()
     results_filepath = ""
     user_search_query = ""
+    user_id = None
+    max_leads = None
 
     try:
-        user_search_query = input("Digite o que você quer pesquisar no Google (ex: 'empresas de software em São Paulo'): ")
-        if not user_search_query.strip():
-            print("Nenhum termo de pesquisa fornecido. Encerrando.")
-            sys.exit(1)
+        # Parse command line arguments
+        args = parse_command_line_args()
+        
+        if args.interactive:
+            # Interactive mode (legacy)
+            user_search_query, NUM_SITES_TO_PROCESS, user_id, max_leads = get_interactive_input()
+        else:
+            # Command-line mode (new)
+            user_search_query = args.query
+            NUM_SITES_TO_PROCESS = args.max_sites
+            max_leads = args.max_leads
+            user_id = args.user_id
+            
+            # Validate max_leads constraint
+            max_possible_sites = MAX_PAGES_TO_SCRAPE_GOOGLE * MAX_RESULTS_PER_GOOGLE_PAGE_APPROX
+            if NUM_SITES_TO_PROCESS > max_possible_sites:
+                print(f"Warning: max-sites ({NUM_SITES_TO_PROCESS}) exceeds maximum possible ({max_possible_sites}). Using {max_possible_sites}.")
+                NUM_SITES_TO_PROCESS = max_possible_sites
+            
+            if max_leads and max_leads < NUM_SITES_TO_PROCESS:
+                print(f"Info: max-leads ({max_leads}) is less than max-sites ({NUM_SITES_TO_PROCESS}). Will limit processing to {max_leads} sites.")
+                NUM_SITES_TO_PROCESS = max_leads
 
-        NUM_SITES_TO_PROCESS = 10
-        max_possible_sites = MAX_PAGES_TO_SCRAPE_GOOGLE * MAX_RESULTS_PER_GOOGLE_PAGE_APPROX
-        while True:
-            try:
-                num_sites_str = input(f"Quantos sites você gostaria de extrair (padrão: 10, max: {max_possible_sites})? ")
-                if not num_sites_str.strip():
-                    NUM_SITES_TO_PROCESS = 10
-                    print(f"Usando padrão: {NUM_SITES_TO_PROCESS} sites.")
-                    break
-                cleaned_num_sites_str = re.sub(r'\D', '', num_sites_str)
-                if not cleaned_num_sites_str:
-                    print(f"Entrada inválida (não numérica). Usando padrão: {NUM_SITES_TO_PROCESS} sites.")
-                    NUM_SITES_TO_PROCESS = 10
-                    break
-                num_input = int(cleaned_num_sites_str)
-
-                if 0 < num_input <= max_possible_sites:
-                    NUM_SITES_TO_PROCESS = num_input
-                    break
-                elif num_input > max_possible_sites:
-                    print(f"Número muito alto. O máximo permitido é {max_possible_sites}. Tente novamente.")
-                else:
-                    print("Por favor, insira um número positivo. Tente novamente.")
-            except ValueError:
-                print("Entrada inválida. Por favor, insira um número. Tente novamente.")
+        if user_id:
+            print(f"Processing for User ID: {user_id}")
+        
+        if max_leads:
+            print(f"Quota-aware limit: Maximum {max_leads} leads to process")
 
         print(f"Objetivo: Extrair dados de até {NUM_SITES_TO_PROCESS} sites.")
 

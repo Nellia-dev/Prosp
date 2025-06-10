@@ -380,7 +380,6 @@ class ExternalIntelligence(BaseModel):
 #     strategy_options: List[ToTStrategyOptionModel] = Field(default_factory=list, description="Strategy options considered, now using new model")
 #     selected_strategy: ToTStrategyOptionModel = Field(..., description="Selected optimal strategy, now using new model")
     evaluation_criteria: List[str] = Field(default_factory=list, description="Criteria used for evaluation")
-    decision_rationale: str = Field(..., description="Why this strategy was selected")
     contingency_plan: Optional[str] = Field(None, description="Backup approach if primary fails")
 
 class ObjectionFramework(BaseModel):

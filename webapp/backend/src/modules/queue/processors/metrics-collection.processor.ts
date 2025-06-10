@@ -64,11 +64,13 @@ export class MetricsCollectionProcessor {
       const dashboardMetrics = await this.metricsService.getDashboardMetrics();
       
       // Store aggregated metrics (this would typically go to a separate metrics storage)
+      // completedLeads and averageProcessingTime are no longer directly on DashboardMetricsResponse
+      // Adjust logging to reflect available data or fetch/calculate separately if needed.
       this.logger.log(`Daily metrics aggregated for ${date}:`, {
         totalLeads: dashboardMetrics.totalLeads,
-        completedLeads: dashboardMetrics.completedLeads,
-        averageProcessingTime: dashboardMetrics.averageProcessingTime,
         successRate: dashboardMetrics.successRate,
+        totalAgents: dashboardMetrics.totalAgents, // Log new available data
+        activeAgents: dashboardMetrics.activeAgents, // Log new available data
       });
 
       this.logger.log(`Successfully aggregated daily metrics for ${date}`);

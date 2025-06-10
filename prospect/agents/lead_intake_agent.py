@@ -24,19 +24,18 @@ class LeadIntakeAgent(BaseAgent[SiteData, ValidatedLead]):
     - Preparing leads for analysis
     """
     
-    def __init__(self, skip_failed_extractions: bool = False, **kwargs):
+    def __init__(self, name: str, description: str, llm_client: Optional[object] = None, skip_failed_extractions: bool = False, **kwargs):
         """
         Initialize the Lead Intake Agent.
         
         Args:
+            name: The name of the agent.
+            description: A description of the agent.
+            llm_client: An optional LLM client.
             skip_failed_extractions: Whether to mark failed extractions as invalid
             **kwargs: Additional arguments for BaseAgent
         """
-        super().__init__(
-            name="Lead Intake & Validation Agent",
-            description="Validates and prepares lead data for processing",
-            **kwargs
-        )
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
         self.skip_failed_extractions = skip_failed_extractions
     
     def process(self, input_data: SiteData) -> ValidatedLead:

@@ -12,11 +12,16 @@ export class AgentsService {
   ) {}
 
   async findAll(): Promise<AgentStatus[]> {
-    const agents = await this.agentRepository.find({
-      order: { name: 'ASC' },
-    });
-    
-    return agents.map(agent => this.convertToAgentStatus(agent));
+    try {
+      const agents = await this.agentRepository.find({
+        order: { name: 'ASC' },
+      });
+      
+      return agents.map(agent => this.convertToAgentStatus(agent));
+    } catch (error) {
+      console.error('Error fetching agents:', error);
+      return []; // Always return empty array, never undefined
+    }
   }
 
   async findOne(id: string): Promise<AgentStatus> {

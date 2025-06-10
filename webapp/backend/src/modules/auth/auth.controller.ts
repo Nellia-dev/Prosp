@@ -24,6 +24,7 @@ import { AuthService, LoginDto, RegisterDto, ChangePasswordDto, AuthResponse } f
 import { User, UserRole } from '../../database/entities/user.entity';
 import { Roles } from './roles.decorator';
 import { RolesGuard } from './roles.guard';
+import { Public } from './public.decorator';
 
 // DTOs for validation
 class LoginRequestDto implements LoginDto {
@@ -87,6 +88,7 @@ class UpdateUserRoleDto {
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'User login' })
@@ -102,6 +104,7 @@ export class AuthController {
     return this.authService.login(loginDto);
   }
 
+  @Public()
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'User registration' })
@@ -119,7 +122,6 @@ export class AuthController {
   }
 
   @Get('profile')
-  @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get user profile' })
   @ApiResponse({
@@ -134,7 +136,6 @@ export class AuthController {
   }
 
   @Put('profile')
-  @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update user profile' })
   @ApiResponse({
@@ -152,7 +153,6 @@ export class AuthController {
   }
 
   @Put('change-password')
-  @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Change user password' })
@@ -168,7 +168,6 @@ export class AuthController {
   }
 
   @Delete('deactivate')
-  @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Deactivate user account' })
@@ -182,7 +181,6 @@ export class AuthController {
 
   // Admin only endpoints
   @Get('users')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all users (Admin only)' })
@@ -198,7 +196,6 @@ export class AuthController {
   }
 
   @Put('users/:userId/role')
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update user role (Admin only)' })
@@ -219,7 +216,6 @@ export class AuthController {
   }
 
   @Get('validate-token')
-  @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Validate JWT token' })
   @ApiResponse({
@@ -242,7 +238,6 @@ export class AuthController {
   }
 
   @Post('refresh-token')
-  @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Refresh JWT token' })

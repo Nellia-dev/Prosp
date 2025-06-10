@@ -1,0 +1,126 @@
+import { MigrationInterface, QueryRunner } from "typeorm";
+
+export class AddLeadStatus1749268814242 implements MigrationInterface {
+    name = 'AddLeadStatus1749268814242'
+
+    public async up(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`ALTER TABLE "leads" DROP CONSTRAINT "FK_leads_userId"`);
+        await queryRunner.query(`ALTER TABLE "chat_messages" DROP CONSTRAINT "FK_chat_messages_agent"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_users_email"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_leads_userId"`);
+        await queryRunner.query(`CREATE TYPE "public"."leads_status_enum" AS ENUM('new', 'harvested', 'pending_enrichment', 'enriching', 'enriched', 'enrichment_failed')`);
+        await queryRunner.query(`ALTER TABLE "leads" ADD "status" "public"."leads_status_enum" NOT NULL DEFAULT 'new'`);
+        await queryRunner.query(`ALTER TABLE "leads" ADD "enrichment_data" jsonb`);
+        await queryRunner.query(`ALTER TABLE "business_context" ADD "userId" uuid NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "business_context" ADD "product_service_description" text NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "business_context" ADD "competitors" text array NOT NULL DEFAULT '{}'`);
+        await queryRunner.query(`ALTER TYPE "public"."agent_name_enum" RENAME TO "agent_name_enum_old"`);
+        await queryRunner.query(`CREATE TYPE "public"."agents_name_enum" AS ENUM('lead_intake_agent', 'lead_analysis_agent', 'enhanced_lead_processor', 'tavily_enrichment_agent', 'contact_extraction_agent', 'pain_point_deepening_agent', 'lead_qualification_agent', 'competitor_identification_agent', 'strategic_question_generation_agent', 'buying_trigger_identification_agent', 'tot_strategy_generation_agent', 'tot_strategy_evaluation_agent', 'tot_action_plan_synthesis_agent', 'detailed_approach_plan_agent', 'objection_handling_agent', 'value_proposition_customization_agent', 'b2b_personalized_message_agent', 'internal_briefing_summary_agent', 'approach_strategy_agent', 'b2b_persona_creation_agent', 'message_crafting_agent', 'persona_creation_agent', 'lead_analysis_generation_agent')`);
+        await queryRunner.query(`ALTER TABLE "agents" ALTER COLUMN "name" TYPE "public"."agents_name_enum" USING "name"::"text"::"public"."agents_name_enum"`);
+        await queryRunner.query(`DROP TYPE "public"."agent_name_enum_old"`);
+        await queryRunner.query(`ALTER TYPE "public"."agent_status_enum" RENAME TO "agent_status_enum_old"`);
+        await queryRunner.query(`CREATE TYPE "public"."agents_status_enum" AS ENUM('active', 'inactive', 'processing', 'error', 'completed')`);
+        await queryRunner.query(`ALTER TABLE "agents" ALTER COLUMN "status" DROP DEFAULT`);
+        await queryRunner.query(`ALTER TABLE "agents" ALTER COLUMN "status" TYPE "public"."agents_status_enum" USING "status"::"text"::"public"."agents_status_enum"`);
+        await queryRunner.query(`ALTER TABLE "agents" ALTER COLUMN "status" SET DEFAULT 'inactive'`);
+        await queryRunner.query(`DROP TYPE "public"."agent_status_enum_old"`);
+        await queryRunner.query(`ALTER TYPE "public"."agent_category_enum" RENAME TO "agent_category_enum_old"`);
+        await queryRunner.query(`CREATE TYPE "public"."agents_category_enum" AS ENUM('initial_processing', 'orchestrator', 'specialized', 'alternative')`);
+        await queryRunner.query(`ALTER TABLE "agents" ALTER COLUMN "category" TYPE "public"."agents_category_enum" USING "category"::"text"::"public"."agents_category_enum"`);
+        await queryRunner.query(`DROP TYPE "public"."agent_category_enum_old"`);
+        await queryRunner.query(`ALTER TABLE "agents" ALTER COLUMN "last_updated" SET DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "users" ADD CONSTRAINT "UQ_97672ac88f789774dd47f7c8be3" UNIQUE ("email")`);
+        await queryRunner.query(`ALTER TYPE "public"."user_role_enum" RENAME TO "user_role_enum_old"`);
+        await queryRunner.query(`CREATE TYPE "public"."users_role_enum" AS ENUM('admin', 'user')`);
+        await queryRunner.query(`ALTER TABLE "users" ALTER COLUMN "role" DROP DEFAULT`);
+        await queryRunner.query(`ALTER TABLE "users" ALTER COLUMN "role" TYPE "public"."users_role_enum" USING "role"::"text"::"public"."users_role_enum"`);
+        await queryRunner.query(`ALTER TABLE "users" ALTER COLUMN "role" SET DEFAULT 'user'`);
+        await queryRunner.query(`DROP TYPE "public"."user_role_enum_old"`);
+        await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "plan"`);
+        await queryRunner.query(`CREATE TYPE "public"."users_plan_enum" AS ENUM('free', 'starter', 'pro', 'enterprise')`);
+        await queryRunner.query(`ALTER TABLE "users" ADD "plan" "public"."users_plan_enum" NOT NULL DEFAULT 'free'`);
+        await queryRunner.query(`ALTER TABLE "leads" ALTER COLUMN "userId" SET NOT NULL`);
+        await queryRunner.query(`ALTER TYPE "public"."qualification_tier_enum" RENAME TO "qualification_tier_enum_old"`);
+        await queryRunner.query(`CREATE TYPE "public"."leads_qualification_tier_enum" AS ENUM('High Potential', 'Medium Potential', 'Low Potential')`);
+        await queryRunner.query(`ALTER TABLE "leads" ALTER COLUMN "qualification_tier" TYPE "public"."leads_qualification_tier_enum" USING "qualification_tier"::"text"::"public"."leads_qualification_tier_enum"`);
+        await queryRunner.query(`DROP TYPE "public"."qualification_tier_enum_old"`);
+        await queryRunner.query(`ALTER TYPE "public"."processing_stage_enum" RENAME TO "processing_stage_enum_old"`);
+        await queryRunner.query(`CREATE TYPE "public"."leads_processing_stage_enum" AS ENUM('lead_qualification', 'analyzing_refining', 'possibly_qualified', 'prospecting', 'revisando', 'primeiras_mensagens', 'negociando', 'desqualificado', 'reuniao_agendada', 'intake', 'analysis', 'persona', 'strategy', 'message', 'completed')`);
+        await queryRunner.query(`ALTER TABLE "leads" ALTER COLUMN "processing_stage" DROP DEFAULT`);
+        await queryRunner.query(`ALTER TABLE "leads" ALTER COLUMN "processing_stage" TYPE "public"."leads_processing_stage_enum" USING "processing_stage"::"text"::"public"."leads_processing_stage_enum"`);
+        await queryRunner.query(`ALTER TABLE "leads" ALTER COLUMN "processing_stage" SET DEFAULT 'intake'`);
+        await queryRunner.query(`DROP TYPE "public"."processing_stage_enum_old"`);
+        await queryRunner.query(`ALTER TABLE "business_context" ALTER COLUMN "ideal_customer" DROP NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "business_context" ALTER COLUMN "competitive_advantage" DROP NOT NULL`);
+        await queryRunner.query(`ALTER TYPE "public"."chat_message_type_enum" RENAME TO "chat_message_type_enum_old"`);
+        await queryRunner.query(`CREATE TYPE "public"."chat_messages_type_enum" AS ENUM('user', 'agent')`);
+        await queryRunner.query(`ALTER TABLE "chat_messages" ALTER COLUMN "type" TYPE "public"."chat_messages_type_enum" USING "type"::"text"::"public"."chat_messages_type_enum"`);
+        await queryRunner.query(`DROP TYPE "public"."chat_message_type_enum_old"`);
+        await queryRunner.query(`CREATE UNIQUE INDEX "IDX_97672ac88f789774dd47f7c8be" ON "users" ("email") `);
+        await queryRunner.query(`CREATE INDEX "IDX_f1cfba193497daea9681d584c0" ON "business_context" ("userId") `);
+        await queryRunner.query(`ALTER TABLE "leads" ADD CONSTRAINT "FK_6c57527dc398a02b2e0ffa96969" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "business_context" ADD CONSTRAINT "FK_f1cfba193497daea9681d584c0d" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "chat_messages" ADD CONSTRAINT "FK_1cc3e24b699ed66c4fb76296289" FOREIGN KEY ("agent_id") REFERENCES "agents"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+    }
+
+    public async down(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`ALTER TABLE "chat_messages" DROP CONSTRAINT "FK_1cc3e24b699ed66c4fb76296289"`);
+        await queryRunner.query(`ALTER TABLE "business_context" DROP CONSTRAINT "FK_f1cfba193497daea9681d584c0d"`);
+        await queryRunner.query(`ALTER TABLE "leads" DROP CONSTRAINT "FK_6c57527dc398a02b2e0ffa96969"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_f1cfba193497daea9681d584c0"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_97672ac88f789774dd47f7c8be"`);
+        await queryRunner.query(`CREATE TYPE "public"."chat_message_type_enum_old" AS ENUM('user', 'agent')`);
+        await queryRunner.query(`ALTER TABLE "chat_messages" ALTER COLUMN "type" TYPE "public"."chat_message_type_enum_old" USING "type"::"text"::"public"."chat_message_type_enum_old"`);
+        await queryRunner.query(`DROP TYPE "public"."chat_messages_type_enum"`);
+        await queryRunner.query(`ALTER TYPE "public"."chat_message_type_enum_old" RENAME TO "chat_message_type_enum"`);
+        await queryRunner.query(`ALTER TABLE "business_context" ALTER COLUMN "competitive_advantage" SET NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "business_context" ALTER COLUMN "ideal_customer" SET NOT NULL`);
+        await queryRunner.query(`CREATE TYPE "public"."processing_stage_enum_old" AS ENUM('lead_qualification', 'analyzing_refining', 'possibly_qualified', 'prospecting', 'revisando', 'primeiras_mensagens', 'negociando', 'desqualificado', 'reuniao_agendada', 'intake', 'analysis', 'persona', 'strategy', 'message', 'completed')`);
+        await queryRunner.query(`ALTER TABLE "leads" ALTER COLUMN "processing_stage" DROP DEFAULT`);
+        await queryRunner.query(`ALTER TABLE "leads" ALTER COLUMN "processing_stage" TYPE "public"."processing_stage_enum_old" USING "processing_stage"::"text"::"public"."processing_stage_enum_old"`);
+        await queryRunner.query(`ALTER TABLE "leads" ALTER COLUMN "processing_stage" SET DEFAULT 'intake'`);
+        await queryRunner.query(`DROP TYPE "public"."leads_processing_stage_enum"`);
+        await queryRunner.query(`ALTER TYPE "public"."processing_stage_enum_old" RENAME TO "processing_stage_enum"`);
+        await queryRunner.query(`CREATE TYPE "public"."qualification_tier_enum_old" AS ENUM('High Potential', 'Medium Potential', 'Low Potential')`);
+        await queryRunner.query(`ALTER TABLE "leads" ALTER COLUMN "qualification_tier" TYPE "public"."qualification_tier_enum_old" USING "qualification_tier"::"text"::"public"."qualification_tier_enum_old"`);
+        await queryRunner.query(`DROP TYPE "public"."leads_qualification_tier_enum"`);
+        await queryRunner.query(`ALTER TYPE "public"."qualification_tier_enum_old" RENAME TO "qualification_tier_enum"`);
+        await queryRunner.query(`ALTER TABLE "leads" ALTER COLUMN "userId" DROP NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "plan"`);
+        await queryRunner.query(`DROP TYPE "public"."users_plan_enum"`);
+        await queryRunner.query(`ALTER TABLE "users" ADD "plan" character varying NOT NULL DEFAULT 'free'`);
+        await queryRunner.query(`CREATE TYPE "public"."user_role_enum_old" AS ENUM('admin', 'user')`);
+        await queryRunner.query(`ALTER TABLE "users" ALTER COLUMN "role" DROP DEFAULT`);
+        await queryRunner.query(`ALTER TABLE "users" ALTER COLUMN "role" TYPE "public"."user_role_enum_old" USING "role"::"text"::"public"."user_role_enum_old"`);
+        await queryRunner.query(`ALTER TABLE "users" ALTER COLUMN "role" SET DEFAULT 'user'`);
+        await queryRunner.query(`DROP TYPE "public"."users_role_enum"`);
+        await queryRunner.query(`ALTER TYPE "public"."user_role_enum_old" RENAME TO "user_role_enum"`);
+        await queryRunner.query(`ALTER TABLE "users" DROP CONSTRAINT "UQ_97672ac88f789774dd47f7c8be3"`);
+        await queryRunner.query(`ALTER TABLE "agents" ALTER COLUMN "last_updated" SET DEFAULT CURRENT_TIMESTAMP`);
+        await queryRunner.query(`CREATE TYPE "public"."agent_category_enum_old" AS ENUM('initial_processing', 'orchestrator', 'specialized', 'alternative')`);
+        await queryRunner.query(`ALTER TABLE "agents" ALTER COLUMN "category" TYPE "public"."agent_category_enum_old" USING "category"::"text"::"public"."agent_category_enum_old"`);
+        await queryRunner.query(`DROP TYPE "public"."agents_category_enum"`);
+        await queryRunner.query(`ALTER TYPE "public"."agent_category_enum_old" RENAME TO "agent_category_enum"`);
+        await queryRunner.query(`CREATE TYPE "public"."agent_status_enum_old" AS ENUM('active', 'inactive', 'processing', 'error', 'completed')`);
+        await queryRunner.query(`ALTER TABLE "agents" ALTER COLUMN "status" DROP DEFAULT`);
+        await queryRunner.query(`ALTER TABLE "agents" ALTER COLUMN "status" TYPE "public"."agent_status_enum_old" USING "status"::"text"::"public"."agent_status_enum_old"`);
+        await queryRunner.query(`ALTER TABLE "agents" ALTER COLUMN "status" SET DEFAULT 'inactive'`);
+        await queryRunner.query(`DROP TYPE "public"."agents_status_enum"`);
+        await queryRunner.query(`ALTER TYPE "public"."agent_status_enum_old" RENAME TO "agent_status_enum"`);
+        await queryRunner.query(`CREATE TYPE "public"."agent_name_enum_old" AS ENUM('lead_intake_agent', 'lead_analysis_agent', 'enhanced_lead_processor', 'tavily_enrichment_agent', 'contact_extraction_agent', 'pain_point_deepening_agent', 'lead_qualification_agent', 'competitor_identification_agent', 'strategic_question_generation_agent', 'buying_trigger_identification_agent', 'tot_strategy_generation_agent', 'tot_strategy_evaluation_agent', 'tot_action_plan_synthesis_agent', 'detailed_approach_plan_agent', 'objection_handling_agent', 'value_proposition_customization_agent', 'b2b_personalized_message_agent', 'internal_briefing_summary_agent', 'approach_strategy_agent', 'b2b_persona_creation_agent', 'message_crafting_agent', 'persona_creation_agent', 'lead_analysis_generation_agent')`);
+        await queryRunner.query(`ALTER TABLE "agents" ALTER COLUMN "name" TYPE "public"."agent_name_enum_old" USING "name"::"text"::"public"."agent_name_enum_old"`);
+        await queryRunner.query(`DROP TYPE "public"."agents_name_enum"`);
+        await queryRunner.query(`ALTER TYPE "public"."agent_name_enum_old" RENAME TO "agent_name_enum"`);
+        await queryRunner.query(`ALTER TABLE "business_context" DROP COLUMN "competitors"`);
+        await queryRunner.query(`ALTER TABLE "business_context" DROP COLUMN "product_service_description"`);
+        await queryRunner.query(`ALTER TABLE "business_context" DROP COLUMN "userId"`);
+        await queryRunner.query(`ALTER TABLE "leads" DROP COLUMN "enrichment_data"`);
+        await queryRunner.query(`ALTER TABLE "leads" DROP COLUMN "status"`);
+        await queryRunner.query(`DROP TYPE "public"."leads_status_enum"`);
+        await queryRunner.query(`CREATE INDEX "IDX_leads_userId" ON "leads" ("userId") `);
+        await queryRunner.query(`CREATE UNIQUE INDEX "IDX_users_email" ON "users" ("email") `);
+        await queryRunner.query(`ALTER TABLE "chat_messages" ADD CONSTRAINT "FK_chat_messages_agent" FOREIGN KEY ("agent_id") REFERENCES "agents"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "leads" ADD CONSTRAINT "FK_leads_userId" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+    }
+
+}

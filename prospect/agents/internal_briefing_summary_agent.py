@@ -29,9 +29,8 @@ class InternalBriefingSummaryOutput(BaseModel):
     error_message: Optional[str] = None
 
 class InternalBriefingSummaryAgent(BaseAgent[InternalBriefingSummaryInput, InternalBriefingSummaryOutput]):
-    def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "InternalBriefingSummaryAgent"
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -192,7 +191,11 @@ if __name__ == '__main__':
 
     print("Running mock test for InternalBriefingSummaryAgent...")
     mock_llm = MockLLMClient()
-    agent = InternalBriefingSummaryAgent(llm_client=mock_llm)
+    agent = InternalBriefingSummaryAgent(
+        name="InternalBriefingSummaryAgent",
+        description="Summarizes all lead data into an internal briefing.",
+        llm_client=mock_llm
+    )
 
     # Simulate the structure of all_lead_data based on what the prompt expects to summarize
     test_all_lead_data = {

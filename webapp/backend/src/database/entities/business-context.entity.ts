@@ -1,12 +1,24 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, Index } from 'typeorm';
+import { User } from './user.entity';
 
 @Entity('business_context')
 export class BusinessContextEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Index()
+  @Column({ type: 'uuid' })
+  userId: string;
+
+  @ManyToOne(() => User, { nullable: false })
+  @JoinColumn({ name: 'userId' })
+  user: User;
+
   @Column({ type: 'text' })
   business_description: string;
+
+  @Column({ type: 'text' })
+  product_service_description: string;
 
   @Column({ type: 'text' })
   target_market: string;
@@ -14,14 +26,17 @@ export class BusinessContextEntity {
   @Column({ type: 'text' })
   value_proposition: string;
 
-  @Column({ type: 'text' })
+  @Column({ type: 'text', nullable: true })
   ideal_customer: string;
 
   @Column({ type: 'text', array: true, default: [] })
   pain_points: string[];
 
-  @Column({ type: 'text' })
+  @Column({ type: 'text', nullable: true })
   competitive_advantage: string;
+
+  @Column({ type: 'text', array: true, default: [] })
+  competitors: string[];
 
   @Column({ type: 'text', array: true, default: [] })
   industry_focus: string[];

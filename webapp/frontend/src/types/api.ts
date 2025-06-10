@@ -58,6 +58,9 @@ export interface AgentResponse {
   llmTokenLimit: number;
   createdAt: string;
   updatedAt: string;
+  description?: string; // Added optional description
+  category?: string;    // Added optional category
+  displayName?: string; // Added optional displayName
 }
 
 export interface StartAgentRequest {
@@ -124,6 +127,8 @@ export interface LeadResponse {
   decisionMakerProbability?: number;
   createdAt: string;
   updatedAt: string;
+  status: string;
+  enrichmentData?: unknown;
 }
 
 export interface LeadsByStageResponse {
@@ -137,24 +142,33 @@ export interface BulkLeadOperation {
 
 // Business Context API types
 export interface BusinessContextRequest {
-  businessDescription: string;
-  targetMarket: string;
-  valueProposition: string;
-  idealCustomer: string;
-  painPointsSolved: string[];
-  industryFocus: string[];
+  business_description: string;
+  product_service_description: string;
+  target_market: string;
+  value_proposition: string;
+  ideal_customer: string;
+  pain_points: string[];
+  competitive_advantage?: string;
+  competitors?: string[];
+  industry_focus: string[];
+  geographic_focus?: string[];
 }
 
 export interface BusinessContextResponse {
   id: string;
-  businessDescription: string;
-  targetMarket: string;
-  valueProposition: string;
-  idealCustomer: string;
-  painPointsSolved: string[];
-  industryFocus: string[];
-  createdAt: string;
-  updatedAt: string;
+  business_description: string;
+  product_service_description: string;
+  target_market: string;
+  value_proposition: string;
+  ideal_customer: string;
+  pain_points: string[];
+  competitive_advantage?: string;
+  competitors?: string[];
+  industry_focus: string[];
+  geographic_focus?: string[];
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 // Chat API types
@@ -174,13 +188,22 @@ export interface ChatMessageResponse {
 }
 
 // Metrics API types
+export interface RecentActivityItem {
+  id: string;
+  type: 'lead_created' | 'agent_status_change' | 'prospect_job_started' | 'prospect_job_completed';
+  description: string;
+  timestamp: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface DashboardMetricsResponse {
   totalLeads: number;
-  processedLeads: number;
-  averageROI: number;
-  successRate: number;
+  totalAgents: number;
   activeAgents: number;
-  averageProcessingTime: number;
+  processingRate: number;
+  successRate: number;
+  recentActivity: RecentActivityItem[];
+  lastUpdated: string;
 }
 
 export interface PerformanceMetricsResponse {
@@ -216,4 +239,46 @@ export interface MetricsSummaryResponse {
   performance: PerformanceMetricsResponse;
   agentPerformance: AgentPerformanceResponse[];
   leadStats: LeadStatsResponse[];
+}
+
+// User Plan & Quota API types
+export type PlanId = 'free' | 'starter' | 'pro' | 'enterprise';
+
+export interface PlanDetails {
+  id: PlanId;
+  name: string;
+  quota: number;
+  period: 'day' | 'week' | 'month';
+  price: number | null;
+}
+
+export interface QuotaStatus {
+  total: number;
+  used: number;
+  remaining: number;
+  nextResetAt: string; // ISO date string
+}
+
+export interface UserPlanStatusResponse {
+  plan: PlanDetails;
+  quota: QuotaStatus;
+  canStartProspecting: boolean;
+  hasActiveJob: boolean;
+  activeJobId: string | null;
+}
+
+// Prospecting API types
+export interface StartProspectingRequest {
+  searchQuery: string;
+  maxSites?: number;
+}
+
+export interface ProspectJob {
+  jobId: string;
+  status: 'waiting' | 'active' | 'completed' | 'failed';
+  progress?: number;
+  createdAt?: string;
+  finishedAt?: string | null;
+  error?: string | null;
+  leadsCreated?: number;
 }
