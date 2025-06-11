@@ -33,6 +33,10 @@ COPY . .
 RUN mkdir -p /app/data /app/logs /app/harvester_output && \
     chown -R appuser:appuser /app
 
+# Create and permission Hugging Face cache directory
+RUN mkdir -p /app/.cache/huggingface/hub /app/.cache/huggingface_cache && \
+    chown -R appuser:appuser /app/.cache
+
 # MCP Server target
 FROM base AS mcp-server
 
