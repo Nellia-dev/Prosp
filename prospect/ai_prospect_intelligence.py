@@ -81,21 +81,46 @@ class AdvancedProspectProfiler:
         """
         Cria um perfil de prospect completo, combinando análise de sinais e insights RAG.
         """
+        company_name = lead_data.get('company_name', 'N/A')
+        
+        # Double check: Verificação da disponibilidade do contexto enriquecido
+        logger.info(f"Profiler: Iniciando análise para '{company_name}'")
+        logger.info(f"Profiler: Contexto enriquecido disponível: {bool(enriched_context)}")
+        logger.info(f"Profiler: Vector store disponível: {bool(rag_vector_store)}")
+        
+        if enriched_context:
+            business_desc = enriched_context.get('business_offering', {}).get('description', 'N/A')
+            target_profile = enriched_context.get('prospect_targeting', {}).get('ideal_customer_profile', 'N/A')
+            logger.info(f"Profiler: Usando contexto - Negócio: '{business_desc[:50]}...', Target: '{target_profile[:50]}...'")
+        
         text_content = self._extract_text_from_lead(lead_data)
         intent_score = self._analyze_buying_intent(text_content)
         pain_alignment = self._analyze_pain_alignment(text_content, enriched_context)
         urgency_score = self._calculate_urgency_score(text_content)
         
+        # Double check: Log dos scores calculados
+        logger.info(f"Profiler: Scores para '{company_name}' - Intent: {intent_score}, Pain Alignment: {pain_alignment}, Urgency: {urgency_score}")
+        
         predictive_insights = self._generate_predictive_insights(
             lead_data, enriched_context, rag_vector_store
         )
 
+        overall_score = self._calculate_overall_prospect_score(intent_score, pain_alignment, urgency_score)
+        
+        # Double check: Log do resultado final
+        logger.success(f"Profiler: Perfil criado para '{company_name}' - Score geral: {overall_score}, Insights: {len(predictive_insights)}")
+
         return {
-            'prospect_score': self._calculate_overall_prospect_score(intent_score, pain_alignment, urgency_score),
+            'prospect_score': overall_score,
             'buying_intent_score': intent_score,
             'pain_alignment_score': pain_alignment,
             'urgency_score': urgency_score,
             'predictive_insights': predictive_insights,
+            'context_usage_summary': {
+                'enriched_context_used': bool(enriched_context),
+                'rag_vector_store_used': bool(rag_vector_store),
+                'context_elements_count': len(enriched_context) if enriched_context else 0
+            }
         }
 
     def _generate_predictive_insights(

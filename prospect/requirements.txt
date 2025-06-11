@@ -19,6 +19,11 @@ aiohttp>=3.8.0
 beautifulsoup4>=4.12.0
 lxml>=4.9.0
 playwright>=1.40.0
+numpy>=1.21.0 # For RAG
+
+# RAG and Embeddings
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.0 # Use faiss-gpu if GPU is available and preferred
 
 # MCP Server dependencies
 flask>=2.3.0
