@@ -1,13 +1,33 @@
-import { Controller, Get, Post, Delete, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Body, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { QueueService } from './queue.service';
 import { ProcessingStage } from '../../shared/types/nellia.types';
+import { Public } from '../auth/public.decorator';
 
 @ApiBearerAuth()
 @ApiTags('Queue Management')
 @Controller('queue')
 export class QueueController {
+  private readonly logger = new Logger(QueueController.name);
+
   constructor(private readonly queueService: QueueService) {}
+
+  @Public()
+  @Post('mcp/event-stream')
+  @ApiOperation({ summary: 'Webhook for real-time events from MCP pipelines (now handled by queue)' })
+  @ApiResponse({ status: 200, description: 'Event processed successfully' })
+  async handleMcpEventStream(@Body() event: any): Promise<{ status: string }> {
+    const eventType = event.event_type || 'unknown_event';
+    const jobId = event.job_id || 'unknown_job';
+    this.logger.debug(`Received MCP event-stream for job ${jobId}, event: ${eventType}`);
+    try {
+      await this.queueService.processStreamedEvent(event);
+      return { status: 'received' };
+    } catch (error) {
+      this.logger.error(`Error processing MCP event-stream for job ${jobId}: ${error.message}`, error.stack);
+      throw new HttpException('Error processing event webhook', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
 
   @Get('stats')
   @ApiOperation({ summary: 'Get queue statistics' })

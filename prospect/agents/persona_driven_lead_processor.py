@@ -5,7 +5,7 @@ Orchestrates a pipeline focused on deep persona creation and tailored strategy.
 
 from typing import Optional
 
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 from data_models.lead_structures import (
     AnalyzedLead,
     FinalProspectPackage,

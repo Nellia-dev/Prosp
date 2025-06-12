@@ -37,17 +37,16 @@ import { WebSocketProvider } from '../contexts/WebSocketContext';
 import { 
   AgentStatus, 
   LeadData, 
-  // DashboardMetricsData, // Will be replaced by DashboardMetricsResponse from nellia
   AgentName,
   AgentCategory,
   AgentStatusType,
-  DashboardMetricsResponse, // Import the new structure from nellia.ts
-  RecentActivityItem // Import if needed by new metrics structure
-} from '../types/nellia'; 
+  DashboardMetrics,
+  ExtendedAgentResponse
+} from '../types/unified';
 import { Language } from '../i18n/translations';
-import { LeadResponse, AgentResponse } from '../types/api'; // Restored LeadResponse and AgentResponse for transformers
+import { LeadResponse, AgentResponse, DashboardMetricsResponse } from '../types/api'; // Restored LeadResponse and AgentResponse for transformers
 
-// Helper function to provide default metrics structure, matching new DashboardMetricsResponse
+// Helper function to provide default metrics structure, matching DashboardMetricsResponse
 const getDefaultFrontendMetrics = (): DashboardMetricsResponse => ({
   totalLeads: 0,
   totalAgents: 0,
@@ -90,25 +89,21 @@ export const AGENT_DISPLAY_NAMES: Record<AgentName, string> = {
 
 const transformLeadResponse = (apiLead: LeadResponse): LeadData => ({
   id: apiLead.id,
-  company_name: apiLead.companyName,
+  company_name: apiLead.company_name,
   website: apiLead.website,
-  relevance_score: apiLead.relevanceScore,
-  roi_potential_score: apiLead.roiPotential,
-  brazilian_market_fit: apiLead.brazilianMarketFit,
-  qualification_tier: apiLead.qualificationTier === 'A' ? 'High Potential' : 
-                     apiLead.qualificationTier === 'B' ? 'Medium Potential' : 'Low Potential',
-  company_sector: apiLead.sector,
-  persona: {
-    likely_role: apiLead.likelyContactRole,
-    decision_maker_probability: apiLead.decisionMakerProbability
-  },
-  pain_point_analysis: apiLead.painPoints,
-  purchase_triggers: apiLead.triggers,
-  processing_stage: apiLead.processingStage as LeadData['processing_stage'],
-  created_at: apiLead.createdAt,
-  updated_at: apiLead.updatedAt,
+  relevance_score: apiLead.relevance_score,
+  roi_potential_score: apiLead.roi_potential_score,
+  brazilian_market_fit: apiLead.brazilian_market_fit,
+  qualification_tier: apiLead.qualification_tier,
+  company_sector: apiLead.company_sector,
+  persona: apiLead.persona,
+  pain_point_analysis: apiLead.pain_point_analysis,
+  purchase_triggers: apiLead.purchase_triggers,
+  processing_stage: apiLead.processing_stage,
+  created_at: apiLead.created_at,
+  updated_at: apiLead.updated_at,
   status: apiLead.status,
-  enrichment_data: apiLead.enrichmentData
+  enrichment_data: apiLead.enrichment_data
 });
 
 // Helper function to transform Agent API response to frontend types
@@ -116,7 +111,8 @@ const transformAgentResponse = (apiAgent: AgentResponse): AgentStatus => {
   // Assuming apiAgent.name is a string that should match one of AgentName
   // and apiAgent.category is a string that should match one of AgentCategory
   // The AgentResponse type from types/api.ts should ideally reflect this.
-  const agentName = apiAgent.name as AgentName; // Cast, assuming API provides valid names
+  const agentName = apiAgent.name as AgentName;
+   // Cast, assuming API provides valid names
   const agentCategory = (apiAgent.category || 'specialized') as AgentCategory; // Default category if undefined
 
   return {

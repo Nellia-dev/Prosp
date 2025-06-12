@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useUpdateLead, useDeleteLead, useProcessLead } from '../hooks/api/useLeads';
+import { useUpdateLead, useDeleteLead, useProcessLead } from '../hooks/api/useUnifiedApi';
 import { LeadData, ProcessingStage, QualificationTier, PROCESSING_STAGES, QUALIFICATION_TIERS } from '../types/unified';
 import { useTranslation } from '../hooks/useTranslation';
 import { 
@@ -71,17 +71,18 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
 
   const handleSave = async () => {
     try {
+      // Now using the proper snake_case format that matches backend
       const updateData = {
-        companyName: formData.company_name,
+        company_name: formData.company_name,
         website: formData.website,
-        sector: formData.company_sector,
-        qualificationTier: formData.qualification_tier as 'A' | 'B' | 'C',
-        relevanceScore: formData.relevance_score,
-        roiPotential: formData.roi_potential_score,
-        brazilianMarketFit: formData.brazilian_market_fit,
-        processingStage: formData.processing_stage,
-        painPoints: formData.pain_point_analysis,
-        triggers: formData.purchase_triggers,
+        company_sector: formData.company_sector,
+        qualification_tier: formData.qualification_tier,
+        relevance_score: formData.relevance_score,
+        roi_potential_score: formData.roi_potential_score,
+        brazilian_market_fit: formData.brazilian_market_fit,
+        processing_stage: formData.processing_stage,
+        pain_point_analysis: formData.pain_point_analysis,
+        purchase_triggers: formData.purchase_triggers,
       };
 
       const updatedLead = await updateLeadMutation.mutateAsync({ 
@@ -89,28 +90,8 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
         data: updateData 
       });
 
-      // Convert API response back to LeadData format
-      const convertedLead: LeadData = {
-        id: updatedLead.id,
-        company_name: updatedLead.companyName,
-        website: updatedLead.website,
-        company_sector: updatedLead.sector,
-        qualification_tier: updatedLead.qualificationTier as QualificationTier,
-        processing_stage: updatedLead.processingStage as ProcessingStage,
-        pain_point_analysis: updatedLead.painPoints || [],
-        purchase_triggers: updatedLead.triggers || [],
-        relevance_score: updatedLead.relevanceScore,
-        roi_potential_score: updatedLead.roiPotential,
-        brazilian_market_fit: updatedLead.brazilianMarketFit,
-        persona: {
-          likely_role: updatedLead.likelyContactRole || '',
-          decision_maker_probability: updatedLead.decisionMakerProbability || 0,
-        },
-        created_at: updatedLead.createdAt,
-        updated_at: updatedLead.updatedAt,
-      };
-
-      onLeadUpdate?.(convertedLead);
+      // API response is now already in the correct format (LeadData)
+      onLeadUpdate?.(updatedLead);
       setIsEditing(false);
       toast({
         title: "Lead Updated",

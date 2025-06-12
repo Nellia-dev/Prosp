@@ -21,8 +21,9 @@ import { HealthModule } from './modules/health/health.module';
 import { WebSocketModule } from './modules/websocket/websocket.module';
 import { UsersModule } from './modules/users/users.module';
 import { QuotaModule } from './modules/quota/quota.module';
-import { McpWebhookModule } from './modules/mcp-webhook/mcp-webhook.module';
+// import { McpWebhookModule } from './modules/mcp-webhook/mcp-webhook.module';
 import { ProspectModule } from './modules/prospect/prospect.module';
+import { QueueModule } from './modules/queue/queue.module';
 
 @Module({
   imports: [
@@ -67,7 +68,8 @@ import { ProspectModule } from './modules/prospect/prospect.module';
     WebSocketModule,
     UsersModule,
     QuotaModule,
-    McpWebhookModule,
+    QueueModule,
+    // McpWebhookModule,
     ProspectModule,
   ],
   controllers: [],

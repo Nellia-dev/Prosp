@@ -87,7 +87,11 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         
         self.product_service_context = product_service_context
         self.competitors_list = competitors_list
-        self.tavily_api_key = tavily_api_key or os.getenv("TAVILY_API_KEY")
+        self.tavily_api_key = os.getenv("TAVILY_API_KEY")
+        if (not self.tavily_api_key and not tavily_api_key):
+            raise ValueError("Tavily API key is required for this agent. Please set the TAVILY_API_KEY environment variable or pass it as an argument.")
+        self.logger = logger.bind(agent_name=self.name, agent_description=self.description)
+        self.logger.info(f"Initializing EnhancedLeadProcessor with Tavily API key: {'set' if self.tavily_api_key else 'not set'}")
 
         # Note: The sub-agent constructors will need to be updated to accept name and description
         self.tavily_enrichment_agent = TavilyEnrichmentAgent(llm_client=self.llm_client, name="TavilyEnrichmentAgent", description="Gathers external intelligence and news about the company using the Tavily web search API.", tavily_api_key=self.tavily_api_key)

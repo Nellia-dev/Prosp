@@ -1,9 +1,14 @@
 import React, { useState } from 'react';
   import { useTranslation } from '../hooks/useTranslation';
-  import { useProspectJobs, useStartProspectingJob, useBusinessContext } from '../hooks/api/useUnifiedApi';
+  import { useProspectJobs, useStartProspectingJob, useBusinessContext, usePlanInfo } from '../hooks/api/useUnifiedApi';
   import type { ProspectJob } from '../types/api';
-  import { usePlanInfo } from '../hooks/api/useUserPlanStatus';
   import { useRealTimeEvent } from '../hooks/useRealTimeUpdates';
+  import type { 
+    LeadCreatedEvent, 
+    JobCompletedEvent, 
+    JobFailedEvent, 
+    StatusUpdateEvent 
+  } from '../types/events';
   import { Button } from "@/components/ui/button";
   import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
   import { Input } from "@/components/ui/input";
@@ -19,9 +24,14 @@ import React, { useState } from 'react';
     error: (message: string) => console.error(`Toast Error: ${message}`),
   };
  
+  // Align with our unified event types for better type safety
   interface EnrichmentEvent {
+    event_type: string;
+    timestamp: string;
+    job_id: string;
+    user_id: string;
     agent_name?: string;
-    [key: string]: unknown;
+    status_message?: string;
   }
  
   interface EnrichmentStatus {
@@ -286,14 +296,15 @@ import React, { useState } from 'react';
         refetchJobs();
     });
 
-    useRealTimeEvent('enrichment-update', (data: { job_id: string }) => {
-      const { job_id } = data;
-      if (job_id) {
+    useRealTimeEvent<StatusUpdateEvent>('enrichment-update', (data) => {
+      if ('job_id' in data) {
+        const job_id = data.job_id as string;
         setEnrichmentStatus(prev => ({
           ...prev,
           [job_id]: {
             ...prev[job_id],
             events: [...(prev[job_id]?.events || []), data],
+            lastUpdate: new Date().toISOString(),
           },
         }));
       }

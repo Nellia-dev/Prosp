@@ -127,11 +127,12 @@ class PipelineOrchestrator:
     configura o ambiente RAG e enriquece cada lead em tempo real.
     """
 
-    def __init__(self, business_context: Dict[str, Any], user_id: str, job_id: str):
+    def __init__(self, business_context: Dict[str, Any], user_id: str, job_id: str, use_hybrid: bool = True):
         self.business_context = business_context
         self.user_id = user_id
         self.job_id = job_id
         self.product_service_context = business_context.get("product_service_description", "")
+        self.use_hybrid = use_hybrid
         
         if not CORE_LIBRARIES_AVAILABLE:
             raise ImportError("Dependências críticas ( Sentence-Transformers, etc.) não estão instaladas.")
@@ -145,23 +146,57 @@ class PipelineOrchestrator:
 
         # Inicialização de agentes de enriquecimento
         if PROJECT_MODULES_AVAILABLE:
+            logger.info("[PIPELINE_STEP] Initializing agents")
             self.llm_client = LLMClientFactory.create_from_env()
-            self.lead_intake_agent = LeadIntakeAgent(llm_client=self.llm_client)
-            self.lead_analysis_agent = LeadAnalysisAgent(llm_client=self.llm_client, product_service_context=self.product_service_context)
-            self.enhanced_lead_processor = EnhancedLeadProcessor(llm_client=self.llm_client, product_service_context=self.product_service_context)
-        else: # Usa placeholders se os módulos não estiverem disponíveis
-            self.lead_intake_agent = BaseAgent()
-            self.lead_analysis_agent = BaseAgent()
-            self.enhanced_lead_processor = BaseAgent()
+            self.lead_intake_agent = LeadIntakeAgent(
+                name="LeadIntakeAgent",
+                description="Validates and prepares lead data for processing.",
+                llm_client=self.llm_client
+            )
+            self.lead_analysis_agent = LeadAnalysisAgent(
+                name="LeadAnalysisAgent",
+                description="Analyzes lead data to extract insights about the company.",
+                llm_client=self.llm_client,
+                product_service_context=self.product_service_context
+            )
+            self.enhanced_lead_processor = EnhancedLeadProcessor(
+                name="EnhancedLeadProcessor",
+                description="Performs comprehensive lead intelligence and processing.",
+                llm_client=self.llm_client,
+                product_service_context=self.product_service_context
+            )
             
-        logger.info(f"PipelineOrchestrator inicializado para o job {self.job_id}")
-
-        if PROJECT_MODULES_AVAILABLE: # Initialize Phase 2 agents
-            self.lead_analysis_generation_agent = LeadAnalysisGenerationAgent(llm_client=self.llm_client)
-            self.b2b_persona_creation_agent = B2BPersonaCreationAgent(llm_client=self.llm_client) # Phase 2
-        else:
+            # Initialize Phase 2 agents for enhanced capabilities
+            self.lead_analysis_generation_agent = LeadAnalysisGenerationAgent(
+                name="LeadAnalysisGenerationAgent",
+                description="Generates detailed analysis reports for leads.",
+                llm_client=self.llm_client
+            )
+            self.b2b_persona_creation_agent = B2BPersonaCreationAgent(
+                name="B2BPersonaCreationAgent",
+                description="Creates B2B persona profiles from lead data.",
+                llm_client=self.llm_client
+            )
+            
+            # Initialize Hybrid Pipeline Orchestrator if enabled
+            if self.use_hybrid:
+                logger.info("[PIPELINE_STEP] Initializing HybridPipelineOrchestrator")
+                from hybrid_pipeline_orchestrator import HybridPipelineOrchestrator
+                self.hybrid_orchestrator = HybridPipelineOrchestrator(
+                    business_context=business_context,
+                    user_id=user_id,
+                    job_id=job_id
+                )
+                logger.info("Hybrid Pipeline Orchestrator initialized for intelligent agent selection.")
+            
+        else: # Usa placeholders se os módulos não estiverem disponíveis
+            self.lead_intake_agent = BaseAgent(name="PlaceholderLeadIntakeAgent", description="Placeholder for LeadIntakeAgent")
+            self.lead_analysis_agent = BaseAgent(name="PlaceholderLeadAnalysisAgent", description="Placeholder for LeadAnalysisAgent")
+            self.enhanced_lead_processor = BaseAgent(name="PlaceholderEnhancedLeadProcessor", description="Placeholder for EnhancedLeadProcessor")
             self.lead_analysis_generation_agent = None
-            self.b2b_persona_creation_agent = None # Phase 2
+            self.b2b_persona_creation_agent = None
+            
+        logger.info(f"PipelineOrchestrator inicializado para o job {self.job_id} (Hybrid: {self.use_hybrid})")
 
 
     # --- Métodos de Configuração do RAG (do código anterior) ---
@@ -243,7 +278,9 @@ class PipelineOrchestrator:
             # Executar em thread pool para não bloquear o event loop
             loop = asyncio.get_event_loop()
             with concurrent.futures.ThreadPoolExecutor() as executor:
+                logger.info(f"[_search_with_adk1_agent] Calling run_adk1_search with query: {query} and max_leads: {max_leads}")
                 results = await loop.run_in_executor(executor, run_adk1_search)
+                logger.info(f"[_search_with_adk1_agent] run_adk1_search returned {len(results)} results")
             
             # Processar e padronizar os resultados
             for result in results:
@@ -308,11 +345,34 @@ class PipelineOrchestrator:
 
     async def _enrich_lead(self, lead_data: Dict, lead_id: str) -> AsyncIterator[Dict]:
         # Lógica de enriquecimento de um único lead
-        yield LeadEnrichmentStartEvent(job_id=self.job_id, lead_id=lead_id, company_name=lead_data.get("company_name")).to_dict()
+        yield LeadEnrichmentStartEvent(
+            event_type="lead_enrichment_start",
+            timestamp=datetime.now().isoformat(),
+            job_id=self.job_id,
+            user_id=self.user_id,
+            lead_id=lead_id,
+            company_name=lead_data.get("company_name", "N/A")
+        ).to_dict()
         
         try:
+            # Use hybrid orchestrator if enabled and available
+            if self.use_hybrid and hasattr(self, 'hybrid_orchestrator') and PROJECT_MODULES_AVAILABLE:
+                logger.info(f"[{self.job_id}-{lead_id}] Using Hybrid Pipeline Orchestrator for intelligent agent selection")
+                
+                # Delegate to hybrid orchestrator which handles everything
+                async for event in self.hybrid_orchestrator._enrich_lead(lead_data, lead_id):
+                    yield event
+                return
+            
+            # Fallback to standard enrichment pipeline
+            logger.info(f"[{self.job_id}-{lead_id}] Using standard enrichment pipeline")
+            
             # 1. Análise inicial e RAG
-            site_data = SiteData(url=lead_data["website"], extracted_text_content=lead_data["description"])
+            site_data = SiteData(
+                url=lead_data.get("website", "http://example.com/unknown"),
+                extracted_text_content=lead_data.get("description", ""),
+                extraction_status_message="Initial data from ADK1 harvester; full extraction status TBD."
+            )
             validated_lead = self.lead_intake_agent.execute(site_data)
             analyzed_lead = self.lead_analysis_agent.execute(validated_lead)
 
@@ -338,11 +398,28 @@ class PipelineOrchestrator:
             
             final_package = event.get("data") if 'event' in locals() else None
             
-            yield LeadEnrichmentEndEvent(job_id=self.job_id, lead_id=lead_id, success=True, final_package=final_package).to_dict()
+            yield LeadEnrichmentEndEvent(
+                event_type="lead_enrichment_end",
+                timestamp=datetime.now().isoformat(),
+                job_id=self.job_id,
+                user_id=self.user_id,
+                lead_id=lead_id,
+                success=True,
+                final_package=final_package
+            ).to_dict()
 
         except Exception as e:
+            # Log the error safely, converting e to string explicitly for the message part
             logger.error(f"Falha no enriquecimento para o lead {lead_id}: {e}", exc_info=True)
-            yield LeadEnrichmentEndEvent(job_id=self.job_id, lead_id=lead_id, success=False, error_message=str(e)).to_dict()
+            yield LeadEnrichmentEndEvent(
+                event_type="lead_enrichment_end",
+                timestamp=datetime.now().isoformat(),
+                job_id=self.job_id,
+                user_id=self.user_id,
+                lead_id=lead_id,
+                success=False,
+                error_message=str(e)
+            ).to_dict()
 
     # --- Ponto de Entrada Principal ---
 
@@ -351,16 +428,43 @@ class PipelineOrchestrator:
         Executa o pipeline completo: harvester -> RAG setup -> enriquecimento por lead.
         Agora integrado com persistência de contexto.
         """
+        logger.info(f"[PIPELINE_START] Starting execute_streaming_pipeline for job {self.job_id}")
         start_time = time.time()
-        yield PipelineStartEvent(job_id=self.job_id, user_id=self.user_id, initial_query=self.business_context.get("search_query", "N/A")).to_dict()
+
+        # --- Load Search Query from Enriched Context ---
+        logger.info(f"[PIPELINE_STEP] Loading search query from enriched context")
+        
+        # Load enriched context
+        enriched_context_dict = self._load_and_parse_enriched_context(self.job_id)
+        if not enriched_context_dict:
+            logger.warning(f"Could not load enriched context for job {self.job_id}, using default query")
+            search_query = "empresas de tecnologia B2B inovadoras" # Default query
+        else:
+            search_query = enriched_context_dict.get("search_query", "empresas de tecnologia B2B inovadoras")
+        
+        logger.info(f"[PIPELINE_STEP] Loaded search query: {search_query}")
+        # --- End Search Query Loading ---
+        
+        max_leads = self.business_context.get("max_leads_to_generate", 10)
+        logger.info(f"[PIPELINE_STEP] Max leads to generate: {max_leads}")
+
+        logger.info(f"[PIPELINE_STEP] Yielding PipelineStartEvent")
+        yield PipelineStartEvent(
+            event_type="pipeline_start",
+            timestamp=datetime.now().isoformat(),
+            job_id=self.job_id,
+            user_id=self.user_id,
+            initial_query=search_query,
+            max_leads_to_generate=max_leads
+        ).to_dict()
         
         # 1. Executar o Harvester (que já serializa o contexto)
-        search_query = self.business_context.get("search_query", "empresas de tecnologia")
-        max_leads = self.business_context.get("max_leads_to_generate", 10)
+        # search_query and max_leads are already defined above
         
         # 2. Configurar RAG com contexto persistido
         enriched_context_dict = self._create_enriched_search_context(self.business_context, search_query)
         self.rag_context_text = json.dumps(enriched_context_dict, indent=2)
+        logger.info(f"[PIPELINE_STEP] Enriched context created for job {self.job_id}: Query: '{search_query}', Context: {self.rag_context_text[:100]}...")  # Log first 100 chars for brevity
         
         # Serializar contexto para persistência
         context_filepath = self._serialize_enriched_context(enriched_context_dict, self.job_id)
@@ -368,7 +472,9 @@ class PipelineOrchestrator:
             logger.info(f"Contexto enriquecido persistido para job {self.job_id}")
             
             # Verificar se conseguimos recarregar o contexto (teste de integridade)
+            logger.info("[PIPELINE_STEP] Calling _load_and_parse_enriched_context")
             loaded_context = self._load_and_parse_enriched_context(self.job_id)
+            logger.info("[PIPELINE_STEP] _load_and_parse_enriched_context returned")
             if loaded_context:
                 logger.success(f"Contexto carregado e validado com sucesso para job {self.job_id}")
                 # Usar o contexto carregado para garantir consistência
@@ -384,15 +490,20 @@ class PipelineOrchestrator:
         enrichment_tasks = []
         leads_found_count = 0
 
+        logger.info("[PIPELINE_STEP] Calling _search_leads")
         async for lead_data in self._search_leads(query=search_query, max_leads=max_leads):
             leads_found_count += 1
             lead_id = str(uuid.uuid4())
             
             yield LeadGeneratedEvent(
+                event_type="lead_generated",
+                timestamp=datetime.now().isoformat(),
                 job_id=self.job_id,
+                user_id=self.user_id,
                 lead_id=lead_id,
                 lead_data=lead_data,
-                source_url=lead_data.get("website")
+                source_url=lead_data.get("website", "N/A"),
+                agent_name="ADK1HarvesterAgent" # Or a more generic harvester name
             ).to_dict()
 
             # Aguarda a conclusão do setup do RAG se ainda não terminou
@@ -404,7 +515,13 @@ class PipelineOrchestrator:
             task = asyncio.create_task(self._enrich_lead_and_collect_events(lead_data, lead_id))
             enrichment_tasks.append(task)
             
-        yield StatusUpdateEvent(job_id=self.job_id, status_message=f"Harvester concluído. {leads_found_count} leads encontrados. Aguardando enriquecimento...").to_dict()
+        yield StatusUpdateEvent(
+            event_type="status_update",
+            timestamp=datetime.now().isoformat(),
+            job_id=self.job_id,
+            user_id=self.user_id,
+            status_message=f"Harvester concluído. {leads_found_count} leads encontrados. Aguardando enriquecimento..."
+        ).to_dict()
         
         # 5. Coleta os resultados das tarefas de enriquecimento
         for task_future in asyncio.as_completed(enrichment_tasks):
@@ -413,7 +530,15 @@ class PipelineOrchestrator:
                 yield event
                 
         total_time = time.time() - start_time
-        yield PipelineEndEvent(job_id=self.job_id, total_leads_generated=leads_found_count, execution_time_seconds=total_time, success=True).to_dict()
+        yield PipelineEndEvent(
+            event_type="pipeline_end",
+            timestamp=datetime.now().isoformat(),
+            job_id=self.job_id,
+            user_id=self.user_id,
+            total_leads_generated=leads_found_count,
+            execution_time_seconds=total_time,
+            success=True
+        ).to_dict()
 
     async def _enrich_lead_and_collect_events(self, lead_data, lead_id):
         # Helper para coletar todos os eventos de um único enriquecimento
@@ -445,161 +570,64 @@ class PipelineOrchestrator:
 
     def _serialize_enriched_context(self, enriched_context: Dict[str, Any], job_id: str) -> str:
         """
-        Serializa o contexto enriquecido em um arquivo Markdown legível.
+        Serializa o contexto enriquecido em um arquivo JSON.
         Retorna o caminho do arquivo criado.
         """
         try:
             # Garantir que o diretório de saída existe
             output_dir = "harvester_output"
             os.makedirs(output_dir, exist_ok=True)
-            
-            filepath = os.path.join(output_dir, f"enriched_context_{job_id}.md")
-            
+
+            filepath = os.path.join(output_dir, f"enriched_context_{job_id}.json")
+
             with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(f"# Contexto Enriquecido - Job {job_id}\n\n")
-                f.write(f"**Gerado em:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-                
-                # Seção de Busca
-                f.write("## Query de Busca\n\n")
-                f.write(f"**Query:** {enriched_context.get('search_query', 'N/A')}\n\n")
-                
-                # Seção de Oferta de Negócio
-                f.write("## Oferta de Negócio\n\n")
-                business_offering = enriched_context.get('business_offering', {})
-                f.write(f"**Descrição:** {business_offering.get('description', 'N/A')}\n\n")
-                f.write(f"**Produto/Serviço:** {business_offering.get('product_service', 'N/A')}\n\n")
-                f.write(f"**Proposta de Valor:** {business_offering.get('value_proposition', 'N/A')}\n\n")
-                
-                # Seção de Targeting
-                f.write("## Targeting de Prospects\n\n")
-                prospect_targeting = enriched_context.get('prospect_targeting', {})
-                f.write(f"**Perfil de Cliente Ideal:** {prospect_targeting.get('ideal_customer_profile', 'N/A')}\n\n")
-                
-                industry_focus = prospect_targeting.get('industry_focus', [])
-                if industry_focus:
-                    f.write("**Foco por Indústria:**\n")
-                    for industry in industry_focus:
-                        f.write(f"- {industry}\n")
-                    f.write("\n")
-                
-                # Seção de Critérios de Qualificação
-                f.write("## Critérios de Qualificação de Leads\n\n")
-                qualification_criteria = enriched_context.get('lead_qualification_criteria', {})
-                
-                problems_we_solve = qualification_criteria.get('problems_we_solve', [])
-                if problems_we_solve:
-                    f.write("**Problemas que Resolvemos:**\n")
-                    for problem in problems_we_solve:
-                        f.write(f"- {problem}\n")
-                    f.write("\n")
-                
-                competitors = qualification_criteria.get('avoid_competitors', [])
-                if competitors:
-                    f.write("**Competidores a Evitar:**\n")
-                    for competitor in competitors:
-                        f.write(f"- {competitor}\n")
-                    f.write("\n")
-            
+                json.dump(enriched_context, f, indent=2, ensure_ascii=False)
+
             logger.success(f"Contexto enriquecido serializado com sucesso em: {filepath}")
             return filepath
-            
+
         except Exception as e:
             logger.error(f"Erro ao serializar contexto enriquecido para job {job_id}: {e}")
             return ""
 
     def _load_and_parse_enriched_context(self, job_id: str) -> Dict[str, Any]:
         """
-        Carrega e converte o arquivo Markdown de contexto enriquecido de volta 
+        Carrega e converte o arquivo JSON de contexto enriquecido de volta
         para um dicionário Python.
         """
         try:
-            filepath = os.path.join("harvester_output", f"enriched_context_{job_id}.md")
-            
+            filepath = os.path.join("harvester_output", f"enriched_context_{job_id}.json")
+
             if not os.path.exists(filepath):
                 logger.warning(f"Arquivo de contexto não encontrado: {filepath}")
                 return {}
-            
+
             with open(filepath, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # Parse básico do Markdown de volta para dicionário
-            enriched_context = {
-                "search_query": "",
-                "business_offering": {
-                    "description": "",
-                    "product_service": "",
-                    "value_proposition": ""
-                },
-                "prospect_targeting": {
-                    "ideal_customer_profile": "",
-                    "industry_focus": []
-                },
-                "lead_qualification_criteria": {
-                    "problems_we_solve": [],
-                    "avoid_competitors": []
-                }
-            }
-            
-            # Extrair informações usando regex
-            query_match = re.search(r'\*\*Query:\*\* (.+)', content)
-            if query_match:
-                enriched_context["search_query"] = query_match.group(1)
-            
-            desc_match = re.search(r'\*\*Descrição:\*\* (.+)', content)
-            if desc_match:
-                enriched_context["business_offering"]["description"] = desc_match.group(1)
-            
-            product_match = re.search(r'\*\*Produto/Serviço:\*\* (.+)', content)
-            if product_match:
-                enriched_context["business_offering"]["product_service"] = product_match.group(1)
-            
-            value_match = re.search(r'\*\*Proposta de Valor:\*\* (.+)', content)
-            if value_match:
-                enriched_context["business_offering"]["value_proposition"] = value_match.group(1)
-            
-            customer_match = re.search(r'\*\*Perfil de Cliente Ideal:\*\* (.+)', content)
-            if customer_match:
-                enriched_context["prospect_targeting"]["ideal_customer_profile"] = customer_match.group(1)
-            
-            # Extrair listas
-            industry_section = re.search(r'\*\*Foco por Indústria:\*\*\n((?:- .+\n)+)', content)
-            if industry_section:
-                industries = re.findall(r'- (.+)', industry_section.group(1))
-                enriched_context["prospect_targeting"]["industry_focus"] = industries
-            
-            problems_section = re.search(r'\*\*Problemas que Resolvemos:\*\*\n((?:- .+\n)+)', content)
-            if problems_section:
-                problems = re.findall(r'- (.+)', problems_section.group(1))
-                enriched_context["lead_qualification_criteria"]["problems_we_solve"] = problems
-            
-            competitors_section = re.search(r'\*\*Competidores a Evitar:\*\*\n((?:- .+\n)+)', content)
-            if competitors_section:
-                competitors = re.findall(r'- (.+)', competitors_section.group(1))
-                enriched_context["lead_qualification_criteria"]["avoid_competitors"] = competitors
-            
+                enriched_context = json.load(f)
+
             logger.success(f"Contexto enriquecido carregado e parseado com sucesso para job {job_id}")
             return enriched_context
-            
+
         except Exception as e:
             logger.error(f"Erro ao carregar contexto enriquecido para job {job_id}: {e}")
             return {}
 
-    def _run_harvester(self, search_query: str, max_leads: int = 10) -> AsyncIterator[Dict]:
-        """
-        Executa o harvester, serializa o contexto enriquecido e 
-        retorna os leads encontrados.
-        """
-        # 1. Criar e serializar o contexto enriquecido
-        enriched_context = self._create_enriched_search_context(self.business_context, search_query)
-        context_filepath = self._serialize_enriched_context(enriched_context, self.job_id)
-        
-        if context_filepath:
-            logger.info(f"Contexto enriquecido persistido em: {context_filepath}")
-        else:
-            logger.warning("Falha na serialização do contexto, mas continuando com o harvester")
-        
-        # 2. Executar o harvester Google (delegação para o método existente)
-        return self._search_leads(search_query, max_leads) # Corrected to use _search_leads
+    # def _run_harvester(self, search_query: str, max_leads: int = 10) -> AsyncIterator[Dict]:
+    #     """
+    #     Executa o harvester, serializa o contexto enriquecido e
+    #     retorna os leads encontrados.
+    #     """
+    #     # 1. Criar e serializar o contexto enriquecido
+    #     enriched_context = self._create_enriched_search_context(self.business_context, search_query)
+    #     context_filepath = self._serialize_enriched_context(enriched_context, self.job_id)
+
+    #     if context_filepath:
+    #         logger.info(f"Contexto enriquecido persistido em: {context_filepath}")
+    #     else:
+    #         logger.warning("Falha na serialização do contexto, mas continuando com o harvester")
+
+    #     # 2. Executar o harvester Google (delegação para o método existente)
+    #     return self._search_leads(search_query, max_leads) # Corrected to use _search_leads
 
     async def generate_executive_summary(self, analyzed_lead: AnalyzedLead, external_intelligence_data: str = "") -> Optional[str]:
         """

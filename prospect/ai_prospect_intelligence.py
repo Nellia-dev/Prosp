@@ -31,16 +31,29 @@ class AdvancedProspectProfiler:
     Cria um perfil de prospect avançado usando análise de sinais e um pipeline RAG
     para gerar insights preditivos baseados em um contexto de negócios.
     """
+    
+    _instance = None
+    _initialized = False
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(AdvancedProspectProfiler, cls).__new__(cls)
+        return cls._instance
 
     def __init__(self):
         """
         Inicializa o profiler, carregando o modelo de embedding e o cliente LLM.
         """
+        # Prevent re-initialization if already done
+        if self._initialized:
+            return
+            
         self.embedding_model: Optional[SentenceTransformer] = None
         self.llm_client: Optional[genai.GenerativeModel] = None
 
         if not RAG_LIBRARIES_AVAILABLE:
             logger.warning("Bibliotecas RAG não encontradas. O AdvancedProspectProfiler não funcionará.")
+            self._initialized = True
             return
 
         # 1. Carregar Modelo de Embedding
@@ -65,12 +78,14 @@ class AdvancedProspectProfiler:
                     "max_output_tokens": 512,
                 }
                 self.llm_client = genai.GenerativeModel(
-                    'gemini-pro',
+                    'gemini-1.0-pro', # Changed from 'gemini-pro'
                     generation_config=generation_config
                 )
                 logger.success("Profiler: Cliente LLM Google Gemini inicializado com sucesso.")
         except Exception as e:
             logger.error(f"Profiler: Erro ao inicializar o cliente Gemini: {e}. Insights do LLM estarão indisponíveis.")
+        
+        self._initialized = True
 
     def create_advanced_prospect_profile(
         self,

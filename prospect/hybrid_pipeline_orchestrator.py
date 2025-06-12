@@ -8,12 +8,12 @@ from typing import Any, AsyncIterator, Dict, Optional
 
 from loguru import logger
 
-from prospect.pipeline_orchestrator import PipelineOrchestrator
-from prospect.agents.enhanced_lead_processor import EnhancedLeadProcessor
-from prospect.agents.persona_driven_lead_processor import PersonaDrivenLeadProcessor
-from prospect.data_models.lead_structures import AnalyzedLead, ComprehensiveProspectPackage, FinalProspectPackage
-from prospect.core_logic.llm_client import LLMClientFactory, LLMProvider
-from prospect.event_models import StatusUpdateEvent, PipelineErrorEvent, PipelineEndEvent, PipelineStartEvent, LeadGeneratedEvent # Assuming these are top-level importable
+from pipeline_orchestrator import PipelineOrchestrator
+from agents.enhanced_lead_processor import EnhancedLeadProcessor
+from agents.persona_driven_lead_processor import PersonaDrivenLeadProcessor
+from data_models.lead_structures import AnalyzedLead, ComprehensiveProspectPackage, FinalProspectPackage, SiteData
+from core_logic.llm_client import LLMClientFactory, LLMProvider
+from event_models import StatusUpdateEvent, PipelineErrorEvent, PipelineEndEvent, PipelineStartEvent, LeadGeneratedEvent, LeadEnrichmentEndEvent
 
 # Placeholder for lead characteristics model - to be defined based on actual needs
 class LeadCharacteristics(Dict): # Using Dict as a placeholder
@@ -80,7 +80,7 @@ class HybridPipelineOrchestrator(PipelineOrchestrator):
             product_service_context=self.product_service_context,
             # competitors_list and tavily_api_key might be needed from business_context or config
             competitors_list=business_context.get("competitors_list_str", ""),
-            tavily_api_key=business_context.get("tavily_api_key") # Assuming it's in business_context
+            # tavily_api_key=business_context.get("tavily_api_key", "") # Assuming it's in business_context
         )
         self.persona_driven_processor = PersonaDrivenLeadProcessor(
             llm_client=llm_client,

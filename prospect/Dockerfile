@@ -15,6 +15,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 WORKDIR /app
 
+# Set Hugging Face home directory for caching models
+# This directory will be created and permissioned below.
+ENV HF_HOME=/app/.cache/huggingface/hub
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
