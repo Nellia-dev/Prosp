@@ -31,7 +31,11 @@ class TavilyEnrichmentOutput(BaseModel):
 
 class TavilyEnrichmentAgent(BaseAgent[TavilyEnrichmentInput, TavilyEnrichmentOutput]):
     def __init__(self, llm_client: LLMClientBase, tavily_api_key: str):
-        super().__init__(llm_client)
+        super().__init__(
+            name="Tavily Enrichment Agent",
+            description="Enriches lead data using the Tavily Search API to gather additional context, news, and information about a company.",
+            llm_client=llm_client
+        )
         self.tavily_api_key = tavily_api_key
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
@@ -263,5 +267,3 @@ if __name__ == '__main__':
         print(f"Enriched Data (no results test): {output_no_results.enriched_data}")
         if output_no_results.error_message:
             print(f"Error (no results test): {output_no_results.error_message}")
-
-```

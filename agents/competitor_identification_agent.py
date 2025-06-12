@@ -1,5 +1,5 @@
-from typing import Optional
-from pydantic import BaseModel
+from typing import Optional, List
+from pydantic import BaseModel, Field
 
 from agents.base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
@@ -26,8 +26,12 @@ class CompetitorIdentificationOutput(BaseModel):
 
 class CompetitorIdentificationAgent(BaseAgent[CompetitorIdentificationInput, CompetitorIdentificationOutput]):
     def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "CompetitorIdentificationAgent"
+        super().__init__(
+            name="Competitor Identification Agent",
+            description="Identifies potential competitors based on extracted text and product/service information.",
+            llm_client=llm_client
+        )
+        # self.name = "CompetitorIdentificationAgent" # Redundant
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""

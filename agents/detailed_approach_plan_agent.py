@@ -1,5 +1,5 @@
-from typing import Optional
-from pydantic import BaseModel
+from typing import Optional, List
+from pydantic import BaseModel, Field
 
 from agents.base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
@@ -36,8 +36,12 @@ class DetailedApproachPlanOutput(BaseModel):
 
 class DetailedApproachPlanAgent(BaseAgent[DetailedApproachPlanInput, DetailedApproachPlanOutput]):
     def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "DetailedApproachPlanAgent"
+        super().__init__(
+            name="Detailed Approach Plan Agent",
+            description="Expands a synthesized action plan into a detailed, actionable approach plan for sales teams.",
+            llm_client=llm_client
+        )
+        # self.name = "DetailedApproachPlanAgent" # Redundant
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""

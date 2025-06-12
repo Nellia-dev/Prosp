@@ -1,3 +1,4 @@
+import re # Added import for re module
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
@@ -31,8 +32,12 @@ class B2BPersonalizedMessageOutput(BaseModel):
 
 class B2BPersonalizedMessageAgent(BaseAgent[B2BPersonalizedMessageInput, B2BPersonalizedMessageOutput]):
     def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "B2BPersonalizedMessageAgent"
+        super().__init__(
+            name="B2B Personalized Message Agent",
+            description="Crafts personalized B2B messages for email or Instagram based on strategic inputs.",
+            llm_client=llm_client
+        )
+        # self.name = "B2BPersonalizedMessageAgent" # Redundant
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -176,7 +181,7 @@ class B2BPersonalizedMessageAgent(BaseAgent[B2BPersonalizedMessageInput, B2BPers
         except Exception as e:
             self.logger.error(f"An unexpected error occurred in {self.name}: {e}")
             import traceback
-            import re # Ensure re is imported
+            # import re # Ensure re is imported -> Moved to top
             traceback.print_exc()
             error_message = f"An unexpected error occurred: {str(e)}"
 
@@ -189,7 +194,7 @@ class B2BPersonalizedMessageAgent(BaseAgent[B2BPersonalizedMessageInput, B2BPers
         )
 
 if __name__ == '__main__':
-    import re # Ensure re is imported for the main block too
+    # import re # Ensure re is imported for the main block too -> Moved to top
     class MockLLMClient(LLMClientBase):
         def __init__(self, api_key: str = "mock_key"):
             super().__init__(api_key)

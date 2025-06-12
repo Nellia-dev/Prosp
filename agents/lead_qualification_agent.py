@@ -21,8 +21,12 @@ class LeadQualificationOutput(BaseModel):
 
 class LeadQualificationAgent(BaseAgent[LeadQualificationInput, LeadQualificationOutput]):
     def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "LeadQualificationAgent"
+        super().__init__(
+            name="Lead Qualification Agent",
+            description="Qualifies leads based on strategic information, classifying them into potential tiers.",
+            llm_client=llm_client
+        )
+        # self.name = "LeadQualificationAgent" # This would be redundant if BaseAgent sets it.
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""

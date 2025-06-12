@@ -39,6 +39,10 @@ from agents.value_proposition_customization_agent import ValuePropositionCustomi
 from agents.b2b_personalized_message_agent import B2BPersonalizedMessageAgent, B2BPersonalizedMessageInput, B2BPersonalizedMessageOutput, ContactDetailsInput as B2BContactDetailsInput
 from agents.internal_briefing_summary_agent import InternalBriefingSummaryAgent, InternalBriefingSummaryInput, InternalBriefingSummaryOutput # InternalBriefingSection is here
 
+# Imports for the new mocked agent
+from agents.content_marketing_agent import ContentMarketingAgent # For spec in MagicMock
+from data_models.content_marketing_models import ContentMarketingOutput as ContentMarketingOutputModel, BlogIdea as BlogIdeaModel, SocialMediaPost as SocialMediaPostModel # For mock return value
+
 
 class TestEnhancedLeadProcessor(unittest.TestCase):
 
@@ -70,6 +74,7 @@ class TestEnhancedLeadProcessor(unittest.TestCase):
         self.processor.value_proposition_customization_agent = MagicMock(spec=ValuePropositionCustomizationAgent)
         self.processor.b2b_personalized_message_agent = MagicMock(spec=B2BPersonalizedMessageAgent)
         self.processor.internal_briefing_summary_agent = MagicMock(spec=InternalBriefingSummaryAgent)
+        self.processor.content_marketing_agent = MagicMock(spec=ContentMarketingAgent)
 
     def test_process_successful_orchestration(self):
         # 1. Prepare Input AnalyzedLead
@@ -170,6 +175,17 @@ class TestEnhancedLeadProcessor(unittest.TestCase):
             recommended_next_step="Enviar email."
         )
 
+        # Mock for ContentMarketingAgent
+        mock_content_marketing_output = ContentMarketingOutputModel(
+            input_topic="Mock Topic from AnalyzedLead",
+            blog_post_ideas=[BlogIdeaModel(title="Mock Blog Idea", outline=["Point 1", "Point 2"], draft_intro_paragraph="This is a mock intro.")],
+            social_media_posts=[SocialMediaPostModel(platform="LinkedIn", post_text="Mock LinkedIn Post", hashtags=["#mocklinkedin"])],
+            suggested_seo_keywords=["mock seo keyword1", "mock seo keyword2"],
+            suggested_hashtags=["#mockhashtag1", "#mockhashtag2"],
+            generation_summary="Successfully generated mock content ideas."
+        )
+        self.processor.content_marketing_agent.execute.return_value = mock_content_marketing_output
+
         # 3. Execute EnhancedLeadProcessor.process
         package_output = self.processor.execute(analyzed_lead_input) # Using BaseAgent's execute
 
@@ -189,6 +205,7 @@ class TestEnhancedLeadProcessor(unittest.TestCase):
         self.processor.objection_handling_agent.execute.assert_called_once()
         self.processor.b2b_personalized_message_agent.execute.assert_called_once()
         self.processor.internal_briefing_summary_agent.execute.assert_called_once()
+        self.processor.content_marketing_agent.execute.assert_called_once()
 
         # 5. Assert Output ComprehensiveProspectPackage
         self.assertIsInstance(package_output, ComprehensiveProspectPackage)
@@ -217,6 +234,15 @@ class TestEnhancedLeadProcessor(unittest.TestCase):
         
         self.assertIsNotNone(package_output.internal_briefing)
         self.assertEqual(package_output.internal_briefing.executive_summary, "Resumo: Lead Example Corp é promissor.")
+
+        # Assertions for Content Marketing Ideas
+        self.assertIsNotNone(es.content_marketing_ideas)
+        self.assertEqual(es.content_marketing_ideas.input_topic, "Mock Topic from AnalyzedLead")
+        self.assertTrue(len(es.content_marketing_ideas.blog_post_ideas) > 0)
+        self.assertEqual(es.content_marketing_ideas.blog_post_ideas[0].title, "Mock Blog Idea")
+        self.assertIn("#mocklinkedin", es.content_marketing_ideas.social_media_posts[0].hashtags)
+        self.assertIn("mock seo keyword1", es.content_marketing_ideas.suggested_seo_keywords)
+        self.assertEqual(es.content_marketing_ideas.generation_summary, "Successfully generated mock content ideas.")
 
         self.assertGreater(package_output.confidence_score, 0) # Check that scores are calculated
         self.assertGreater(package_output.roi_potential_score, 0)

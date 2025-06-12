@@ -1,0 +1,18 @@
+{
+    "original_query": "Test Query for Content Marketing",
+    "collection_timestamp": "2023-10-27T10:00:00Z",
+    "total_sites_targeted_for_processing": 1,
+    "total_sites_processed_in_extraction_phase": 1,
+    "sites_data": [
+        {
+            "url": "http://example.com",
+            "google_search_data": {
+                "title": "Example Corp - Innovative Solutions",
+                "snippet": "Example Corp provides cutting-edge solutions for modern businesses."
+            },
+            "extracted_text_content": "Welcome to Example Corp. We specialize in innovative technology and business strategy. Our services help companies grow and succeed in a competitive market. We focus on AI, cloud computing, and data analytics. We are proud of our history of success and look forward to helping more businesses achieve their goals with our advanced tech.",
+            "extraction_status_message": "SUCESSO NA EXTRAÇÃO",
+            "screenshot_filepath": null
+        }
+    ]
+}

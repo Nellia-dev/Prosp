@@ -10,6 +10,7 @@ import json
 import time
 import asyncio
 import argparse
+import traceback # Added import for traceback
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
@@ -250,6 +251,24 @@ class EnhancedNelliaProspector:
                     ib = comprehensive_package.internal_briefing
                     if ib and not ib.error_message:
                         result["internal_briefing_executive_summary_present"] = bool(ib.executive_summary and ib.executive_summary != "Não especificado")
+
+                    # Add content marketing information
+                    cm_ideas = comprehensive_package.enhanced_strategy.content_marketing_ideas
+                    if cm_ideas and (not cm_ideas.generation_summary or "error" not in cm_ideas.generation_summary.lower()):
+                        result["content_marketing_num_blog_ideas"] = len(cm_ideas.blog_post_ideas or [])
+                        if cm_ideas.blog_post_ideas:
+                            result["content_marketing_sample_blog_title"] = cm_ideas.blog_post_ideas[0].title
+                        result["content_marketing_num_social_posts"] = len(cm_ideas.social_media_posts or [])
+                        if cm_ideas.social_media_posts:
+                            result["content_marketing_sample_social_platform"] = cm_ideas.social_media_posts[0].platform
+                            result["content_marketing_sample_social_text_preview"] = cm_ideas.social_media_posts[0].post_text[:50] + "..."
+                        result["content_marketing_num_seo_keywords"] = len(cm_ideas.suggested_seo_keywords or [])
+                        result["content_marketing_generated"] = True
+                    else:
+                        result["content_marketing_generated"] = False
+                        if cm_ideas and cm_ideas.generation_summary:
+                             result["content_marketing_error"] = cm_ideas.generation_summary
+
                     results.append(result); successful += 1
                 except Exception as e:
                     logger.error(f"Enhanced processing failed for {site_data.url}: {e}\n{traceback.format_exc()}")
@@ -321,6 +340,17 @@ class EnhancedNelliaProspector:
                 qualification_counts[tier] = qualification_counts.get(tier, 0) + 1
             for tier, count in qualification_counts.items():
                 enhanced_metrics_table.add_row(f"Leads in Tier '{tier}'", str(count))
+
+            # Add content marketing aggregate metrics
+            num_leads_with_content_ideas = sum(1 for r in results.results if r.get('content_marketing_generated'))
+            if results.successful_leads > 0:
+                percent_leads_with_content_ideas = (num_leads_with_content_ideas / results.successful_leads) * 100
+                enhanced_metrics_table.add_row("Leads with Content Ideas (%)", f"{percent_leads_with_content_ideas:.1f}%")
+            else:
+                enhanced_metrics_table.add_row("Leads with Content Ideas (%)", "N/A")
+
+            avg_blog_ideas = sum(r.get('content_marketing_num_blog_ideas', 0) for r in results.results if r.get('content_marketing_generated')) / max(1, num_leads_with_content_ideas) if num_leads_with_content_ideas > 0 else 0
+            enhanced_metrics_table.add_row("Avg. Blog Ideas (if generated)", f"{avg_blog_ideas:.2f}")
             
             self.console.print(enhanced_metrics_table)
 
@@ -347,8 +377,20 @@ class EnhancedNelliaProspector:
                     f"[bold]Strat. Qs:[/bold] {lead_item.get('num_strategic_questions',0)} | "
                     f"[bold]Competitors:[/bold] {lead_item.get('num_competitors_identified',0)} | "
                     f"[bold]Triggers:[/bold] {lead_item.get('num_purchase_triggers',0)} | "
-                    f"[bold]Objections:[/bold] {lead_item.get('num_objections_prepared',0)}"
+                    f"[bold]Objections:[/bold] {lead_item.get('num_objections_prepared',0)}\n"
+                    f"[bold]Content Ideas Generated:[/bold] {'Yes' if lead_item.get('content_marketing_generated') else 'No'}"
                 )
+                if lead_item.get('content_marketing_generated'):
+                    panel_content += (
+                        f" (Blogs: {lead_item.get('content_marketing_num_blog_ideas', 0)}, "
+                        f"Social: {lead_item.get('content_marketing_num_social_posts', 0)}, "
+                        f"SEO: {lead_item.get('content_marketing_num_seo_keywords', 0)})\n"
+                        f"  [italic]Sample Blog Title:[/italic] {lead_item.get('content_marketing_sample_blog_title', 'N/A')[:70]}...\n"
+                        f"  [italic]Sample Social Post ({lead_item.get('content_marketing_sample_social_platform','N/A')}):[/italic] {lead_item.get('content_marketing_sample_social_text_preview', 'N/A')}"
+                    )
+                elif lead_item.get('content_marketing_error'):
+                    panel_content += f" [italic](Error: {lead_item.get('content_marketing_error')[:50]}...)[/italic]"
+
                 self.console.print(Panel(panel_content, title=f"Lead: {lead_item.get('company_name', 'N/A')}", border_style="blue", expand=True))
         
         elif results.mode == ProcessingMode.HYBRID: # Specific summary for hybrid

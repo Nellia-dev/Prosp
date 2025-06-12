@@ -18,8 +18,12 @@ class B2BPersonaCreationOutput(BaseModel):
 
 class B2BPersonaCreationAgent(BaseAgent[B2BPersonaCreationInput, B2BPersonaCreationOutput]):
     def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "B2BPersonaCreationAgent"
+        super().__init__(
+            name="B2B Persona Creation Agent",
+            description="Creates detailed B2B decision-maker persona profiles based on lead analysis.",
+            llm_client=llm_client
+        )
+        # self.name = "B2BPersonaCreationAgent" # Redundant
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""

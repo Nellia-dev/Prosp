@@ -1,5 +1,5 @@
 from typing import Optional, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agents.base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
@@ -30,8 +30,12 @@ class InternalBriefingSummaryOutput(BaseModel):
 
 class InternalBriefingSummaryAgent(BaseAgent[InternalBriefingSummaryInput, InternalBriefingSummaryOutput]):
     def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "InternalBriefingSummaryAgent"
+        super().__init__(
+            name="Internal Briefing Summary Agent",
+            description="Summarizes all collected lead information into a concise internal briefing document.",
+            llm_client=llm_client
+        )
+        # self.name = "InternalBriefingSummaryAgent" # Redundant
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""

@@ -1,5 +1,5 @@
-from typing import Optional
-from pydantic import BaseModel
+from typing import Optional, List
+from pydantic import BaseModel, Field
 
 from agents.base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
@@ -23,8 +23,12 @@ class BuyingTriggerIdentificationOutput(BaseModel):
 
 class BuyingTriggerIdentificationAgent(BaseAgent[BuyingTriggerIdentificationInput, BuyingTriggerIdentificationOutput]):
     def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "BuyingTriggerIdentificationAgent"
+        super().__init__(
+            name="Buying Trigger Identification Agent",
+            description="Identifies potential buying triggers from lead and enriched data.",
+            llm_client=llm_client
+        )
+        # self.name = "BuyingTriggerIdentificationAgent" # Redundant
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""

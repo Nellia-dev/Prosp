@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Any
 from enum import Enum
 from pydantic import BaseModel, Field, HttpUrl, validator
 import uuid
+from .content_marketing_models import ContentMarketingOutput, ContentMarketingInput
 
 
 class ExtractionStatus(str, Enum):
@@ -199,66 +200,6 @@ class PersonalizedOutreachMessage(A2AAgentMessage):
     final_prospect: FinalProspectPackage
 
 
-# Enhanced Intelligence and Processing Models for Integration with new-cw.py capabilities
-
-class ContactInformation(BaseModel):
-    """Contact information extracted from lead analysis"""
-    emails_found: List[str] = Field(default_factory=list, description="Email addresses found")
-    instagram_profiles: List[str] = Field(default_factory=list, description="Instagram profile URLs")
-    linkedin_profiles: List[str] = Field(default_factory=list, description="LinkedIn profile URLs")
-    phone_numbers: List[str] = Field(default_factory=list, description="Phone numbers found")
-    extraction_confidence: float = Field(default=0.0, ge=0, le=1, description="Confidence in extraction accuracy")
-    tavily_search_suggestions: List[str] = Field(default_factory=list, description="Suggested searches for additional contact info")
-
-class PainPointAnalysis(BaseModel):
-    """Deep analysis of company pain points and challenges"""
-    primary_pain_category: str = Field(default="Não especificado", description="Main category of pain point") # Added default
-    detailed_pain_points: List[DetailedPainPointSchema] = Field(default_factory=list) # Uses new schema
-    business_impact_assessment: Optional[str] = Field(None, description="Overall assessment of business impact from agent's raw text") # Made optional
-    urgency_level: str = Field(default="medium", description="Urgency level: low, medium, high, critical")
-    investigative_questions: List[str] = Field(
-        default_factory=list, 
-        description="Strategic questions to deepen understanding"
-    )
-    # potential_solutions_alignment: Dict[str, str] = Field( # This is now part of DetailedPainPointSchema
-    #     default_factory=dict,
-    #     description="How offered solution aligns with each pain point"
-    # )
-    raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
-    error_message: Optional[str] = None
-
-class CompetitorIntelligence(BaseModel):
-    """Competitive intelligence and market analysis"""
-    identified_competitors: List[CompetitorDetailSchema] = Field(default_factory=list) # Uses new schema
-    other_notes: Optional[str] = Field(None, description="Other general notes on competitive landscape")
-    raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
-    error_message: Optional[str] = None
-    # Old fields removed: mentioned_competitors, current_solutions, competitive_advantages, 
-    # market_positioning, switching_barriers, competitive_threats
-
-class PurchaseTriggers(BaseModel):
-    """Purchase triggers and timing indicators"""
-    identified_triggers: List[IdentifiedTriggerSchema] = Field(default_factory=list) # Uses new schema
-    other_observations: Optional[str] = Field(None, description="Other general observations on triggers")
-    raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
-    error_message: Optional[str] = None
-    # Old fields removed: recent_events, market_signals, timing_indicators, 
-    # growth_signals, urgency_drivers, budget_cycle_insights
-
-class LeadQualification(BaseModel):
-    """Lead qualification scoring and assessment"""
-    qualification_tier: str = Field(..., description="High Potential, Medium, Low, Not Qualified")
-    qualification_score: float = Field(..., ge=0, le=1, description="Numerical qualification score")
-    qualification_reasoning: List[str] = Field(
-        default_factory=list, 
-        description="Reasons for qualification score"
-    )
-    fit_score: float = Field(default=0.0, ge=0, le=1, description="Product-market fit score")
-    readiness_score: float = Field(default=0.0, ge=0, le=1, description="Purchase readiness score")
-    authority_score: float = Field(default=0.0, ge=0, le=1, description="Decision-making authority score")
-    budget_likelihood: str = Field(default="unknown", description="Budget availability likelihood")
-    error_message: Optional[str] = None # Added for consistency
-
 # --- Schemas mapping to Agent Outputs ---
 
 class DetailedPainPointSchema(BaseModel): 
@@ -351,6 +292,66 @@ class InternalBriefingSectionSchema(BaseModel):
     title: str
     content: str
 # --- End of Agent Output Schemas ---
+
+# Enhanced Intelligence and Processing Models for Integration with new-cw.py capabilities
+
+class ContactInformation(BaseModel):
+    """Contact information extracted from lead analysis"""
+    emails_found: List[str] = Field(default_factory=list, description="Email addresses found")
+    instagram_profiles: List[str] = Field(default_factory=list, description="Instagram profile URLs")
+    linkedin_profiles: List[str] = Field(default_factory=list, description="LinkedIn profile URLs")
+    phone_numbers: List[str] = Field(default_factory=list, description="Phone numbers found")
+    extraction_confidence: float = Field(default=0.0, ge=0, le=1, description="Confidence in extraction accuracy")
+    tavily_search_suggestions: List[str] = Field(default_factory=list, description="Suggested searches for additional contact info")
+
+class PainPointAnalysis(BaseModel):
+    """Deep analysis of company pain points and challenges"""
+    primary_pain_category: str = Field(default="Não especificado", description="Main category of pain point") # Added default
+    detailed_pain_points: List[DetailedPainPointSchema] = Field(default_factory=list) # Uses new schema
+    business_impact_assessment: Optional[str] = Field(None, description="Overall assessment of business impact from agent's raw text") # Made optional
+    urgency_level: str = Field(default="medium", description="Urgency level: low, medium, high, critical")
+    investigative_questions: List[str] = Field(
+        default_factory=list,
+        description="Strategic questions to deepen understanding"
+    )
+    # potential_solutions_alignment: Dict[str, str] = Field( # This is now part of DetailedPainPointSchema
+    #     default_factory=dict,
+    #     description="How offered solution aligns with each pain point"
+    # )
+    raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
+    error_message: Optional[str] = None
+
+class CompetitorIntelligence(BaseModel):
+    """Competitive intelligence and market analysis"""
+    identified_competitors: List[CompetitorDetailSchema] = Field(default_factory=list) # Uses new schema
+    other_notes: Optional[str] = Field(None, description="Other general notes on competitive landscape")
+    raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
+    error_message: Optional[str] = None
+    # Old fields removed: mentioned_competitors, current_solutions, competitive_advantages,
+    # market_positioning, switching_barriers, competitive_threats
+
+class PurchaseTriggers(BaseModel):
+    """Purchase triggers and timing indicators"""
+    identified_triggers: List[IdentifiedTriggerSchema] = Field(default_factory=list) # Uses new schema
+    other_observations: Optional[str] = Field(None, description="Other general observations on triggers")
+    raw_text_report: Optional[str] = Field(None, description="Raw text output from the agent, if parsing is partial")
+    error_message: Optional[str] = None
+    # Old fields removed: recent_events, market_signals, timing_indicators,
+    # growth_signals, urgency_drivers, budget_cycle_insights
+
+class LeadQualification(BaseModel):
+    """Lead qualification scoring and assessment"""
+    qualification_tier: str = Field(..., description="High Potential, Medium, Low, Not Qualified")
+    qualification_score: float = Field(..., ge=0, le=1, description="Numerical qualification score")
+    qualification_reasoning: List[str] = Field(
+        default_factory=list,
+        description="Reasons for qualification score"
+    )
+    fit_score: float = Field(default=0.0, ge=0, le=1, description="Product-market fit score")
+    readiness_score: float = Field(default=0.0, ge=0, le=1, description="Purchase readiness score")
+    authority_score: float = Field(default=0.0, ge=0, le=1, description="Decision-making authority score")
+    budget_likelihood: str = Field(default="unknown", description="Budget availability likelihood")
+    error_message: Optional[str] = None # Added for consistency
 
 class ExternalIntelligence(BaseModel):
     """External intelligence gathered from Tavily and other sources"""
@@ -445,6 +446,7 @@ class EnhancedStrategy(BaseModel):
     value_propositions: List[ValueProposition] = Field(default_factory=list) # Uses new ValueProposition structure
     objection_framework: Optional[ObjectionFramework] = None # Made optional
     strategic_questions: List[str] = Field(default_factory=list) # Already List[str], compatible
+    content_marketing_ideas: Optional[ContentMarketingOutput] = Field(default=None, description="Generated content marketing ideas and suggestions.")
     
     # Removed fields that are now part of structured models or less relevant
     # final_action_plan: Optional[str] 

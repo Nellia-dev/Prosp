@@ -1,5 +1,6 @@
-from typing import Optional
-from pydantic import BaseModel
+import re # Added import for re module
+from typing import Optional, List
+from pydantic import BaseModel, Field
 
 from agents.base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
@@ -24,8 +25,12 @@ class ObjectionHandlingOutput(BaseModel):
 
 class ObjectionHandlingAgent(BaseAgent[ObjectionHandlingInput, ObjectionHandlingOutput]):
     def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "ObjectionHandlingAgent"
+        super().__init__(
+            name="Objection Handling Agent",
+            description="Anticipates common B2B sales objections and suggests response strategies.",
+            llm_client=llm_client
+        )
+        # self.name = "ObjectionHandlingAgent" # Redundant
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -113,12 +118,12 @@ class ObjectionHandlingAgent(BaseAgent[ObjectionHandlingInput, ObjectionHandling
         except Exception as e:
             self.logger.error(f"An unexpected error occurred in {self.name}: {e}")
             import traceback
-            import re # Ensure re is imported for the persona name extraction
+            # import re # Ensure re is imported for the persona name extraction -> Moved to top
             traceback.print_exc()
             return ObjectionHandlingOutput(error_message=f"An unexpected error occurred: {str(e)}")
 
 if __name__ == '__main__':
-    import re # Ensure re is imported for the main block too
+    # import re # Ensure re is imported for the main block too -> Moved to top
     class MockLLMClient(LLMClientBase):
         def __init__(self, api_key: str = "mock_key"):
             super().__init__(api_key)

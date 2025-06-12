@@ -15,6 +15,7 @@ from loguru import logger
 
 from data_models.lead_structures import (
     AnalyzedLead,
+    LeadAnalysis, # Added LeadAnalysis
     ComprehensiveProspectPackage,
     ContactInformation,
     ExternalIntelligence,
@@ -62,6 +63,9 @@ from .value_proposition_customization_agent import ValuePropositionCustomization
 from .b2b_personalized_message_agent import B2BPersonalizedMessageAgent, B2BPersonalizedMessageInput, B2BPersonalizedMessageOutput, ContactDetailsInput as B2BContactDetailsInput
 from .internal_briefing_summary_agent import InternalBriefingSummaryAgent, InternalBriefingSummaryInput, InternalBriefingSummaryOutput # Output has InternalBriefingSection
 
+from .content_marketing_agent import ContentMarketingAgent, ContentMarketingInput
+from data_models.content_marketing_models import ContentMarketingOutput as ContentMarketingOutputModel
+
 
 class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage]):
     def __init__(
@@ -70,11 +74,20 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         product_service_context: str = "",
         competitors_list: str = "",
         tavily_api_key: Optional[str] = None,
-        temperature: float = 0.7
+        temperature: float = 0.7 # Keep temperature here for config
     ):
-        super().__init__(llm_client, temperature)
-        self.agent_name = "EnhancedLeadProcessor"
-        self.logger = logger
+        config = {}
+        if temperature is not None: # Ensure temperature is explicitly passed before adding to config
+            config["temperature"] = temperature
+
+        super().__init__(
+            name="Enhanced Lead Processor",
+            description="Orchestrates a comprehensive lead processing pipeline involving multiple specialized agents.",
+            llm_client=llm_client,
+            config=config if config else None # Pass config only if it has entries
+        )
+        # self.agent_name = "EnhancedLeadProcessor" # BaseAgent will set self.name
+        self.logger = logger # logger is imported from loguru
         
         self.product_service_context = product_service_context
         self.competitors_list = competitors_list
@@ -95,6 +108,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         self.value_proposition_customization_agent = ValuePropositionCustomizationAgent(llm_client=self.llm_client)
         self.b2b_personalized_message_agent = B2BPersonalizedMessageAgent(llm_client=self.llm_client)
         self.internal_briefing_summary_agent = InternalBriefingSummaryAgent(llm_client=self.llm_client)
+        self.content_marketing_agent = ContentMarketingAgent(llm_client=self.llm_client)
         
     def _construct_persona_profile_string(self, analysis_obj: LeadAnalysis, company_name: str) -> str:
         """Helper to create a descriptive persona string from analysis."""
@@ -176,6 +190,10 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 detailed_approach_plan_output.model_dump_json(indent=2) if detailed_approach_plan_output and not detailed_approach_plan_output.error_message else "Plano detalhado não disponível"
             )
 
+            # Corrected assignments for value_propositions and strategic_questions
+            current_value_propositions = value_props_list.custom_value_propositions if value_props_list and hasattr(value_props_list, 'custom_value_propositions') and not value_props_list.error_message else []
+            current_strategic_questions = strategic_questions_list.strategic_questions if strategic_questions_list and hasattr(strategic_questions_list, 'strategic_questions') and not strategic_questions_list.error_message else []
+
             enhanced_strategy = EnhancedStrategy(
                 external_intelligence=external_intel,
                 contact_information=contact_info,
@@ -187,10 +205,18 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 tot_evaluated_strategies=tot_evaluation_output.evaluated_strategies if tot_evaluation_output else None,
                 tot_synthesized_action_plan=tot_synthesis_output if tot_synthesis_output else None,
                 detailed_approach_plan=detailed_approach_plan_output if detailed_approach_plan_output else None,
-                value_propositions=value_props_list,
+                value_propositions=current_value_propositions,
                 objection_framework=objection_handling_output,
-                strategic_questions=strategic_questions_list
+                strategic_questions=current_strategic_questions
             )
+
+            # New call for content marketing ideas
+            content_marketing_output = self._generate_content_marketing_ideas(
+                analyzed_lead,
+                persona_profile_str,
+                enhanced_strategy # Pass the current state of enhanced_strategy
+            )
+            enhanced_strategy.content_marketing_ideas = content_marketing_output # Assign to the field
             
             personalized_message = self._create_personalized_message(analyzed_lead, enhanced_strategy, contact_info, persona_profile_str)
             internal_briefing = self._create_internal_briefing(analyzed_lead, enhanced_strategy)
@@ -347,6 +373,56 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         except Exception as e:
             self.logger.error(f"Exception in _generate_strategic_questions: {e}")
             return StrategicQuestionGenerationOutput(error_message=str(e))
+
+    def _generate_content_marketing_ideas(
+        self,
+        analyzed_lead: AnalyzedLead,
+        persona_profile_str: str,
+        enhanced_strategy_data: EnhancedStrategy # Pass currently built strategy data for context
+    ) -> Optional[ContentMarketingOutputModel]: # Use the aliased model if defined, or direct import
+        self.logger.info(f"[{self.agent_name}] Generating content marketing ideas for {self._extract_company_name(analyzed_lead)}...")
+
+        topic_parts = []
+        # Accessing company_description from analysis object
+        if analyzed_lead.analysis.company_description: # company_description is part of LeadAnalysis
+            topic_parts.append(f"Company Focus: {analyzed_lead.analysis.company_description}")
+        if analyzed_lead.analysis.main_services:
+            topic_parts.append(f"Main Services: {', '.join(analyzed_lead.analysis.main_services)}")
+
+        # Safely access pain points from enhanced_strategy_data
+        if enhanced_strategy_data.pain_point_analysis and \
+           not enhanced_strategy_data.pain_point_analysis.error_message and \
+           hasattr(enhanced_strategy_data.pain_point_analysis, 'detailed_pain_points') and \
+           enhanced_strategy_data.pain_point_analysis.detailed_pain_points:
+             topic_parts.append(f"Key Pain Points: {', '.join([dp.pain_description for dp in enhanced_strategy_data.pain_point_analysis.detailed_pain_points[:2]])}")
+
+        topic = ". ".join(topic_parts) if topic_parts else f"General business solutions for {self._extract_company_name(analyzed_lead)}"
+        topic = self._truncate_text(topic, 500) # Ensure topic is not excessively long
+
+        content_goals = [
+            "increase brand awareness",
+            "educate the target audience",
+            "drive engagement",
+            "position the company as a thought leader"
+        ]
+
+        market_input = ContentMarketingInput(
+            topic=topic,
+            target_audience=persona_profile_str if persona_profile_str else "General business professionals",
+            content_goals=content_goals
+        )
+
+        try:
+            content_ideas_output: ContentMarketingOutputModel = self.content_marketing_agent.execute(market_input)
+            if content_ideas_output.generation_summary and "error" in content_ideas_output.generation_summary.lower():
+                self.logger.warning(f"[{self.agent_name}] ContentMarketingAgent generated an output with error summary: {content_ideas_output.generation_summary}")
+            return content_ideas_output
+        except Exception as e:
+            self.logger.error(f"[{self.agent_name}] Failed to generate content marketing ideas: {e}")
+            return ContentMarketingOutputModel(
+                input_topic=topic,
+                generation_summary=f"Error generating content marketing ideas: {str(e)}"
+            )
 
     def _prepare_objection_handling(self, persona_profile_str: str, company_name: str, detailed_approach_plan_text: str) -> ObjectionHandlingOutput: # Changed signature & return type
         objection_input = ObjectionHandlingInput(
@@ -529,16 +605,18 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 "potential_challenges": analysis_obj.potential_challenges, "general_diagnosis": analysis_obj.general_diagnosis
             },
             "external_intelligence_summary": self._truncate_text(enhanced_strategy.external_intelligence.tavily_enrichment if enhanced_strategy.external_intelligence else "N/A", 300),
-            "contact_information_summary": enhanced_strategy.contact_information.model_dump() if enhanced_strategy.contact_information else {},
-            "pain_point_analysis_summary": enhanced_strategy.pain_point_analysis.model_dump() if enhanced_strategy.pain_point_analysis and not enhanced_strategy.pain_point_analysis.error_message else {"error": enhanced_strategy.pain_point_analysis.error_message if enhanced_strategy.pain_point_analysis else "N/A"},
-            "lead_qualification_summary": enhanced_strategy.lead_qualification.model_dump() if enhanced_strategy.lead_qualification and not enhanced_strategy.lead_qualification.error_message else {"error": enhanced_strategy.lead_qualification.error_message if enhanced_strategy.lead_qualification else "N/A"},
-            "competitor_intelligence_summary": enhanced_strategy.competitor_intelligence.model_dump() if enhanced_strategy.competitor_intelligence and not enhanced_strategy.competitor_intelligence.error_message else {"error": enhanced_strategy.competitor_intelligence.error_message if enhanced_strategy.competitor_intelligence else "N/A"},
-            "purchase_triggers_summary": enhanced_strategy.purchase_triggers.model_dump() if enhanced_strategy.purchase_triggers and not enhanced_strategy.purchase_triggers.error_message else {"error": enhanced_strategy.purchase_triggers.error_message if enhanced_strategy.purchase_triggers else "N/A"},
-            "customized_value_propositions_summary": [vp.model_dump() for vp in enhanced_strategy.value_propositions] if enhanced_strategy.value_propositions else [],
+            "contact_information_summary": safe_dump_or_error(enhanced_strategy.contact_information, "contact_information"),
+            "pain_point_analysis_summary": safe_dump_or_error(enhanced_strategy.pain_point_analysis, "pain_point_analysis"),
+            "lead_qualification_summary": safe_dump_or_error(enhanced_strategy.lead_qualification, "lead_qualification"),
+            "competitor_intelligence_summary": safe_dump_or_error(enhanced_strategy.competitor_intelligence, "competitor_intelligence"),
+            "purchase_triggers_summary": safe_dump_or_error(enhanced_strategy.purchase_triggers, "purchase_triggers"),
+            "customized_value_propositions_summary": [safe_dump_or_error(vp, f"value_proposition_{i}") for i, vp in enumerate(enhanced_strategy.value_propositions)] if enhanced_strategy.value_propositions else [],
             "strategic_questions_generated": enhanced_strategy.strategic_questions if enhanced_strategy.strategic_questions else [],
-            "objection_handling_summary": enhanced_strategy.objection_framework.model_dump() if enhanced_strategy.objection_framework and not enhanced_strategy.objection_framework.error_message else {"error": enhanced_strategy.objection_framework.error_message if enhanced_strategy.objection_framework else "N/A"},
-            "tot_synthesized_action_plan_summary": enhanced_strategy.tot_synthesized_action_plan.model_dump() if enhanced_strategy.tot_synthesized_action_plan and not enhanced_strategy.tot_synthesized_action_plan.error_message else {"error": enhanced_strategy.tot_synthesized_action_plan.error_message if enhanced_strategy.tot_synthesized_action_plan else "N/A"},
-            "detailed_approach_plan_summary": enhanced_strategy.detailed_approach_plan.model_dump() if enhanced_strategy.detailed_approach_plan and not enhanced_strategy.detailed_approach_plan.error_message else {"error": enhanced_strategy.detailed_approach_plan.error_message if enhanced_strategy.detailed_approach_plan else "N/A"},
+            "objection_handling_summary": safe_dump_or_error(enhanced_strategy.objection_framework, "objection_framework"),
+            "tot_synthesized_action_plan_summary": safe_dump_or_error(enhanced_strategy.tot_synthesized_action_plan, "tot_synthesized_action_plan"),
+            "detailed_approach_plan_summary": safe_dump_or_error(enhanced_strategy.detailed_approach_plan, "detailed_approach_plan"),
+             # Added Content Marketing Ideas Summary
+            "content_marketing_ideas_summary": safe_dump_or_error(enhanced_strategy.content_marketing_ideas, "content_marketing_ideas"),
         }
         briefing_input = InternalBriefingSummaryInput(all_lead_data=all_lead_data)
         try:

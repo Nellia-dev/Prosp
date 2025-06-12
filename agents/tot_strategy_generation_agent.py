@@ -1,5 +1,5 @@
-from typing import Optional
-from pydantic import BaseModel
+from typing import Optional, List
+from pydantic import BaseModel, Field
 
 from agents.base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
@@ -25,8 +25,12 @@ class ToTStrategyGenerationOutput(BaseModel):
 
 class ToTStrategyGenerationAgent(BaseAgent[ToTStrategyGenerationInput, ToTStrategyGenerationOutput]):
     def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "ToTStrategyGenerationAgent"
+        super().__init__(
+            name="ToT Strategy Generation Agent",
+            description="Generates multiple distinct approach strategies using a Tree of Thoughts-like framework.",
+            llm_client=llm_client
+        )
+        # self.name = "ToTStrategyGenerationAgent" # Redundant
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""

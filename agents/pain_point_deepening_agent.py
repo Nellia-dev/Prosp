@@ -1,5 +1,5 @@
-from typing import Optional
-from pydantic import BaseModel
+from typing import Optional, List
+from pydantic import BaseModel, Field
 
 from agents.base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
@@ -27,8 +27,12 @@ class PainPointDeepeningOutput(BaseModel):
 
 class PainPointDeepeningAgent(BaseAgent[PainPointDeepeningInput, PainPointDeepeningOutput]):
     def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "PainPointDeepeningAgent"
+        super().__init__(
+            name="Pain Point Deepening Agent",
+            description="Analyzes lead data and persona to identify and elaborate on specific pain points.",
+            llm_client=llm_client
+        )
+        # self.name = "PainPointDeepeningAgent" # Redundant
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""

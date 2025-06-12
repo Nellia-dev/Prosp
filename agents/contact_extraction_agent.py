@@ -23,7 +23,11 @@ class ContactExtractionOutput(BaseModel):
 
 class ContactExtractionAgent(BaseAgent[ContactExtractionInput, ContactExtractionOutput]):
     def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
+        super().__init__(
+            name="Contact Extraction Agent",
+            description="Extracts email addresses and Instagram profiles from text, and suggests further contact searches.",
+            llm_client=llm_client
+        )
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
