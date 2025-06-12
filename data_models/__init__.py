@@ -57,6 +57,13 @@ from .content_marketing_models import (
     SocialMediaPost,
 )
 
+# Imports from campaign_optimization_models.py
+from .campaign_optimization_models import (
+    CampaignContentType,
+    CampaignContentInput,
+    CampaignContentOutput
+)
+
 __all__ = [
     "A2AAgentMessage",
     "ActionPlanStepModel",
@@ -64,6 +71,9 @@ __all__ = [
     "AnalyzedProspectMessage",
     "ApproachStrategy",
     "BlogIdea",
+    "CampaignContentInput", # Added
+    "CampaignContentOutput", # Added
+    "CampaignContentType", # Added
     "CommunicationChannel",
     "CompetitorDetailSchema",
     "CompetitorIntelligence",
