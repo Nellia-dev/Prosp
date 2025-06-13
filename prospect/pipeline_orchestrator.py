@@ -702,6 +702,10 @@ class PipelineOrchestrator:
         try:
             # Import ADK1 business context agent for query generation
             from adk1.agent import business_context_to_query_agent
+            # Import ADK runtime components
+            from google.adk.runners import Runner
+            from google.adk.sessions import InMemorySessionService
+            from google.genai import types
             
             # Prepare enhanced business context for the agent
             enhanced_context = {
@@ -726,24 +730,58 @@ class PipelineOrchestrator:
             import concurrent.futures
             loop = asyncio.get_event_loop()
             
-            def run_query_generation():
+            async def run_query_generation():
                 try:
-                    # The agent expects the context as input
-                    agent_response = business_context_to_query_agent(context_json)
-                    return agent_response
+                    # Initialize in-memory session service for ADK1
+                    temp_service = InMemorySessionService()
+
+                    await temp_service.create_session(
+                        app_name="query_generation",
+                        user_id=self.user_id,
+                        session_id=self.job_id
+                    )
+
+                    runner = Runner(
+                        session_service=temp_service,
+                        agent='business_context_to_query_agent',
+                        app_name="query_generation",
+                    )
+
+                    query = types.Content(role="user", parts=[types.Part(text=context_json)])
+
+                    # Use runner.run() as per ADK documentation
+                    response = runner.run_async(
+                        user_id=self.user_id,
+                        session_id=self.job_id,
+                        new_message=query
+                    )
+                    # Assuming the response object has an 'output_text' attribute
+                    # or similar, based on typical ADK patterns.
+                    # If the agent's instruction is to return only the query,
+                    # this should be the direct query string.
+                    if hasattr(response, 'output_text'):
+                        return response.output_text
+                    elif hasattr(response, 'text'): # Fallback if output_text is not present
+                        return response.text
+                    else: # If the response itself is the string (less likely for runner.run)
+                        return str(response)
+
                 except Exception as e:
                     logger.error(f"[QUERY_GEN] ADK1 agent execution failed: {e}")
                     raise
             
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 agent_result = await loop.run_in_executor(executor, run_query_generation)
-            
+
+            logger.info("[QUERY_GEN] ADK1 agent execution completed successfully")
+            logger.debug(f"[QUERY_GEN] Agent result: {agent_result}");
+            print(f"[QUERY_GEN] Agent result type: {agent_result}")  # Debugging line
             # Extract the generated query (agent should return just the query string)
             search_query = str(agent_result).strip()
             
             # Enhance with user input if provided
-            if user_input.strip():
-                search_query = f"{search_query} {user_input.strip()}"
+            # if user_input.strip():
+            #     search_query = f"{search_query} {user_input.strip()}"
             
             logger.success(f"[QUERY_GEN] AI-generated search query: '{search_query}'")
             return search_query
