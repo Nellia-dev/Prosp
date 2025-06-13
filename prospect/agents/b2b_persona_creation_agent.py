@@ -17,9 +17,9 @@ class B2BPersonaCreationOutput(BaseModel):
     error_message: Optional[str] = None
 
 class B2BPersonaCreationAgent(BaseAgent[B2BPersonaCreationInput, B2BPersonaCreationOutput]):
-    def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "B2BPersonaCreationAgent"
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase):
+        super().__init__(name=name, description=description, llm_client=llm_client)
+        # self.name is already set by super().__init__
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""

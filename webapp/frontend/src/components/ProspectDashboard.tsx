@@ -1,9 +1,14 @@
 import React, { useState } from 'react';
   import { useTranslation } from '../hooks/useTranslation';
-  import { useProspectJobs, useStartProspectingJob, useBusinessContext } from '../hooks/api/useUnifiedApi';
+  import { useProspectJobs, useStartProspectingJob, useBusinessContext, usePlanInfo } from '../hooks/api/useUnifiedApi';
   import type { ProspectJob } from '../types/api';
-  import { usePlanInfo } from '../hooks/api/useUserPlanStatus';
   import { useRealTimeEvent } from '../hooks/useRealTimeUpdates';
+  import type { 
+    LeadCreatedEvent, 
+    JobCompletedEvent, 
+    JobFailedEvent, 
+    StatusUpdateEvent 
+  } from '../types/events';
   import { Button } from "@/components/ui/button";
   import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
   import { Input } from "@/components/ui/input";
@@ -19,9 +24,14 @@ import React, { useState } from 'react';
     error: (message: string) => console.error(`Toast Error: ${message}`),
   };
  
+  // Align with our unified event types for better type safety
   interface EnrichmentEvent {
+    event_type: string;
+    timestamp: string;
+    job_id: string;
+    user_id: string;
     agent_name?: string;
-    [key: string]: unknown;
+    status_message?: string;
   }
  
   interface EnrichmentStatus {
@@ -262,6 +272,7 @@ import React, { useState } from 'react';
  
   export const ProspectDashboard = () => {
     const { t } = useTranslation();
+    const [searchQuery, setSearchQuery] = useState('');
     const [enrichmentStatus, setEnrichmentStatus] = useState<EnrichmentStatus>({});
     const { data: jobsData = [], isLoading: jobsLoading, error: jobsError, refetch: refetchJobs } = useProspectJobs();
     const { mutate: startProspectingJob, isPending: startProspectingLoading } = useStartProspectingJob();
@@ -286,14 +297,15 @@ import React, { useState } from 'react';
         refetchJobs();
     });
 
-    useRealTimeEvent('enrichment-update', (data: { job_id: string }) => {
-      const { job_id } = data;
-      if (job_id) {
+    useRealTimeEvent<StatusUpdateEvent>('enrichment-update', (data) => {
+      if ('job_id' in data) {
+        const job_id = data.job_id as string;
         setEnrichmentStatus(prev => ({
           ...prev,
           [job_id]: {
             ...prev[job_id],
             events: [...(prev[job_id]?.events || []), data],
+            lastUpdate: new Date().toISOString(),
           },
         }));
       }
@@ -307,7 +319,11 @@ import React, { useState } from 'react';
  
     const handleStartProspecting = () => {
       if (businessContext) {
-        startProspectingJob(businessContext, {
+        const contextWithQuery = {
+          ...businessContext,
+          user_search_query: searchQuery,
+        }
+        startProspectingJob(contextWithQuery, {
           onSuccess: () => {
             toast.success(t('prospectDashboard.jobStartedSuccess'));
           },
@@ -377,6 +393,13 @@ import React, { useState } from 'react';
             <CardDescription className="text-slate-400">
               {t('prospectDashboard.description')}
             </CardDescription>
+            <Input
+              type="search"
+              placeholder={t('prospectDashboard.searchPlaceholder')}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="mt-4 bg-slate-700 border-slate-600 text-slate-200 placeholder-slate-400 focus:ring-offset-slate-800 focus:ring-blue-500"
+            />
           </CardHeader>
           <CardContent>
             {activeJobs.length > 0 ? (

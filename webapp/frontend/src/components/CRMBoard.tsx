@@ -15,6 +15,12 @@ import {
   STAGE_COLORS,
   QualificationTier 
 } from '../types/unified';
+import { 
+  LeadCreatedEvent, 
+  LeadEnrichedEvent, 
+  ProspectPipelineEvent,
+  isProspectPipelineEvent 
+} from '../types/events';
 import { useTranslation } from '../hooks/useTranslation';
 import { useUpdateLeadStage } from '../hooks/api/useUnifiedApi';
 import { Search, RotateCcw, RefreshCw, TrendingUp, Users, Target } from 'lucide-react';
@@ -25,12 +31,12 @@ interface CRMBoardProps {
   isLoading?: boolean;
 }
 
+// Create a proper enrichment event interface that aligns with our use case
 interface EnrichmentEvent {
   event_type: string;
   lead_id: string;
   status_message?: string;
   agent_name?: string;
-  [key: string]: unknown; // Index signature for compatibility
 }
 
 const STAGE_CONFIGS = PROCESSING_STAGES.map(stage => ({
@@ -70,20 +76,25 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
     }
   }, [leads]);
 
-  useRealTimeEvent<{ lead: LeadData }>('lead-created', (event) => {
+  useRealTimeEvent<LeadCreatedEvent>('lead-created', (event) => {
     setLiveLeads(prev => [...prev, event.lead]);
   });
 
-  useRealTimeEvent<EnrichmentEvent>('enrichment-update', (event) => {
-    if (event.lead_id) {
+  useRealTimeEvent<ProspectPipelineEvent>('enrichment-update', (event) => {
+    if (isProspectPipelineEvent(event) && 'lead_id' in event) {
       setEnrichmentEvents(prev => ({
         ...prev,
-        [event.lead_id]: event,
+        [event.lead_id as string]: {
+          event_type: event.event_type,
+          lead_id: event.lead_id as string,
+          status_message: 'status_message' in event ? event.status_message as string : undefined,
+          agent_name: 'agent_name' in event ? event.agent_name as string : undefined,
+        },
       }));
     }
   });
 
-  useRealTimeEvent<{ lead: LeadData }>('lead-enriched', (event) => {
+  useRealTimeEvent<LeadEnrichedEvent>('lead-enriched', (event) => {
     setLiveLeads(prev => prev.filter(l => l.id !== event.lead.id));
     onLeadUpdate?.(event.lead); // This should trigger a refetch in the parent
   });

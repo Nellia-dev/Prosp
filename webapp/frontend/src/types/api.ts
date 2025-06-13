@@ -71,65 +71,29 @@ export interface StopAgentRequest {
   agentId: string;
 }
 
-// Lead API types
-export interface LeadFilters {
-  search?: string;
-  sector?: string;
-  qualificationTier?: 'A' | 'B' | 'C';
-  processingStage?: string;
-  minScore?: number;
-  maxScore?: number;
-  offset?: number;
-  limit?: number;
-}
+// Import backend types for perfect alignment
+import type { 
+  LeadFilters as BackendLeadFilters,
+  CreateLeadDto,
+  UpdateLeadDto,
+  LeadData,
+  QualificationTier,
+  ProcessingStage,
+  LeadStatus
+} from './unified';
 
-export interface CreateLeadRequest {
-  companyName: string;
-  website: string;
-  sector: string;
-  description?: string;
-}
+// Lead API types - perfectly aligned with backend
+export type LeadFilters = BackendLeadFilters;
 
-export interface UpdateLeadRequest {
-  companyName?: string;
-  website?: string;
-  sector?: string;
-  description?: string;
-  qualificationTier?: 'A' | 'B' | 'C';
-  relevanceScore?: number;
-  roiPotential?: number;
-  brazilianMarketFit?: number;
-  processingStage?: string;
-  painPoints?: string[];
-  triggers?: string[];
-  personaInsights?: Record<string, unknown>;
-}
+export type CreateLeadRequest = CreateLeadDto;
+
+export type UpdateLeadRequest = UpdateLeadDto;
 
 export interface UpdateLeadStageRequest {
-  stage: string;
+  stage: ProcessingStage;
 }
 
-export interface LeadResponse {
-  id: string;
-  companyName: string;
-  website: string;
-  sector: string;
-  description?: string;
-  qualificationTier: 'A' | 'B' | 'C';
-  relevanceScore: number;
-  roiPotential: number;
-  brazilianMarketFit: number;
-  processingStage: string;
-  painPoints: string[];
-  triggers: string[];
-  personaInsights?: Record<string, unknown>;
-  likelyContactRole?: string;
-  decisionMakerProbability?: number;
-  createdAt: string;
-  updatedAt: string;
-  status: string;
-  enrichmentData?: unknown;
-}
+export type LeadResponse = LeadData;
 
 export interface LeadsByStageResponse {
   [stage: string]: LeadResponse[];

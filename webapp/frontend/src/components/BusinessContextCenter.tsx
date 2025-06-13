@@ -31,6 +31,8 @@ export const BusinessContextCenter = () => {
 
   const [newPainPoint, setNewPainPoint] = useState('');
   const [newIndustry, setNewIndustry] = useState('');
+  const [newGeographicFocus, setNewGeographicFocus] = useState('');
+
 
   // Adapter functions to convert between API and unified types
   const adaptApiToUnified = (apiContext: BusinessContextResponse): BusinessContext => ({
@@ -111,6 +113,22 @@ export const BusinessContextCenter = () => {
     setContext(prev => ({
       ...prev,
       industry_focus: prev.industry_focus.filter((_, i) => i !== index)
+    }));
+  };
+
+  const addGeographicFocus = () => {
+    if (newGeographicFocus.trim()) {
+      setContext(prev => ({
+        ...prev,
+        geographic_focus: [...prev.geographic_focus, newGeographicFocus.trim()]
+      }));
+      setNewGeographicFocus('');
+    }
+  };
+  const removeGeographicFocus = (index: number) => {
+    setContext(prev => ({
+      ...prev,
+      geographic_focus: prev.geographic_focus.filter((_, i) => i !== index)
     }));
   };
 
@@ -320,6 +338,42 @@ export const BusinessContextCenter = () => {
               </p>
             )}
           </div>
+
+          <div>
+            <label className="text-white text-sm font-medium mb-2 block">Geographic Focus</label>
+            <div className="flex space-x-2 mb-3">
+              <Input
+                value={newGeographicFocus}
+                onChange={(e) => setNewGeographicFocus(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && addGeographicFocus()}
+                placeholder="Add location where you operate (e.g., USA, Brazil, Latin America, ...)"
+                className="bg-slate-800 border-slate-600 text-white"
+              />
+              <Button onClick={addGeographicFocus} size="sm" variant="outline">
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {context.geographic_focus.map((location, index) => (
+                <Badge key={index} variant="secondary" className="bg-green-700 text-white">
+                  {location}
+                  <Button
+                    onClick={() => removeGeographicFocus(index)}
+                    variant="ghost"
+                    size="sm"
+                    className="ml-2 h-4 w-4 p-0 hover:bg-green-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </Badge>
+              ))}
+            </div>
+            {context.geographic_focus.length === 0 && (
+              <p className="text-slate-500 text-sm mt-2">
+                Add geographic focus to help agents understand where you operate
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Context Summary */}
@@ -335,6 +389,10 @@ export const BusinessContextCenter = () => {
               <span className="text-white ml-2">{context.industry_focus.length}</span>
             </div>
             <div>
+              <span className="text-slate-400">Locations:</span>
+              <span className="text-white ml-2">{context.geographic_focus.length}</span>
+            </div>
+            <div>
               <span className="text-slate-400">Completeness:</span>
               <span className="text-white ml-2">
                 {Math.round(
@@ -343,7 +401,8 @@ export const BusinessContextCenter = () => {
                     context.target_market,
                     context.value_proposition,
                     context.pain_points.length > 0,
-                    context.industry_focus.length > 0
+                    context.industry_focus.length > 0,
+                    context.geographic_focus.length > 0
                   ].filter(Boolean).length / 5) * 100
                 )}%
               </span>

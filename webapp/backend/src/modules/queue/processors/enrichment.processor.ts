@@ -3,7 +3,7 @@ import { Job } from 'bull';
 import { Logger } from '@nestjs/common';
 import { LeadsService } from '../../leads/leads.service';
 import { McpService } from '../../mcp/mcp.service';
-import { McpWebhookService } from '../../mcp-webhook/mcp-webhook.service';
+import { QueueService } from '../queue.service';
 import { LeadStatus } from '@/shared/enums/nellia.enums';
 import { BusinessContextService } from '@/modules/business-context/business-context.service';
 
@@ -20,7 +20,7 @@ export class EnrichmentProcessor {
   constructor(
     private readonly leadsService: LeadsService,
     private readonly mcpService: McpService,
-    private readonly mcpWebhookService: McpWebhookService,
+    private readonly queueService: QueueService,
     private readonly businessContextService: BusinessContextService,
   ) {
     this.logger.log('EnrichmentProcessor initialized and listening for jobs.');
@@ -51,14 +51,14 @@ export class EnrichmentProcessor {
       const eventStream = await this.mcpService.executeUnifiedPipeline(businessContext, userId, harvesterJobId);
 
       for await (const event of eventStream) {
-        // The webhook service already has logic to parse and broadcast events
-        await this.mcpWebhookService.processStreamedEvent(event);
+        // The queue service now has logic to parse and broadcast events
+        await this.queueService.processStreamedEvent(event);
       }
 
       this.logger.log(`[ENRICH_SUCCESS] Successfully finished streaming enrichment for lead ${leadId}.`);
       
       // The final lead status update (e.g., to ENRICHED) will be handled
-      // by the webhook service when it receives the 'lead_enrichment_end' event.
+      // by the queue service when it receives the 'lead_enrichment_end' event.
 
       return { success: true, leadId, message: 'Enrichment stream completed.' };
 
@@ -66,7 +66,7 @@ export class EnrichmentProcessor {
       this.logger.error(`Enrichment process failed for lead ${leadId}: ${error.message}`, error.stack);
       await this.leadsService.updateStatus(leadId, LeadStatus.ENRICHMENT_FAILED);
       // Optionally, emit a specific failure event via WebSocket
-      await this.mcpWebhookService.processStreamedEvent({
+      await this.queueService.processStreamedEvent({
           event_type: 'pipeline_error',
           job_id: harvesterJobId,
           user_id: userId,

@@ -87,7 +87,11 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         
         self.product_service_context = product_service_context
         self.competitors_list = competitors_list
-        self.tavily_api_key = tavily_api_key or os.getenv("TAVILY_API_KEY")
+        self.tavily_api_key = os.getenv("TAVILY_API_KEY")
+        if (not self.tavily_api_key and not tavily_api_key):
+            raise ValueError("Tavily API key is required for this agent. Please set the TAVILY_API_KEY environment variable or pass it as an argument.")
+        self.logger = logger.bind(agent_name=self.name, agent_description=self.description)
+        self.logger.info(f"Initializing EnhancedLeadProcessor with Tavily API key: {'set' if self.tavily_api_key else 'not set'}")
 
         # Note: The sub-agent constructors will need to be updated to accept name and description
         self.tavily_enrichment_agent = TavilyEnrichmentAgent(llm_client=self.llm_client, name="TavilyEnrichmentAgent", description="Gathers external intelligence and news about the company using the Tavily web search API.", tavily_api_key=self.tavily_api_key)
@@ -289,6 +293,50 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             pain_points_count = len(getattr(pain_analysis_output, 'detailed_pain_points', [])) if pain_analysis_output else 0
             pipeline_logger.info(f"✅ Pain point analysis completed: category={getattr(pain_analysis_output, 'primary_pain_category', 'N/A')}, points={pain_points_count}")
 
+            # Step 3.5: AI Prospect Intelligence RAG Analysis
+            pipeline_logger.info("🧠 Step 3.5/15: AI Prospect Intelligence RAG Analysis")
+            try:
+                from ai_prospect_intelligence import AdvancedProspectProfiler
+                
+                # Initialize the RAG profiler
+                prospect_profiler = AdvancedProspectProfiler()
+                
+                # Prepare enriched context for RAG analysis
+                enriched_context = {
+                    'business_offering': {
+                        'description': self.product_service_context
+                    },
+                    'prospect_targeting': {
+                        'ideal_customer_profile': persona_profile_str
+                    },
+                    'lead_qualification_criteria': {
+                        'problems_we_solve': getattr(pain_analysis_output, 'detailed_pain_points', []) if pain_analysis_output else []
+                    }
+                }
+                
+                # Create RAG vector store from enriched context
+                rag_vector_store = self._create_rag_vector_store(enriched_context, external_intel)
+                
+                # Generate advanced prospect profile using RAG
+                ai_prospect_profile = prospect_profiler.create_advanced_prospect_profile(
+                    lead_data=analyzed_lead.analysis.model_dump(),
+                    enriched_context=enriched_context,
+                    rag_vector_store=rag_vector_store
+                )
+                
+                pipeline_logger.info(f"🧠 AI Prospect Intelligence completed: prospect_score={ai_prospect_profile.get('prospect_score', 'N/A')}, insights={len(ai_prospect_profile.get('predictive_insights', []))}")
+                
+            except Exception as e:
+                pipeline_logger.warning(f"⚠️  AI Prospect Intelligence failed: {e}")
+                ai_prospect_profile = {
+                    'prospect_score': 0.5,
+                    'buying_intent_score': 0.5,
+                    'pain_alignment_score': 0.5,
+                    'urgency_score': 0.5,
+                    'predictive_insights': ['Análise RAG não disponível devido a erro técnico'],
+                    'context_usage_summary': {'error': str(e)}
+                }
+
             # Step 4: Lead Qualification
             pipeline_logger.info("⚖️  Step 4/15: Lead Qualification")
             qualification_output, events = await get_agent_result(self.lead_qualification_agent, LeadQualificationInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents, product_service_offered=self.product_service_context), "Qualifying lead")
@@ -315,12 +363,19 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             
             pipeline_logger.info("🚀 PHASE 4: Value Propositions & Strategic Planning")
             
-            # Step 7: Value Propositions
-            pipeline_logger.info("💎 Step 7/15: Value Proposition Customization")
-            value_props_output, events = await get_agent_result(self.value_proposition_customization_agent, ValuePropositionCustomizationInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=deepened_pain_points_for_agents, buying_triggers_report=json.dumps([t.model_dump() for t in purchase_triggers_output.identified_triggers]) if purchase_triggers_output and purchase_triggers_output.identified_triggers else "[]", product_service_offered=self.product_service_context, company_name=company_name), "Customizing value propositions")
+            # Step 7: Value Propositions (Enhanced with AI Prospect Intelligence)
+            pipeline_logger.info("💎 Step 7/15: Value Proposition Customization (AI-Enhanced)")
+            
+            # Enhance value propositions with AI prospect insights
+            enhanced_pain_points = deepened_pain_points_for_agents
+            if ai_prospect_profile.get('predictive_insights'):
+                ai_insights_str = "\n".join([f"• {insight}" for insight in ai_prospect_profile['predictive_insights']])
+                enhanced_pain_points += f"\n\nAI PROSPECT INSIGHTS (Score: {ai_prospect_profile.get('prospect_score', 'N/A')}):\n{ai_insights_str}"
+            
+            value_props_output, events = await get_agent_result(self.value_proposition_customization_agent, ValuePropositionCustomizationInput(lead_analysis=lead_analysis_str_for_agents, persona_profile=persona_profile_str, deepened_pain_points=enhanced_pain_points, buying_triggers_report=json.dumps([t.model_dump() for t in purchase_triggers_output.identified_triggers]) if purchase_triggers_output and purchase_triggers_output.identified_triggers else "[]", product_service_offered=self.product_service_context, company_name=company_name), "Customizing value propositions with AI insights")
             for event in events: yield event
             value_props_count = len(getattr(value_props_output, 'custom_propositions', [])) if value_props_output else 0
-            pipeline_logger.info(f"✅ Value propositions completed: propositions_created={value_props_count}")
+            pipeline_logger.info(f"✅ Value propositions completed: propositions_created={value_props_count}, ai_enhanced=True")
 
             # Step 8: Strategic Questions
             pipeline_logger.info("❓ Step 8/15: Strategic Question Generation")
@@ -416,12 +471,36 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 strategic_questions=strategic_questions_output.generated_questions if strategic_questions_output else []
             )
             
-            # Step 15: Internal Briefing Summary
-            pipeline_logger.info("📝 Step 15/15: Internal Briefing Summary")
-            internal_briefing_output, events = await get_agent_result(self.internal_briefing_summary_agent, InternalBriefingSummaryInput(all_lead_data=enhanced_strategy.model_dump()), "Creating internal briefing")
+            # Step 15: Internal Briefing Summary (Enhanced with AI Insights & Engagement Instructions)
+            pipeline_logger.info("📝 Step 15/15: Internal Briefing Summary (AI-Enhanced)")
+            
+            # Prepare comprehensive lead data with AI insights for briefing
+            comprehensive_lead_data = enhanced_strategy.model_dump()
+            
+            # Add AI Prospect Intelligence insights
+            comprehensive_lead_data['ai_prospect_intelligence'] = {
+                'prospect_score': ai_prospect_profile.get('prospect_score', 0.5),
+                'buying_intent_score': ai_prospect_profile.get('buying_intent_score', 0.5),
+                'pain_alignment_score': ai_prospect_profile.get('pain_alignment_score', 0.5),
+                'urgency_score': ai_prospect_profile.get('urgency_score', 0.5),
+                'predictive_insights': ai_prospect_profile.get('predictive_insights', []),
+                'context_usage_summary': ai_prospect_profile.get('context_usage_summary', {})
+            }
+            
+            # Add engagement readiness assessment
+            engagement_readiness = self._calculate_engagement_readiness(ai_prospect_profile, enhanced_strategy)
+            comprehensive_lead_data['engagement_readiness'] = engagement_readiness
+            
+            # Add recommended engagement strategy
+            recommended_engagement = self._generate_engagement_instructions(
+                ai_prospect_profile, enhanced_strategy, personalized_message_output, company_name
+            )
+            comprehensive_lead_data['recommended_engagement_strategy'] = recommended_engagement
+            
+            internal_briefing_output, events = await get_agent_result(self.internal_briefing_summary_agent, InternalBriefingSummaryInput(all_lead_data=comprehensive_lead_data), "Creating AI-enhanced internal briefing with engagement instructions")
             for event in events: yield event
             briefing_success = internal_briefing_output and not getattr(internal_briefing_output, 'error_message', None)
-            pipeline_logger.info(f"✅ Internal briefing completed: success={briefing_success}")
+            pipeline_logger.info(f"✅ Internal briefing completed: success={briefing_success}, ai_enhanced=True, engagement_ready={engagement_readiness['ready']}")
 
             pipeline_logger.info("🚀 PHASE 7: Final Package Assembly")
             total_time = time.time() - start_time
@@ -504,6 +583,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             
             primary_message = PersonalizedMessage(**primary_message_args)
             
+            # Create enhanced final package with AI insights
             final_package = ComprehensiveProspectPackage(
                 analyzed_lead=analyzed_lead,
                 enhanced_strategy=enhanced_strategy,
@@ -511,10 +591,20 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                     primary_message=primary_message
                 ),
                 internal_briefing=internal_briefing_output,
-                confidence_score=self._calculate_confidence_score(enhanced_strategy),
-                roi_potential_score=self._calculate_roi_potential(enhanced_strategy),
+                confidence_score=self._calculate_confidence_score_with_ai(enhanced_strategy, ai_prospect_profile),
+                roi_potential_score=self._calculate_roi_potential_with_ai(enhanced_strategy, ai_prospect_profile),
                 brazilian_market_fit=self._calculate_brazilian_fit(analyzed_lead),
-                processing_metadata={"total_processing_time": total_time, "processing_mode": "enhanced", "tavily_enabled": bool(self.tavily_api_key), "company_name": company_name, "success_rate": success_rate, "pipeline_summary": pipeline_summary}
+                processing_metadata={
+                    "total_processing_time": total_time,
+                    "processing_mode": "enhanced_with_ai_intelligence",
+                    "tavily_enabled": bool(self.tavily_api_key),
+                    "company_name": company_name,
+                    "success_rate": success_rate,
+                    "pipeline_summary": pipeline_summary,
+                    "ai_prospect_intelligence": ai_prospect_profile,
+                    "engagement_readiness": comprehensive_lead_data.get('engagement_readiness', {}),
+                    "recommended_engagement": comprehensive_lead_data.get('recommended_engagement_strategy', {})
+                }
             )
             
             # Calculate final quality scores for logging
@@ -744,8 +834,31 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             return ""
         return text[:max_length] if len(text) > max_length else text
     
+    def _calculate_confidence_score_with_ai(self, enhanced_strategy: EnhancedStrategy, ai_prospect_profile: dict) -> float:
+        """Calculate enhanced confidence score incorporating AI insights"""
+        # Original confidence calculation
+        base_confidence = self._calculate_confidence_score(enhanced_strategy)
+        
+        # AI prospect intelligence boost
+        ai_prospect_score = ai_prospect_profile.get('prospect_score', 0.5)
+        ai_pain_alignment = ai_prospect_profile.get('pain_alignment_score', 0.5)
+        ai_buying_intent = ai_prospect_profile.get('buying_intent_score', 0.5)
+        
+        # Weight AI insights (30% of total score)
+        ai_score = (ai_prospect_score + ai_pain_alignment + ai_buying_intent) / 3
+        ai_weighted = ai_score * 0.3
+        
+        # Combine with traditional confidence (70% weight)
+        traditional_weighted = base_confidence * 0.7
+        
+        # Bonus for having predictive insights
+        insights_bonus = 0.05 if ai_prospect_profile.get('predictive_insights') else 0
+        
+        total_confidence = traditional_weighted + ai_weighted + insights_bonus
+        return min(total_confidence, 1.0)
+
     def _calculate_confidence_score(self, enhanced_strategy: EnhancedStrategy) -> float:
-        """Calculate overall confidence score"""
+        """Calculate overall confidence score (traditional method)"""
         base_score = 0.3
         qual_score = 0.0
         if enhanced_strategy.lead_qualification:
@@ -773,8 +886,32 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         total_score = base_score + qual_score + pain_score + contact_score + intel_score + strategy_score
         return min(total_score, 1.0)
     
+    def _calculate_roi_potential_with_ai(self, enhanced_strategy: EnhancedStrategy, ai_prospect_profile: dict) -> float:
+        """Calculate enhanced ROI potential incorporating AI insights"""
+        # Original ROI calculation
+        base_roi = self._calculate_roi_potential(enhanced_strategy)
+        
+        # AI insights for ROI enhancement
+        ai_buying_intent = ai_prospect_profile.get('buying_intent_score', 0.5)
+        ai_urgency = ai_prospect_profile.get('urgency_score', 0.5)
+        ai_pain_alignment = ai_prospect_profile.get('pain_alignment_score', 0.5)
+        
+        # Calculate AI ROI multiplier
+        ai_roi_factors = (ai_buying_intent + ai_urgency + ai_pain_alignment) / 3
+        
+        # Higher AI scores suggest better ROI potential
+        if ai_roi_factors >= 0.8:
+            roi_multiplier = 1.2  # 20% boost for high AI scores
+        elif ai_roi_factors >= 0.6:
+            roi_multiplier = 1.1  # 10% boost for medium AI scores
+        else:
+            roi_multiplier = 1.0  # No change for low AI scores
+        
+        enhanced_roi = base_roi * roi_multiplier
+        return min(enhanced_roi, 1.0)
+    
     def _calculate_roi_potential(self, enhanced_strategy: EnhancedStrategy) -> float:
-        """Calculate ROI potential score"""
+        """Calculate ROI potential score (traditional method)"""
         qual_weight = 0.0
         if enhanced_strategy.lead_qualification:
             if enhanced_strategy.lead_qualification.confidence_score is not None:
@@ -800,6 +937,215 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             
         return min(qual_weight + urgency_weight + value_weight + trigger_weight, 1.0)
     
+    def _create_rag_vector_store(self, enriched_context: dict, external_intel: ExternalIntelligence) -> dict:
+        """Create RAG vector store for AI Prospect Intelligence"""
+        try:
+            import numpy as np
+            
+            # Prepare text chunks for vector store
+            chunks = []
+            
+            # Add business context chunks
+            if enriched_context.get('business_offering', {}).get('description'):
+                chunks.append(f"Business Offering: {enriched_context['business_offering']['description']}")
+            
+            if enriched_context.get('prospect_targeting', {}).get('ideal_customer_profile'):
+                chunks.append(f"Target Customer Profile: {enriched_context['prospect_targeting']['ideal_customer_profile']}")
+            
+            # Add problem-solving context
+            problems = enriched_context.get('lead_qualification_criteria', {}).get('problems_we_solve', [])
+            if problems:
+                for problem in problems:
+                    if hasattr(problem, 'pain_description'):
+                        chunks.append(f"Problem We Solve: {problem.pain_description}")
+                    elif isinstance(problem, str):
+                        chunks.append(f"Problem We Solve: {problem}")
+            
+            # Add external intelligence
+            if external_intel and external_intel.tavily_enrichment:
+                chunks.append(f"Market Intelligence: {external_intel.tavily_enrichment}")
+            
+            # Create simple vector store (basic implementation)
+            try:
+                from sentence_transformers import SentenceTransformer
+                import faiss
+                
+                # Initialize embedding model
+                model = SentenceTransformer('all-MiniLM-L6-v2')
+                
+                # Generate embeddings
+                embeddings = model.encode(chunks)
+                embeddings = embeddings.astype('float32')
+                
+                # Create FAISS index
+                dimension = embeddings.shape[1]
+                index = faiss.IndexFlatL2(dimension)
+                index.add(embeddings)
+                
+                return {
+                    "index": index,
+                    "chunks": chunks,
+                    "embeddings": embeddings
+                }
+                
+            except ImportError:
+                self.logger.warning("FAISS or SentenceTransformers not available, using simple text store")
+                return {
+                    "index": None,
+                    "chunks": chunks,
+                    "embeddings": None
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Failed to create RAG vector store: {e}")
+            return {"index": None, "chunks": [], "embeddings": None}
+
+    def _calculate_engagement_readiness(self, ai_prospect_profile: dict, enhanced_strategy: EnhancedStrategy) -> dict:
+        """Calculate engagement readiness based on AI insights and strategy completeness"""
+        
+        prospect_score = ai_prospect_profile.get('prospect_score', 0.5)
+        buying_intent = ai_prospect_profile.get('buying_intent_score', 0.5)
+        pain_alignment = ai_prospect_profile.get('pain_alignment_score', 0.5)
+        urgency = ai_prospect_profile.get('urgency_score', 0.5)
+        
+        # Check strategy completeness
+        has_contact_info = bool(enhanced_strategy.contact_information)
+        has_value_props = bool(enhanced_strategy.value_propositions)
+        has_strategy = bool(enhanced_strategy.tot_synthesized_action_plan)
+        has_approach_plan = bool(enhanced_strategy.detailed_approach_plan)
+        
+        # Calculate readiness score
+        ai_score = (prospect_score + buying_intent + pain_alignment + urgency) / 4
+        strategy_score = sum([has_contact_info, has_value_props, has_strategy, has_approach_plan]) / 4
+        
+        overall_readiness = (ai_score * 0.7) + (strategy_score * 0.3)
+        
+        # Determine readiness level
+        if overall_readiness >= 0.8:
+            readiness_level = "HIGH"
+            recommendation = "Proceed with immediate engagement"
+        elif overall_readiness >= 0.6:
+            readiness_level = "MEDIUM"
+            recommendation = "Good prospect - proceed with engagement"
+        elif overall_readiness >= 0.4:
+            readiness_level = "LOW"
+            recommendation = "Consider nurturing campaign first"
+        else:
+            readiness_level = "NOT_READY"
+            recommendation = "Requires additional research and qualification"
+        
+        return {
+            "ready": readiness_level in ["HIGH", "MEDIUM"],
+            "readiness_level": readiness_level,
+            "readiness_score": round(overall_readiness, 3),
+            "ai_score": round(ai_score, 3),
+            "strategy_completeness": round(strategy_score, 3),
+            "recommendation": recommendation,
+            "key_factors": {
+                "prospect_score": prospect_score,
+                "buying_intent": buying_intent,
+                "pain_alignment": pain_alignment,
+                "urgency": urgency,
+                "has_contact_info": has_contact_info,
+                "has_value_props": has_value_props,
+                "has_strategy": has_strategy,
+                "has_approach_plan": has_approach_plan
+            }
+        }
+
+    def _generate_engagement_instructions(
+        self,
+        ai_prospect_profile: dict,
+        enhanced_strategy: EnhancedStrategy,
+        personalized_message_output: Any,
+        company_name: str
+    ) -> dict:
+        """Generate clear engagement instructions based on AI insights and strategy"""
+        
+        # Extract key insights
+        predictive_insights = ai_prospect_profile.get('predictive_insights', [])
+        prospect_score = ai_prospect_profile.get('prospect_score', 0.5)
+        urgency = ai_prospect_profile.get('urgency_score', 0.5)
+        
+        # Determine engagement priority
+        if prospect_score >= 0.8 and urgency >= 0.7:
+            priority = "URGENT"
+            timing = "Within 24 hours"
+        elif prospect_score >= 0.7:
+            priority = "HIGH"
+            timing = "Within 48 hours"
+        elif prospect_score >= 0.5:
+            priority = "MEDIUM"
+            timing = "Within 1 week"
+        else:
+            priority = "LOW"
+            timing = "When capacity allows"
+        
+        # Extract channel and message info
+        channel = getattr(personalized_message_output, 'crafted_message_channel', 'Email')
+        has_message = bool(getattr(personalized_message_output, 'crafted_message_body', ''))
+        
+        # Generate step-by-step instructions
+        engagement_steps = []
+        
+        if has_message:
+            engagement_steps.append({
+                "step": 1,
+                "action": f"Send personalized {channel.lower()} message",
+                "details": f"Use the crafted {channel.lower()} message with personalized subject line",
+                "timing": timing,
+                "expected_outcome": "Initial response or engagement"
+            })
+        
+        engagement_steps.append({
+            "step": 2,
+            "action": "Monitor engagement signals",
+            "details": "Track email opens, link clicks, social media engagement",
+            "timing": "Immediate after send",
+            "expected_outcome": "Engagement metrics and response indicators"
+        })
+        
+        engagement_steps.append({
+            "step": 3,
+            "action": "Follow-up sequence",
+            "details": "Execute the detailed approach plan sequence (LinkedIn connection, content sharing, etc.)",
+            "timing": "2-3 days after initial contact",
+            "expected_outcome": "Continued engagement and conversation"
+        })
+        
+        engagement_steps.append({
+            "step": 4,
+            "action": "Qualification call",
+            "details": "Schedule discovery call to validate AI insights and explore specific needs",
+            "timing": "After positive engagement",
+            "expected_outcome": "Qualified opportunity or nurture decision"
+        })
+        
+        # Generate talking points from AI insights
+        talking_points = []
+        for insight in predictive_insights[:3]:  # Top 3 insights
+            talking_points.append(f"• {insight}")
+        
+        return {
+            "priority": priority,
+            "recommended_timing": timing,
+            "primary_channel": channel,
+            "engagement_steps": engagement_steps,
+            "key_talking_points": talking_points,
+            "success_metrics": [
+                "Response rate to initial outreach",
+                "Engagement with follow-up content",
+                "Meeting/call acceptance rate",
+                "Qualification score improvement"
+            ],
+            "risk_factors": [
+                f"Urgency score is {'high' if urgency >= 0.7 else 'medium' if urgency >= 0.5 else 'low'}",
+                f"Pain alignment is {'strong' if ai_prospect_profile.get('pain_alignment_score', 0) >= 0.7 else 'moderate'}"
+            ],
+            "next_review_date": "After initial engagement sequence completion",
+            "backup_strategy": "If no response after 3 touchpoints, move to nurture campaign with educational content"
+        }
+
     def _calculate_brazilian_fit(self, analyzed_lead: AnalyzedLead) -> float:
         base_score = 0.7
         text_content = analyzed_lead.validated_lead.cleaned_text_content or ""

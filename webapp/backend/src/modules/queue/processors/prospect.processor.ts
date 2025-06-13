@@ -4,7 +4,7 @@ import { Logger } from '@nestjs/common';
 import { BusinessContextService } from '../../business-context/business-context.service';
 import { LeadsService } from '../../leads/leads.service';
 import { McpService } from '../../mcp/mcp.service';
-import { McpWebhookService } from '../../mcp-webhook/mcp-webhook.service';
+import { QueueService } from '../queue.service';
 import { UsersService } from '../../users/users.service';
 import { QuotaService } from '../../quota/quota.service';
 import { WebSocketService } from '../../websocket/websocket.service';
@@ -41,7 +41,7 @@ export class ProspectProcessor {
     private readonly usersService: UsersService,
     private readonly quotaService: QuotaService,
     private readonly webSocketService: WebSocketService,
-    private readonly mcpWebhookService: McpWebhookService,
+    private readonly queueService: QueueService,
   ) {
     this.logger.log('ProspectProcessor initialized. Listening for jobs on "prospect-processing" queue.');
   }
@@ -68,7 +68,7 @@ export class ProspectProcessor {
       // The processor's main job is to consume the event stream and pass events
       // to the webhook service, which contains the logic for handling each event type.
       for await (const event of eventStream) {
-        await this.mcpWebhookService.processStreamedEvent(event);
+        await this.queueService.processStreamedEvent(event);
       }
 
       await job.progress(100);

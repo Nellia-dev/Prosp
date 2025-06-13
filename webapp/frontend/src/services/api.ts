@@ -19,7 +19,6 @@ import type {
   BusinessContextResponse,
   ChatMessageRequest,
   ChatMessageResponse,
-  // DashboardMetricsResponse is now imported from nellia.types for metricsApi
   PerformanceMetricsResponse,
   AgentPerformanceResponse,
   LeadStatsResponse,
@@ -27,6 +26,9 @@ import type {
   UserPlanStatusResponse,
   ProspectJob,
 } from '../types/api';
+
+// Import dashboard metrics from unified types - perfect alignment with backend
+import type { DashboardMetricsResponse } from '../types/api';
 
 // Export the apiClient for use in other parts of the application
 export { apiClient };
@@ -201,15 +203,13 @@ export const chatApi = {
   },
 };
 
-import type { DashboardMetricsResponse as NelliaDashboardMetricsResponse } from '../types/nellia'; // Corrected import path
-
-// Metrics API
+// Metrics API - using unified types for perfect alignment
 export const metricsApi = {
-  getDashboard: async (): Promise<NelliaDashboardMetricsResponse> => { // Use the new type
+  getDashboard: async (): Promise<DashboardMetricsResponse> => {
     try {
-      const response = await apiClient.get<ApiResponse<NelliaDashboardMetricsResponse>>('/metrics/dashboard');
+      const response = await apiClient.get<ApiResponse<DashboardMetricsResponse>>('/metrics/dashboard');
       if (response.data && response.data.data) {
-        // Ensure lastUpdated is a string, as expected by NelliaDashboardMetricsResponse on frontend
+        // Ensure lastUpdated is a string, as expected by DashboardMetricsResponse
         const metrics = response.data.data;
         if (metrics.lastUpdated && typeof metrics.lastUpdated !== 'string') {
           metrics.lastUpdated = new Date(metrics.lastUpdated).toISOString();
@@ -221,7 +221,7 @@ export const metricsApi = {
       console.error('Error fetching dashboard metrics from API:', error);
       // Fallthrough to return default metrics on error
     }
-    // Fallback default if API call fails or data is malformed
+    // Fallback default if API call fails or data is malformed - aligned with DashboardMetricsResponse
     return {
       totalLeads: 0,
       totalAgents: 0,
@@ -256,41 +256,21 @@ export const metricsApi = {
   },
 };
 
-// Prospect API
-// Types for ProspectAPI (should match types in useProspect.ts or a shared types file)
-// These types are placeholders and should align with the actual DTOs/interfaces
-// used in useProspect.ts and the backend ProspectController/ProspectService.
-
-interface ProspectJobResponse {
-  jobId: string | number;
-  status: string;
-  progress?: number | object;
-  createdAt?: string; // ISO Date string
-  finishedAt?: string | null; // ISO Date string
-  error?: string | null;
-  leadsCreated?: number;
-  // Add other fields from backend's ProspectJobStatus if needed
-}
-
-interface ProspectJobStatusDetailsResponse extends ProspectJobResponse {
-  data?: unknown; // Raw job data from Bull
-  result?: unknown; // Job result if completed
-  processedAt?: string | null; // ISO Date string
-  // Add other fields from backend's ProspectJobStatus
-}
-
+// Prospect API - using unified types for perfect alignment with backend and hooks
 export const prospectApi = {
   startProspectingJob: async (businessContext: BusinessContextRequest): Promise<{ jobId: string | number; status: string }> => {
     const response = await apiClient.post<{ jobId: string | number; status: string }>('/prospect/start', businessContext);
     return response.data;
   },
+  
   getJobs: async (): Promise<ProspectJob[]> => {
     const response = await apiClient.get<ApiResponse<ProspectJob[]>>('/prospect/jobs');
     return response.data.data || [];
   },
-  getJobStatus: async (jobId: string): Promise<ProspectJobStatusDetailsResponse> => {
-    // Backend /prospect/status/:jobId returns ProspectJobStatus which should map to ProspectJobStatusDetailsResponse
-    const response = await apiClient.get<ApiResponse<ProspectJobStatusDetailsResponse>>(`/prospect/status/${jobId}`);
+  
+  getJobStatus: async (jobId: string): Promise<ProspectJob> => {
+    // Backend /prospect/status/:jobId returns ProspectJobStatus which aligns with ProspectJob type
+    const response = await apiClient.get<ApiResponse<ProspectJob>>(`/prospect/status/${jobId}`);
     return response.data.data;
   },
 };

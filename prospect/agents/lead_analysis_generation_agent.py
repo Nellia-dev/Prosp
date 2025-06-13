@@ -20,9 +20,9 @@ class LeadAnalysisGenerationOutput(BaseModel):
 
 
 class LeadAnalysisGenerationAgent(BaseAgent[LeadAnalysisGenerationInput, LeadAnalysisGenerationOutput]):
-    def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "LeadAnalysisGenerationAgent" # Explicitly setting name for clarity if needed
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase):
+        super().__init__(name=name, description=description, llm_client=llm_client)
+        # self.name is already set by super().__init__
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
