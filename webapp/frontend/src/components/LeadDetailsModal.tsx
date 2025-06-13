@@ -94,31 +94,31 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
       onLeadUpdate?.(updatedLead);
       setIsEditing(false);
       toast({
-        title: "Lead Updated",
-        description: "Lead information has been successfully updated.",
+        title: t('lead_updated'),
+        description: t('lead_updated_success'),
       });
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Failed to update lead. Please try again.",
+        title: t('error'),
+        description: t('update_error'),
         variant: "destructive",
       });
     }
   };
 
   const handleDelete = async () => {
-    if (confirm('Are you sure you want to delete this lead?')) {
+    if (confirm(t('delete_confirmation'))) {
       try {
         await deleteLeadMutation.mutateAsync(lead.id);
         toast({
-          title: "Lead Deleted",
-          description: "Lead has been successfully deleted.",
+          title: t('lead_deleted'),
+          description: t('lead_deleted_success'),
         });
         onClose();
       } catch (error) {
         toast({
-          title: "Error",
-          description: "Failed to delete lead. Please try again.",
+          title: t('error'),
+          description: t('delete_error'),
           variant: "destructive",
         });
       }
@@ -129,13 +129,13 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
     try {
       await processLeadMutation.mutateAsync(lead.id);
       toast({
-        title: "Processing Started",
-        description: "Lead processing has been initiated.",
+        title: t('processing_started'),
+        description: t('processing_started_success'),
       });
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Failed to start processing. Please try again.",
+        title: t('error'),
+        description: t('process_error'),
         variant: "destructive",
       });
     }
@@ -179,11 +179,11 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
 
         <Tabs defaultValue="overview" className="w-full">
           <TabsList className="grid w-full grid-cols-5 bg-slate-800">
-            <TabsTrigger value="overview" className="text-slate-300">Overview</TabsTrigger>
-            <TabsTrigger value="details" className="text-slate-300">Details</TabsTrigger>
-            <TabsTrigger value="insights" className="text-slate-300">Insights</TabsTrigger>
-            <TabsTrigger value="strategy" className="text-slate-300">Strategy</TabsTrigger>
-            <TabsTrigger value="actions" className="text-slate-300">Actions</TabsTrigger>
+            <TabsTrigger value="overview" className="text-slate-300">{t('overview')}</TabsTrigger>
+            <TabsTrigger value="details" className="text-slate-300">{t('details')}</TabsTrigger>
+            <TabsTrigger value="insights" className="text-slate-300">{t('insights')}</TabsTrigger>
+            <TabsTrigger value="strategy" className="text-slate-300">{t('strategy')}</TabsTrigger>
+            <TabsTrigger value="actions" className="text-slate-300">{t('actions')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
@@ -193,14 +193,14 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                 <CardHeader>
                   <CardTitle className="text-white text-sm flex items-center">
                     <Building className="w-4 h-4 mr-2" />
-                    Company Information
+                    {t('company_information')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {isEditing ? (
                     <>
                       <div>
-                        <Label className="text-slate-300">Company Name</Label>
+                        <Label className="text-slate-300">{t('company_name')}</Label>
                         <Input
                           value={formData.company_name || ''}
                           onChange={(e) => handleInputChange('company_name', e.target.value)}
@@ -208,7 +208,7 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                         />
                       </div>
                       <div>
-                        <Label className="text-slate-300">Website</Label>
+                        <Label className="text-slate-300">{t('website')}</Label>
                         <Input
                           value={formData.website || ''}
                           onChange={(e) => handleInputChange('website', e.target.value)}
@@ -216,7 +216,7 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                         />
                       </div>
                       <div>
-                        <Label className="text-slate-300">Sector</Label>
+                        <Label className="text-slate-300">{t('sector')}</Label>
                         <Input
                           value={formData.company_sector || ''}
                           onChange={(e) => handleInputChange('company_sector', e.target.value)}
@@ -252,14 +252,14 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                 <CardHeader>
                   <CardTitle className="text-white text-sm flex items-center">
                     <TrendingUp className="w-4 h-4 mr-2" />
-                    Performance Scores
+                    {t('performance_scores')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {isEditing ? (
                     <>
                       <div>
-                        <Label className="text-slate-300">Relevance Score</Label>
+                        <Label className="text-slate-300">{t('relevance_score')}</Label>
                         <Input
                           type="number"
                           min="0"
@@ -271,7 +271,7 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                         />
                       </div>
                       <div>
-                        <Label className="text-slate-300">ROI Potential</Label>
+                        <Label className="text-slate-300">{t('roi_potential')}</Label>
                         <Input
                           type="number"
                           min="0"
@@ -283,7 +283,7 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                         />
                       </div>
                       <div>
-                        <Label className="text-slate-300">Brazilian Market Fit</Label>
+                        <Label className="text-slate-300">{t('brazilian_market_fit')}</Label>
                         <Input
                           type="number"
                           min="0"
@@ -298,19 +298,19 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                   ) : (
                     <>
                       <div className="flex justify-between items-center">
-                        <span className="text-slate-300">Relevance</span>
+                        <span className="text-slate-300">{t('relevance')}</span>
                         <span className={`font-bold ${getScoreColor(lead.relevance_score)}`}>
                           {(lead.relevance_score * 100).toFixed(1)}%
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-slate-300">ROI Potential</span>
+                        <span className="text-slate-300">{t('roi_potential')}</span>
                         <span className={`font-bold ${getScoreColor(lead.roi_potential_score)}`}>
                           {(lead.roi_potential_score * 100).toFixed(1)}%
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-slate-300">Market Fit</span>
+                        <span className="text-slate-300">{t('market_fit')}</span>
                         <span className={`font-bold ${getScoreColor(lead.brazilian_market_fit)}`}>
                           {(lead.brazilian_market_fit * 100).toFixed(1)}%
                         </span>

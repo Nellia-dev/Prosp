@@ -168,7 +168,7 @@ const DashboardContent = () => {
   if (agentsLoading || leadsLoading || metricsLoading || businessContextLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950 flex items-center justify-center">
-        <div className="text-white text-xl">Loading...</div>
+        <div className="text-white text-xl">{t('loading')}</div>
       </div>
     );
   }
@@ -177,7 +177,7 @@ const DashboardContent = () => {
   if (agentsError || leadsError || metricsError || businessContextError) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950 flex items-center justify-center">
-        <div className="text-red-400 text-xl">Error loading data. Please try again later.</div>
+        <div className="text-red-400 text-xl">{t('error_loading_data')}</div>
       </div>
     );
   }
@@ -190,14 +190,12 @@ const DashboardContent = () => {
           {!showBusinessContextForm ? (
             <>
               <Zap size={48} className="mx-auto mb-4 text-green-500" />
-              <h2 className="text-2xl font-bold mb-4">Bem-vindo ao Nellia Prospector!</h2>
+              <h2 className="text-2xl font-bold mb-4">{t('welcome_nellia')}</h2>
               <p className="mb-6 text-slate-300">
-                Parece que é sua primeira vez aqui.
-                <br />
-                Vamos configurar seu contexto de negócios para começar a encontrar leads.
+                {t('first_time_message')}
               </p>
               <Button onClick={() => setShowBusinessContextForm(true)} className="bg-green-600 hover:bg-green-700">
-                Configurar Contexto de Negócios
+                {t('setup_business_context')}
               </Button>
             </>
           ) : (
@@ -250,7 +248,7 @@ const DashboardContent = () => {
               </Select>
               
               <Badge variant="outline" className="bg-green-600/20 text-green-400 border-green-600">
-                Real-time Active
+                {t('real_time_active')}
               </Badge>
             </div>
           </div>
@@ -287,7 +285,7 @@ const DashboardContent = () => {
             </TabsTrigger>
             <TabsTrigger value="context" className="text-white data-[state=active]:bg-slate-700">
               <Settings className="w-4 h-4 mr-2" />
-              Contexto
+              {t('contexto')}
             </TabsTrigger>
           </TabsList>
 
@@ -297,12 +295,12 @@ const DashboardContent = () => {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-white text-lg flex items-center">
                     <TrendingUp className="w-5 h-5 mr-2" />
-                    Taxa de Sucesso
+                    {t('success_rate_title')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold text-white">{metrics.successRate.toFixed(1)}%</div>
-                  <p className="text-green-200 text-sm">De leads concluídos</p>
+                  <p className="text-green-200 text-sm">{t('completed_leads')}</p>
                 </CardContent>
               </Card>
 
@@ -310,12 +308,12 @@ const DashboardContent = () => {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-white text-lg flex items-center">
                     <Users className="w-5 h-5 mr-2" />
-                    Total de Leads
+                    {t('total_leads_title')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold text-white">{metrics.totalLeads}</div>
-                  <p className="text-blue-200 text-sm">No sistema</p>
+                  <p className="text-blue-200 text-sm">{t('in_system')}</p>
                 </CardContent>
               </Card>
 
@@ -323,12 +321,12 @@ const DashboardContent = () => {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-white text-lg flex items-center">
                     <Activity className="w-5 h-5 mr-2" />
-                    Agentes
+                    {t('agents_title')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold text-white">{metrics.activeAgents}/{metrics.totalAgents}</div>
-                  <p className="text-purple-200 text-sm">Ativos / Total</p>
+                  <p className="text-purple-200 text-sm">{t('active_total')}</p>
                 </CardContent>
               </Card>
             </div>
@@ -338,24 +336,24 @@ const DashboardContent = () => {
             <Card className="md:col-span-3 bg-slate-800/50 border-slate-700">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                     <CardTitle className="text-lg font-medium text-white">
-                        Automated Prospecting
+                        {t('automated_prospecting')}
                     </CardTitle>
                     <Zap className="w-5 h-5 text-green-500" />
                 </CardHeader>
                 <CardContent>
                     <p className="text-sm text-slate-400 mb-4">
-                        Launch the AI agents to automatically find and qualify new leads based on your business context.
+                        {t('automated_prospecting_desc')}
                     </p>
                     <Button
                         onClick={handleStartHarvesting}
                         disabled={!businessContext || startProspectingMutation.isPending}
                         className="w-full bg-green-600 hover:bg-green-700 disabled:bg-slate-600 disabled:cursor-not-allowed"
                     >
-                        {startProspectingMutation.isPending ? 'Harvesting in Progress...' : 'Start New Harvest'}
+                        {startProspectingMutation.isPending ? t('harvesting_progress') : t('start_new_harvest')}
                     </Button>
                     {startProspectingMutation.isError && (
                         <p className="text-red-400 text-sm mt-2">
-                            Error starting harvesting: {startProspectingMutation.error.message}
+                            {t('error_starting_harvesting')} {startProspectingMutation.error.message}
                         </p>
                     )}
                 </CardContent>
@@ -377,8 +375,8 @@ const DashboardContent = () => {
           </TabsContent>
 
           <TabsContent value="agents" className="space_y-6">
-            {agentsLoading && <p className="text-white">Loading agents...</p>}
-            {!agentsLoading && agentsError && <p className="text-red-400">Error loading agents.</p>}
+            {agentsLoading && <p className="text-white">{t('loading_agents')}</p>}
+            {!agentsLoading && agentsError && <p className="text-red-400">{t('error_loading_agents')}</p>}
             {!agentsLoading && !agentsError && agents.length === 0 && (
               <AgentsEmptyState />
             )}
@@ -392,8 +390,8 @@ const DashboardContent = () => {
           </TabsContent>
 
           <TabsContent value="leads" className="space-y-6">
-            {leadsLoading && <p className="text-white">Loading leads...</p>}
-            {!leadsLoading && leadsError && <p className="text-red-400">Error loading leads.</p>}
+            {leadsLoading && <p className="text-white">{t('loading_leads')}</p>}
+            {!leadsLoading && leadsError && <p className="text-red-400">{t('error_loading_leads')}</p>}
             {!leadsLoading && !leadsError && leads.length === 0 && (
               // TODO: The onStartProspecting function needs to be defined.
               // For now, it will be a console log.

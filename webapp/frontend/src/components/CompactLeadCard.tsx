@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Globe, Eye } from "lucide-react";
 import { LeadData } from "../types/unified";
 import { useState } from "react";
+import { useTranslation } from "../hooks/useTranslation";
 
 interface EnrichmentEvent {
   status_message?: string;
@@ -18,6 +19,7 @@ interface CompactLeadCardProps {
 }
 
 export const CompactLeadCard = ({ lead, onExpand, isUpdated, enrichmentEvent }: CompactLeadCardProps) => {
+  const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
 
   const getQualificationColor = (tier: string) => {
@@ -60,8 +62,8 @@ export const CompactLeadCard = ({ lead, onExpand, isUpdated, enrichmentEvent }: 
         {/* Enrichment Status or Scores */}
         {enrichmentEvent ? (
           <div className="text-center text-xs text-slate-300 py-2">
-            <p className="font-semibold">{enrichmentEvent.status_message || 'Processing...'}</p>
-            {enrichmentEvent.agent_name && <p className="text-slate-500">Agent: {enrichmentEvent.agent_name}</p>}
+            <p className="font-semibold">{enrichmentEvent.status_message || t('processing')}</p>
+            {enrichmentEvent.agent_name && <p className="text-slate-500">{t('agent')}: {enrichmentEvent.agent_name}</p>}
           </div>
         ) : (
           <>
