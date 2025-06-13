@@ -65,7 +65,7 @@ class HybridPipelineOrchestrator(PipelineOrchestrator):
         # A/B testing or strategy selection parameters can be added here
         pipeline_selection_strategy: str = "default" # e.g., "default", "persona_focused_first", "enhanced_first"
     ):
-        super().__init__(business_context, user_id, job_id)
+        super().__init__(business_context, user_id, job_id, use_hybrid=False)
         self.pipeline_selection_strategy_name = pipeline_selection_strategy
         self.selection_strategy = AgentSelectionStrategy() # Instantiate the strategy
 

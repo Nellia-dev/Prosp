@@ -142,6 +142,7 @@ export class BusinessContextController {
       industry_focus: entity.industry_focus,
       competitive_advantage: entity.competitive_advantage,
       geographic_focus: entity.geographic_focus,
+      user_search_query: entity.user_search_query,
       is_active: entity.is_active,
       created_at: entity.created_at.toISOString(),
       updated_at: entity.updated_at.toISOString(),

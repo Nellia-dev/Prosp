@@ -65,12 +65,39 @@ app = FastAPI(
 @app.on_event("startup")
 async def startup_event():
     logger.add(sys.stderr, level="INFO", format="{time} {level} {message}")
-    logger.info("MCP Server starting up...")
-    # You can add any other startup logic here, like checking API keys
-    if not os.getenv("GEMINI_API_KEY"):
-        logger.warning("GEMINI_API_KEY is not set in the environment.")
-    if not os.getenv("TAVILY_API_KEY"):
-        logger.warning("TAVILY_API_KEY is not set in the environment.")
+    logger.info("🚀 MCP Server starting up...")
+    
+    # Check API keys - ADK1 uses GOOGLE_API_KEY, not GEMINI_API_KEY
+    google_api_key = os.getenv("GOOGLE_API_KEY")
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    tavily_api_key = os.getenv("TAVILY_API_KEY")
+    
+    if not google_api_key and not gemini_api_key:
+        logger.error("❌ Neither GOOGLE_API_KEY nor GEMINI_API_KEY is set in the environment.")
+        logger.error("   ADK1 agent requires GOOGLE_API_KEY to function properly.")
+    elif google_api_key:
+        logger.info("✅ GOOGLE_API_KEY found (required for ADK1)")
+    elif gemini_api_key:
+        logger.warning("⚠️ Only GEMINI_API_KEY found. ADK1 requires GOOGLE_API_KEY.")
+        # Set GOOGLE_API_KEY from GEMINI_API_KEY if available
+        os.environ["GOOGLE_API_KEY"] = gemini_api_key
+        logger.info("🔄 Set GOOGLE_API_KEY from GEMINI_API_KEY for ADK1 compatibility")
+    
+    if not tavily_api_key:
+        logger.error("❌ TAVILY_API_KEY is not set in the environment.")
+        logger.error("   ADK1 agent requires TAVILY_API_KEY for web search functionality.")
+    else:
+        logger.info("✅ TAVILY_API_KEY found")
+    
+    # Test PipelineOrchestrator import
+    try:
+        logger.info("🧪 Testing PipelineOrchestrator import...")
+        from pipeline_orchestrator import PipelineOrchestrator
+        logger.info("✅ PipelineOrchestrator imported successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to import PipelineOrchestrator: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 @app.get("/health", tags=["System"])
@@ -90,9 +117,15 @@ async def execute_streaming_prospect(request: Request):
         business_context = payload.get("business_context")
         user_id = payload.get("user_id")
         job_id = payload.get("job_id")
+        user_search_query = payload.get("user_search_query", "")  # Optional user input for search
 
         if not all([business_context, user_id, job_id]):
             raise HTTPException(status_code=400, detail="Missing required fields: business_context, user_id, job_id")
+
+        # Add user search query to business context if provided
+        if user_search_query.strip():
+            business_context["user_search_query"] = user_search_query.strip()
+            logger.info(f"User provided additional search query: '{user_search_query}'")
 
         logger.info(f"Received request to execute pipeline for job_id: {job_id}, user_id: {user_id}")
 
@@ -101,25 +134,38 @@ async def execute_streaming_prospect(request: Request):
         webhook_enabled = os.getenv("WEBAPP_WEBHOOK_ENABLED", "true").lower() == "true"
         webhook_sender = WebhookEventSender(webapp_webhook_url, webhook_enabled)
 
-        logger.info("[PIPELINE_STEP] Initializing PipelineOrchestrator")
-        orchestrator = PipelineOrchestrator(
-            business_context=business_context,
-            user_id=user_id,
-            job_id=job_id,
-            use_hybrid= True,  # Use hybrid mode for both Gemini and TAVILY
-        )
+        logger.info(f"[PIPELINE_STEP] Initializing PipelineOrchestrator for job {job_id}")
+        
+        try:
+            orchestrator = PipelineOrchestrator(
+                business_context=business_context,
+                user_id=user_id,
+                job_id=job_id,
+                use_hybrid=True,  # Use hybrid mode for both Gemini and TAVILY
+            )
+            logger.info(f"✅ PipelineOrchestrator initialized successfully for job {job_id}")
+        except Exception as init_error:
+            logger.error(f"❌ Failed to initialize PipelineOrchestrator for job {job_id}: {init_error}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Failed to initialize pipeline: {str(init_error)}")
 
         async def event_stream():
             """The async generator that yields events from the pipeline."""
             try:
-                logger.info(f"Starting pipeline execution for job_id: {job_id}")
+                logger.info(f"🚀 Starting pipeline execution for job_id: {job_id}")
+                event_count = 0
+                
                 # This is the key fix - actually call the main pipeline method
                 async for event in orchestrator.execute_streaming_pipeline():
+                    event_count += 1
+                    
                     # Ensure user_id and job_id are in every event
                     event["user_id"] = user_id
                     event["job_id"] = job_id
                     
-                    logger.debug(f"Pipeline event: {event.get('event_type', 'unknown')}")
+                    event_type = event.get('event_type', 'unknown')
+                    logger.info(f"📨 Pipeline event #{event_count}: {event_type}")
                     
                     # Send to webapp webhook
                     await webhook_sender.send_event(event)
@@ -128,7 +174,19 @@ async def execute_streaming_prospect(request: Request):
                     yield f"data: {json.dumps(event)}\n\n"
                     await asyncio.sleep(0.01) # Small sleep to prevent blocking
                     
-                logger.info(f"Pipeline execution completed for job_id: {job_id}")
+                logger.info(f"✅ Pipeline execution completed for job_id: {job_id} - Total events: {event_count}")
+                
+                if event_count == 0:
+                    logger.error(f"❌ CRITICAL: Pipeline yielded NO events for job {job_id} - this indicates the infinite loop issue!")
+                    error_event = {
+                        "event_type": "pipeline_error",
+                        "job_id": job_id,
+                        "user_id": user_id,
+                        "error_message": "Pipeline yielded no events - possible infinite loop or initialization failure",
+                        "timestamp": "now"
+                    }
+                    await webhook_sender.send_event(error_event)
+                    yield f"data: {json.dumps(error_event)}\n\n"
                     
             except Exception as e:
                 logger.error(f"Error in pipeline execution for job_id {job_id}: {e}")

@@ -272,6 +272,7 @@ import React, { useState } from 'react';
  
   export const ProspectDashboard = () => {
     const { t } = useTranslation();
+    const [searchQuery, setSearchQuery] = useState('');
     const [enrichmentStatus, setEnrichmentStatus] = useState<EnrichmentStatus>({});
     const { data: jobsData = [], isLoading: jobsLoading, error: jobsError, refetch: refetchJobs } = useProspectJobs();
     const { mutate: startProspectingJob, isPending: startProspectingLoading } = useStartProspectingJob();
@@ -318,7 +319,11 @@ import React, { useState } from 'react';
  
     const handleStartProspecting = () => {
       if (businessContext) {
-        startProspectingJob(businessContext, {
+        const contextWithQuery = {
+          ...businessContext,
+          user_search_query: searchQuery,
+        }
+        startProspectingJob(contextWithQuery, {
           onSuccess: () => {
             toast.success(t('prospectDashboard.jobStartedSuccess'));
           },
@@ -388,6 +393,13 @@ import React, { useState } from 'react';
             <CardDescription className="text-slate-400">
               {t('prospectDashboard.description')}
             </CardDescription>
+            <Input
+              type="search"
+              placeholder={t('prospectDashboard.searchPlaceholder')}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="mt-4 bg-slate-700 border-slate-600 text-slate-200 placeholder-slate-400 focus:ring-offset-slate-800 focus:ring-blue-500"
+            />
           </CardHeader>
           <CardContent>
             {activeJobs.length > 0 ? (
