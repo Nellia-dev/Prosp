@@ -44,6 +44,9 @@ export class BusinessContextEntity {
   @Column({ type: 'text', array: true, default: ['Brasil'] })
   geographic_focus: string[];
 
+  @Column({ type: 'text', nullable: true })
+  search_query: string;
+
   @Column({ type: 'boolean', default: true })
   is_active: boolean;
 

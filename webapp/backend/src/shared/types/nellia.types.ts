@@ -60,6 +60,7 @@ export interface BusinessContext {
   competitors?: string[];
   industry_focus: string[];
   geographic_focus?: string[];
+  search_query?: string; // Added for specific prospecting search queries
   is_active?: boolean;
   created_at?: string;
   updated_at?: string;
@@ -208,6 +209,11 @@ export class CreateBusinessContextDto {
   @IsString({ each: true })
   @IsOptional()
   geographic_focus?: string[];
+
+  @ApiProperty({ required: false, description: 'Specific search query for prospecting runs' })
+  @IsString()
+  @IsOptional()
+  search_query?: string;
 }
 
 export class UpdateBusinessContextDto {
@@ -264,6 +270,11 @@ export class UpdateBusinessContextDto {
   @IsString({ each: true })
   @IsOptional()
   geographic_focus?: string[];
+
+  @ApiProperty({ required: false, description: 'Specific search query for prospecting runs' })
+  @IsString()
+  @IsOptional()
+  search_query?: string;
 }
 
 // Metrics-related types

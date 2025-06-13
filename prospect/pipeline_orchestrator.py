@@ -352,7 +352,17 @@ class PipelineOrchestrator:
         Agora integrado com persistência de contexto.
         """
         start_time = time.time()
-        yield PipelineStartEvent(job_id=self.job_id, user_id=self.user_id, initial_query=self.business_context.get("search_query", "N/A")).to_dict()
+        search_query_for_event = self.business_context.get("search_query", "N/A")
+        max_leads_for_event = self.business_context.get("max_leads_to_generate", 10) # Get for event
+
+        yield PipelineStartEvent(
+            event_type="pipeline_start",
+            timestamp=datetime.utcnow().isoformat(),
+            job_id=self.job_id,
+            user_id=self.user_id,
+            initial_query=search_query_for_event,
+            max_leads_to_generate=max_leads_for_event
+        ).to_dict()
         
         # 1. Executar o Harvester (que já serializa o contexto)
         search_query = self.business_context.get("search_query", "empresas de tecnologia")
@@ -601,7 +611,7 @@ class PipelineOrchestrator:
         # 2. Executar o harvester Google (delegação para o método existente)
         return self._search_leads(search_query, max_leads) # Corrected to use _search_leads
 
-    async def generate_executive_summary(self, analyzed_lead: AnalyzedLead, external_intelligence_data: str = "") -> Optional[str]:
+    async def generate_executive_summary(self, analyzed_lead: 'AnalyzedLead', external_intelligence_data: str = "") -> Optional[str]: # type: ignore
         """
         Generates an executive summary report for an analyzed lead. (Phase 2 Integration)
         """
@@ -609,10 +619,10 @@ class PipelineOrchestrator:
             logger.warning("LeadAnalysisGenerationAgent not available. Skipping executive summary.")
             return None
 
-        logger.info(f"[{self.job_id}] Generating executive summary for: {analyzed_lead.validated_lead.site_data.url}")
+        logger.info(f"[{self.job_id}] Generating executive summary for: {analyzed_lead.validated_lead.site_data.url}") # type: ignore
         try:
             input_data = LeadAnalysisGenerationInput(
-                lead_data_str=json.dumps(analyzed_lead.analysis.model_dump(), ensure_ascii=False),
+                lead_data_str=json.dumps(analyzed_lead.analysis.model_dump(), ensure_ascii=False), # type: ignore
                 enriched_data=external_intelligence_data,
                 product_service_offered=self.product_service_context
             )
@@ -627,7 +637,7 @@ class PipelineOrchestrator:
             logger.error(f"[{self.job_id}] Exception during executive summary generation: {e}")
             return None
 
-    async def generate_narrative_persona(self, analyzed_lead: AnalyzedLead, external_intelligence_data: str = "") -> Optional[str]:
+    async def generate_narrative_persona(self, analyzed_lead: 'AnalyzedLead', external_intelligence_data: str = "") -> Optional[str]: # type: ignore
         """
         Generates a narrative B2B persona profile. (Phase 2 Integration)
         """
@@ -635,22 +645,22 @@ class PipelineOrchestrator:
             logger.warning("B2BPersonaCreationAgent not available. Skipping narrative persona generation.")
             return None
 
-        logger.info(f"[{self.job_id}] Generating narrative persona for: {analyzed_lead.validated_lead.site_data.url}")
+        logger.info(f"[{self.job_id}] Generating narrative persona for: {analyzed_lead.validated_lead.site_data.url}") # type: ignore
         try:
             # Construct lead_analysis string for the agent
             lead_analysis_summary = (
-                f"Company: {analyzed_lead.validated_lead.site_data.url}\n"
-                f"Sector: {analyzed_lead.analysis.company_sector}\n"
-                f"Services: {', '.join(analyzed_lead.analysis.main_services)}\n"
-                f"Challenges: {', '.join(analyzed_lead.analysis.potential_challenges)}\n"
-                f"Diagnosis: {analyzed_lead.analysis.general_diagnosis}\n"
+                f"Company: {analyzed_lead.validated_lead.site_data.url}\n" # type: ignore
+                f"Sector: {analyzed_lead.analysis.company_sector}\n" # type: ignore
+                f"Services: {', '.join(analyzed_lead.analysis.main_services)}\n" # type: ignore
+                f"Challenges: {', '.join(analyzed_lead.analysis.potential_challenges)}\n" # type: ignore
+                f"Diagnosis: {analyzed_lead.analysis.general_diagnosis}\n" # type: ignore
                 f"Enriched Data: {external_intelligence_data[:500]}..." # Truncate for brevity
             )
 
             input_data = B2BPersonaCreationInput(
                 lead_analysis=lead_analysis_summary,
                 product_service_offered=self.product_service_context,
-                lead_url=str(analyzed_lead.validated_lead.site_data.url)
+                lead_url=str(analyzed_lead.validated_lead.site_data.url) # type: ignore
             )
             persona_output = await self.b2b_persona_creation_agent.execute_async(input_data)
 
