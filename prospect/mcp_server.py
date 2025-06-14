@@ -33,7 +33,7 @@ class WebhookEventSender:
             
         try:
             response = await self.client.post(
-                f"{self.webhook_url},
+                f"{self.webhook_url}",
                 json=event,
                 headers={"Content-Type": "application/json"}
             )
