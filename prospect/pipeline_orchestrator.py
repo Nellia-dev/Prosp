@@ -508,12 +508,19 @@ class PipelineOrchestrator:
         except Exception as e:
             logger.error(f"[PIPELINE_STEP] Failed to generate AI search query: {e}")
             # Fallback to basic query generation
-            search_query = self._generate_basic_search_query(self.business_context, user_search_input)
-            # Safety check to ensure search_query is never None
-            if not search_query:
+            try:
+                search_query = self._generate_basic_search_query(self.business_context, user_search_input)
+            except Exception as fallback_error:
+                logger.error(f"[PIPELINE_STEP] Fallback query generation also failed: {fallback_error}")
+                search_query = None
+            
+            # Safety check to ensure search_query is never None or empty
+            if not search_query or not str(search_query).strip():
                 search_query = "empresas B2B inovadoras tecnologia"
-                logger.warning(f"[PIPELINE_STEP] Fallback search query was empty, using default: '{search_query}'")
+                logger.warning(f"[PIPELINE_STEP] Fallback search query was empty or invalid, using default: '{search_query}'")
             else:
+                # Ensure it's a string and trimmed
+                search_query = str(search_query).strip()
                 logger.info(f"[PIPELINE_STEP] Using fallback search query: '{search_query}'")
         
         # --- End Search Query Generation ---
@@ -872,13 +879,14 @@ class PipelineOrchestrator:
             query_parts.append(user_input.strip())
         
         # Combine and clean up
-        search_query = " ".join(str(part) for part in query_parts[:8] if part)  # Limit to 8 terms to avoid overly long queries
+        search_query = " ".join(str(part) for part in query_parts[:8] if part and str(part).strip())  # Limit to 8 terms to avoid overly long queries
         
         # Ensure we always have a valid string
-        search_query = search_query.strip() if search_query else ""
+        if search_query:
+            search_query = search_query.strip()
         
         # If nothing meaningful was extracted, use a default
-        if not search_query:
+        if not search_query or len(search_query.strip()) == 0:
             search_query = "empresas B2B inovadoras tecnologia"
         
         logger.info(f"[QUERY_GEN] Generated basic search query: '{search_query}'")
