@@ -78,7 +78,7 @@ class AdvancedProspectProfiler:
                     "max_output_tokens": 512,
                 }
                 self.llm_client = genai.GenerativeModel(
-                    'gemini-1.0-pro', # Changed from 'gemini-pro'
+                    'gemini-1.5-flash', # Updated to current available model
                     generation_config=generation_config
                 )
                 logger.success("Profiler: Cliente LLM Google Gemini inicializado com sucesso.")

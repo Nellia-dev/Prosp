@@ -33,12 +33,12 @@ class WebhookEventSender:
             
         try:
             response = await self.client.post(
-                f"{self.webhook_url}/queue/mcp/event-stream",
+                f"{self.webhook_url},
                 json=event,
                 headers={"Content-Type": "application/json"}
             )
             
-            if response.status_code == 200:
+            if response.status_code in [200, 201]:
                 logger.debug(f"Webhook event sent successfully: {event.get('event_type', 'unknown')}")
             else:
                 logger.warning(f"Webhook failed with status {response.status_code}: {response.text}")
@@ -129,9 +129,22 @@ async def execute_streaming_prospect(request: Request):
 
         logger.info(f"Received request to execute pipeline for job_id: {job_id}, user_id: {user_id}")
 
-        # Initialize webhook sender - now uses queue endpoint
-        webapp_webhook_url = os.getenv("WEBAPP_WEBHOOK_URL", "http://webapp-backend:3001")
+        # Initialize webhook sender with better error handling
+        webapp_webhook_url = os.getenv("NESTJS_EVENT_WEBHOOK_URL", "http://backend:3001")
         webhook_enabled = os.getenv("WEBAPP_WEBHOOK_ENABLED", "true").lower() == "true"
+        
+        # Test webhook connectivity and disable if unreachable
+        if webhook_enabled:
+            try:
+                # Quick connectivity test
+                import socket
+                hostname = webapp_webhook_url.replace("http://", "").replace("https://", "").split(":")[0]
+                socket.gethostbyname(hostname)
+                logger.info(f"Webhook hostname {hostname} is resolvable, webhooks enabled")
+            except socket.gaierror:
+                logger.warning(f"Webhook hostname {hostname} is not resolvable, disabling webhooks for this run")
+                webhook_enabled = False
+        
         webhook_sender = WebhookEventSender(webapp_webhook_url, webhook_enabled)
 
         logger.info(f"[PIPELINE_STEP] Initializing PipelineOrchestrator for job {job_id}")

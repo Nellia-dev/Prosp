@@ -4,6 +4,7 @@ Selects and executes different lead processing pipelines based on lead character
 or A/B testing strategies.
 """
 import json
+from datetime import datetime
 from typing import Any, AsyncIterator, Dict, Optional
 
 from loguru import logger
@@ -13,7 +14,7 @@ from agents.enhanced_lead_processor import EnhancedLeadProcessor
 from agents.persona_driven_lead_processor import PersonaDrivenLeadProcessor
 from data_models.lead_structures import AnalyzedLead, ComprehensiveProspectPackage, FinalProspectPackage, SiteData
 from core_logic.llm_client import LLMClientFactory, LLMProvider
-from event_models import StatusUpdateEvent, PipelineErrorEvent, PipelineEndEvent, PipelineStartEvent, LeadGeneratedEvent, LeadEnrichmentEndEvent
+from event_models import StatusUpdateEvent, PipelineErrorEvent, PipelineEndEvent, PipelineStartEvent, LeadGeneratedEvent, LeadEnrichmentEndEvent, LeadEnrichmentStartEvent
 
 # Placeholder for lead characteristics model - to be defined based on actual needs
 class LeadCharacteristics(Dict): # Using Dict as a placeholder
@@ -123,35 +124,79 @@ class HybridPipelineOrchestrator(PipelineOrchestrator):
     async def _enrich_lead(self, lead_data: Dict, lead_id: str) -> AsyncIterator[Dict]:
         """
         Overrides the parent _enrich_lead to select and use a specific processor.
+        NOTE: The main pipeline_orchestrator already emits LeadEnrichmentStartEvent,
+        so we don't emit it here to avoid duplication.
         """
-        # Standard initial intake and analysis
-        site_data = SiteData(url=lead_data.get("website"), extracted_text_content=lead_data.get("description"))
-        validated_lead = self.lead_intake_agent.execute(site_data) # Assuming lead_intake_agent is initialized in parent
-        analyzed_lead_obj: AnalyzedLead = self.lead_analysis_agent.execute(validated_lead) # Assuming lead_analysis_agent is initialized
-
-        # --- Pipeline Selection Logic ---
-        lead_characteristics = self._get_lead_characteristics(analyzed_lead_obj)
-        selected_pipeline_type = self.selection_strategy.select_pipeline_type(lead_characteristics)
-        
-        logger.info(f"[{self.job_id}-{lead_id}] Selected pipeline: '{selected_pipeline_type}' for lead {lead_data.get('company_name')}")
-        yield StatusUpdateEvent(job_id=self.job_id, lead_id=lead_id, status_message=f"Selected pipeline: {selected_pipeline_type}").to_dict()
-
-        processor_to_use = None
-        if selected_pipeline_type == "persona_driven":
-            processor_to_use = self.persona_driven_processor
-        elif selected_pipeline_type == "enhanced_comprehensive":
-            processor_to_use = self.enhanced_processor
-        else: # Default to enhanced
-            logger.warning(f"Unknown pipeline type '{selected_pipeline_type}', defaulting to 'enhanced_comprehensive'.")
-            processor_to_use = self.enhanced_processor
-        
-        # --- Execute Selected Pipeline ---
-        # The sub-processors (EnhancedLeadProcessor, PersonaDrivenLeadProcessor)
-        # are expected to yield events themselves if they are designed for streaming.
-        # If they return a single package, we adapt.
-
-        final_package_data = None
         try:
+            logger.info(f"[{self.job_id}-{lead_id}] Starting hybrid enrichment for {lead_data.get('company_name', 'Unknown')}")
+            
+            # Standard initial intake and analysis - fix SiteData construction
+            # Check if we have enriched content from ADK1
+            extracted_content = lead_data.get("description", "")
+            adk1_enrichment = lead_data.get("adk1_enrichment", {})
+            
+            # Use full_content from ADK1 if available, otherwise use description
+            if adk1_enrichment.get("full_content"):
+                extracted_content = adk1_enrichment["full_content"]
+            elif not extracted_content and adk1_enrichment.get("qualification_summary"):
+                extracted_content = adk1_enrichment["qualification_summary"]
+            
+            # Set appropriate extraction status message based on content availability
+            if extracted_content and len(extracted_content.strip()) > 50:
+                extraction_status = "Extração bem-sucedida via ADK1 harvester"
+            else:
+                extraction_status = "Extração limitada - usando dados básicos do ADK1"
+            
+            site_data = SiteData(
+                url=lead_data.get("website", "http://example.com/unknown"),
+                extracted_text_content=extracted_content,
+                extraction_status_message=extraction_status
+            )
+            
+            # Check if agents are properly initialized
+            if not hasattr(self, 'lead_intake_agent') or self.lead_intake_agent is None:
+                logger.error(f"[{self.job_id}-{lead_id}] lead_intake_agent is not initialized")
+                raise Exception("lead_intake_agent is not properly initialized")
+                
+            if not hasattr(self, 'lead_analysis_agent') or self.lead_analysis_agent is None:
+                logger.error(f"[{self.job_id}-{lead_id}] lead_analysis_agent is not initialized")
+                raise Exception("lead_analysis_agent is not properly initialized")
+            
+            logger.info(f"[{self.job_id}-{lead_id}] Starting lead intake and analysis for {lead_data.get('company_name', 'Unknown')}")
+            
+            validated_lead = self.lead_intake_agent.execute(site_data)
+            analyzed_lead_obj: AnalyzedLead = self.lead_analysis_agent.execute(validated_lead)
+
+            # --- Pipeline Selection Logic ---
+            lead_characteristics = self._get_lead_characteristics(analyzed_lead_obj)
+            selected_pipeline_type = self.selection_strategy.select_pipeline_type(lead_characteristics)
+            
+            logger.info(f"[{self.job_id}-{lead_id}] Selected pipeline: '{selected_pipeline_type}' for lead {lead_data.get('company_name')}")
+            
+            # Emit status update about pipeline selection
+            status_event = StatusUpdateEvent(
+                event_type="status_update",
+                timestamp=datetime.now().isoformat(),
+                job_id=self.job_id,
+                user_id=self.user_id,
+                status_message=f"Selected pipeline: {selected_pipeline_type}"
+            ).to_dict()
+            # Add lead_id manually since StatusUpdateEvent doesn't accept it as parameter
+            status_event["lead_id"] = lead_id
+            yield status_event
+
+            processor_to_use = None
+            if selected_pipeline_type == "persona_driven":
+                processor_to_use = self.persona_driven_processor
+            elif selected_pipeline_type == "enhanced_comprehensive":
+                processor_to_use = self.enhanced_processor
+            else: # Default to enhanced
+                logger.warning(f"Unknown pipeline type '{selected_pipeline_type}', defaulting to 'enhanced_comprehensive'.")
+                processor_to_use = self.enhanced_processor
+            
+            # --- Execute Selected Pipeline ---
+            final_package_data = None
+            
             if hasattr(processor_to_use, 'execute_enrichment_pipeline'): # For EnhancedLeadProcessor style
                 async for event_or_package in processor_to_use.execute_enrichment_pipeline(analyzed_lead_obj, self.job_id, self.user_id): # type: ignore
                     # Check if it's an event or the final package
@@ -169,35 +214,90 @@ class HybridPipelineOrchestrator(PipelineOrchestrator):
                 result_package: FinalProspectPackage = await processor_to_use.execute_async(analyzed_lead_obj) # type: ignore
                 final_package_data = result_package.model_dump()
                 # We might need to emit a summary event here if not done by the processor
-                yield StatusUpdateEvent(job_id=self.job_id, lead_id=lead_id, status_message=f"{processor_to_use.name} completed.").to_dict()
+                status_event = StatusUpdateEvent(
+                    event_type="status_update",
+                    timestamp=datetime.now().isoformat(),
+                    job_id=self.job_id,
+                    user_id=self.user_id,
+                    status_message=f"{processor_to_use.name} completed."
+                ).to_dict()
+                # Add lead_id manually since StatusUpdateEvent doesn't accept it as parameter
+                status_event["lead_id"] = lead_id
+                yield status_event
             else:
                 raise NotImplementedError(f"Processor {processor_to_use.name} does not have a recognized execution method.")
 
-            # RAG Integration (if applicable, and if final_package_data is populated)
-            if final_package_data and 'ai_intelligence' not in final_package_data.get('analyzed_lead', {}): # Check if AI profile already exists
-                rag_store = self.job_vector_stores.get(self.job_id)
-                context_dict = json.loads(self.rag_context_text) if hasattr(self, "rag_context_text") else {}
-                
-                ai_profile = self.prospect_profiler.create_advanced_prospect_profile(
-                    lead_data=lead_data, # Original lead data
-                    enriched_context=context_dict,
-                    rag_vector_store=rag_store
-                )
-                # Merge AI profile into the final package
-                # This part needs careful handling of the package structure
-                if 'analyzed_lead' in final_package_data:
-                    final_package_data['analyzed_lead']['ai_intelligence'] = ai_profile
-                else: # If the structure is different (e.g. FinalProspectPackage)
-                    # This assumes FinalProspectPackage might have a place for ai_intelligence or similar
-                    # For now, let's assume it's part of analyzed_lead which is nested
-                    logger.warning("Could not directly attach AI profile to final package structure.")
+            # RAG Integration - Apply AI intelligence to the analyzed lead
+            logger.info(f"[{self.job_id}-{lead_id}] Applying RAG intelligence to analyzed lead")
+            
+            # Get RAG store and context
+            rag_store = self.job_vector_stores.get(self.job_id) if hasattr(self, 'job_vector_stores') else None
+            context_dict = json.loads(self.rag_context_text) if hasattr(self, "rag_context_text") else {}
+            
+            logger.info(f"[{self.job_id}-{lead_id}] RAG context available: {bool(context_dict)}, Vector store available: {bool(rag_store)}")
+            
+            # Apply AI prospect intelligence using RAG
+            if hasattr(self, 'prospect_profiler') and self.prospect_profiler:
+                try:
+                    ai_profile = self.prospect_profiler.create_advanced_prospect_profile(
+                        lead_data=lead_data,
+                        enriched_context=context_dict,
+                        rag_vector_store=rag_store
+                    )
+                    
+                    # Apply AI intelligence to the analyzed lead object
+                    analyzed_lead_obj.ai_intelligence = ai_profile
+                    logger.success(f"[{self.job_id}-{lead_id}] AI intelligence profile applied to analyzed lead")
+                    
+                    # Update final package if it contains analyzed_lead
+                    if final_package_data:
+                        if 'analyzed_lead' in final_package_data:
+                            final_package_data['analyzed_lead']['ai_intelligence'] = ai_profile
+                        elif hasattr(final_package_data, 'get') and final_package_data.get('analyzed_lead'):
+                            final_package_data['analyzed_lead']['ai_intelligence'] = ai_profile
+                        else:
+                            # Add AI profile to final package root if structure is different
+                            final_package_data['ai_intelligence'] = ai_profile
+                            
+                except Exception as e:
+                    logger.error(f"[{self.job_id}-{lead_id}] Failed to apply AI intelligence: {e}")
+            else:
+                logger.warning(f"[{self.job_id}-{lead_id}] Prospect profiler not available for RAG integration")
 
-
-            yield LeadEnrichmentEndEvent(job_id=self.job_id, lead_id=lead_id, success=True, final_package=final_package_data).to_dict()
+            # Ensure final package has proper structure
+            if not final_package_data:
+                # Create a basic final package from the analyzed lead
+                final_package_data = {
+                    "analyzed_lead": analyzed_lead_obj.model_dump() if hasattr(analyzed_lead_obj, 'model_dump') else analyzed_lead_obj.__dict__,
+                    "enrichment_completed": True,
+                    "pipeline_used": selected_pipeline_type
+                }
+                logger.info(f"[{self.job_id}-{lead_id}] Created basic final package from analyzed lead")
+            
+            # Log final package structure for debugging
+            logger.info(f"[{self.job_id}-{lead_id}] Final package keys: {list(final_package_data.keys()) if isinstance(final_package_data, dict) else 'Not a dict'}")
+            
+            yield LeadEnrichmentEndEvent(
+                event_type="lead_enrichment_end",
+                timestamp=datetime.now().isoformat(),
+                job_id=self.job_id,
+                user_id=self.user_id,
+                lead_id=lead_id,
+                success=True,
+                final_package=final_package_data
+            ).to_dict()
 
         except Exception as e:
-            logger.error(f"[{self.job_id}-{lead_id}] Error during {processor_to_use.name} execution: {e}", exc_info=True)
-            yield LeadEnrichmentEndEvent(job_id=self.job_id, lead_id=lead_id, success=False, error_message=str(e)).to_dict()
+            logger.error(f"[{self.job_id}-{lead_id}] Error during hybrid enrichment: {e}", exc_info=True)
+            yield LeadEnrichmentEndEvent(
+                event_type="lead_enrichment_end",
+                timestamp=datetime.now().isoformat(),
+                job_id=self.job_id,
+                user_id=self.user_id,
+                lead_id=lead_id,
+                success=False,
+                error_message=str(e)
+            ).to_dict()
 
     # We inherit execute_streaming_pipeline, _search_leads, etc. from PipelineOrchestrator.
     # The key change is that _enrich_lead now has the selection logic.

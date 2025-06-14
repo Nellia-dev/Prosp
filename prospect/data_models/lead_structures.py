@@ -79,6 +79,7 @@ class AnalyzedLead(BaseModel):
     analysis: LeadAnalysis = Field(..., description="Lead analysis results")
     analysis_timestamp: datetime = Field(default_factory=datetime.now)
     product_service_context: str = Field(..., description="Product/service being offered")
+    ai_intelligence: Optional[Dict[str, Any]] = Field(None, description="AI prospect intelligence profile from RAG")
 
 
 class PersonaDetails(BaseModel):

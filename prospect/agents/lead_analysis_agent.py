@@ -52,11 +52,20 @@ class LeadAnalysisAgent(BaseAgent[ValidatedLead, AnalyzedLead]):
         """
         logger.info(f"Analyzing lead: {input_data.site_data.url}")
         
-        # Check if extraction was successful
-        if not input_data.extraction_successful:
-            logger.warning(f"Lead has failed extraction, generating limited analysis")
+        # Check if we have sufficient content for full analysis
+        has_content = (
+            input_data.extraction_successful and
+            (input_data.cleaned_text_content or input_data.site_data.extracted_text_content)
+        ) or (
+            input_data.site_data.google_search_data and
+            input_data.site_data.google_search_data.snippet
+        )
+        
+        if not has_content:
+            logger.warning(f"Lead has insufficient data for full analysis, generating limited analysis")
             analysis = self._generate_limited_analysis(input_data)
         else:
+            logger.info(f"Lead has sufficient data for full analysis")
             # Generate full analysis using LLM
             analysis = self._generate_full_analysis(input_data)
         

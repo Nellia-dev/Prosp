@@ -414,12 +414,18 @@ class PipelineOrchestrator:
             if self.use_hybrid and hasattr(self, 'hybrid_orchestrator') and PROJECT_MODULES_AVAILABLE:
                 logger.info(f"[{self.job_id}-{lead_id}] Using Hybrid Pipeline Orchestrator for intelligent agent selection")
                 
-                # Delegate to hybrid orchestrator which handles everything
+                # Pass RAG context and vector store to hybrid orchestrator
+                if hasattr(self, 'rag_context_text'):
+                    self.hybrid_orchestrator.rag_context_text = self.rag_context_text
+                if hasattr(self, 'job_vector_stores'):
+                    self.hybrid_orchestrator.job_vector_stores = self.job_vector_stores
+                
+                # Delegate COMPLETELY to hybrid orchestrator which handles everything
                 async for event in self.hybrid_orchestrator._enrich_lead(lead_data, lead_id):
                     yield event
                 return
             
-            # Fallback to standard enrichment pipeline
+            # Fallback to standard enrichment pipeline (only if hybrid is disabled)
             logger.info(f"[{self.job_id}-{lead_id}] Using standard enrichment pipeline")
             
             # 1. Análise inicial e RAG
@@ -503,7 +509,12 @@ class PipelineOrchestrator:
             logger.error(f"[PIPELINE_STEP] Failed to generate AI search query: {e}")
             # Fallback to basic query generation
             search_query = self._generate_basic_search_query(self.business_context, user_search_input)
-            logger.info(f"[PIPELINE_STEP] Using fallback search query: '{search_query}'")
+            # Safety check to ensure search_query is never None
+            if not search_query:
+                search_query = "empresas B2B inovadoras tecnologia"
+                logger.warning(f"[PIPELINE_STEP] Fallback search query was empty, using default: '{search_query}'")
+            else:
+                logger.info(f"[PIPELINE_STEP] Using fallback search query: '{search_query}'")
         
         # --- End Search Query Generation ---
         
@@ -716,7 +727,7 @@ class PipelineOrchestrator:
                 "industry_focus": business_context.get("industry_focus", []),
                 "pain_points": business_context.get("pain_points", []),
                 "target_market": business_context.get("target_market", ""),
-                "location": business_context.get("location", ""),
+                "location": business_context.get("geographic_focus", ""),
                 "user_additional_query": user_input
             }
             
@@ -731,6 +742,7 @@ class PipelineOrchestrator:
             loop = asyncio.get_event_loop()
             
             async def run_query_generation():
+                search_query = None
                 try:
                     # Initialize in-memory session service for ADK1
                     temp_service = InMemorySessionService()
@@ -743,48 +755,69 @@ class PipelineOrchestrator:
 
                     runner = Runner(
                         session_service=temp_service,
-                        agent='business_context_to_query_agent',
+                        agent=business_context_to_query_agent,
                         app_name="query_generation",
                     )
 
                     query = types.Content(role="user", parts=[types.Part(text=context_json)])
 
-                    # Use runner.run() as per ADK documentation
-                    response = runner.run_async(
+                    # Use runner.run_async() as per ADK documentation
+                    async for response in runner.run_async(
                         user_id=self.user_id,
                         session_id=self.job_id,
                         new_message=query
-                    )
-                    # Assuming the response object has an 'output_text' attribute
-                    # or similar, based on typical ADK patterns.
-                    # If the agent's instruction is to return only the query,
-                    # this should be the direct query string.
-                    if hasattr(response, 'output_text'):
-                        return response.output_text
-                    elif hasattr(response, 'text'): # Fallback if output_text is not present
-                        return response.text
-                    else: # If the response itself is the string (less likely for runner.run)
-                        return str(response)
+                    ):
+                        logger.debug(f"[{self.job_id}] Received response: {type(response)}")
+                        if hasattr(response, 'content'):
+                            content = response.content
+                            logger.debug(f"[{self.job_id}] Response content type: {type(content)}")
+                            logger.debug(f"[{self.job_id}] Response content: {str(content)[:500]}...")
+                            
+                            if isinstance(content, str):
+                                # Direct string response
+                                search_query = content.strip()
+                                logger.info(f"[{self.job_id}] Extracted search query from string: '{search_query}'")
+                                break
+                            elif hasattr(content, 'parts') and content.parts:
+                                # Handle different types of parts
+                                for part in content.parts:
+                                    if hasattr(part, 'text') and part.text:
+                                        # Extract text content
+                                        text_content = part.text.strip()
+                                        if text_content:
+                                            search_query = text_content
+                                            logger.info(f"[{self.job_id}] Extracted search query from text part: '{search_query}'")
+                                            break
+                                    elif hasattr(part, 'function_response') and part.function_response:
+                                        # Extract data from function response
+                                        func_response = part.function_response
+                                        if hasattr(func_response, 'response') and func_response.response:
+                                            response_data = func_response.response
+                                            if isinstance(response_data, dict) and 'result' in response_data:
+                                                result = response_data['result']
+                                                search_query = str(result).strip()
+                                                logger.info(f"[{self.job_id}] Extracted search query from function response: '{search_query}'")
+                                                break
+                                if search_query:
+                                    break
+                    
+                    return search_query
 
                 except Exception as e:
                     logger.error(f"[QUERY_GEN] ADK1 agent execution failed: {e}")
-                    raise
+                    traceback.print_exc()
+                    return None
             
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                agent_result = await loop.run_in_executor(executor, run_query_generation)
-
-            logger.info("[QUERY_GEN] ADK1 agent execution completed successfully")
-            logger.debug(f"[QUERY_GEN] Agent result: {agent_result}");
-            print(f"[QUERY_GEN] Agent result type: {agent_result}")  # Debugging line
-            # Extract the generated query (agent should return just the query string)
-            search_query = str(agent_result).strip()
+            # Execute the query generation
+            logger.info("[QUERY_GEN] Executing ADK1 agent for query generation")
+            search_query = await run_query_generation()
             
-            # Enhance with user input if provided
-            # if user_input.strip():
-            #     search_query = f"{search_query} {user_input.strip()}"
-            
-            logger.success(f"[QUERY_GEN] AI-generated search query: '{search_query}'")
-            return search_query
+            if search_query:
+                logger.success(f"[QUERY_GEN] AI-generated search query: '{search_query}'")
+                return search_query
+            else:
+                logger.warning("[QUERY_GEN] ADK1 agent returned empty result, falling back to basic generation")
+                raise Exception("ADK1 agent returned empty search query")
             
         except Exception as e:
             logger.error(f"[QUERY_GEN] Failed to generate AI search query: {e}")
@@ -839,10 +872,13 @@ class PipelineOrchestrator:
             query_parts.append(user_input.strip())
         
         # Combine and clean up
-        search_query = " ".join(query_parts[:8])  # Limit to 8 terms to avoid overly long queries
+        search_query = " ".join(str(part) for part in query_parts[:8] if part)  # Limit to 8 terms to avoid overly long queries
+        
+        # Ensure we always have a valid string
+        search_query = search_query.strip() if search_query else ""
         
         # If nothing meaningful was extracted, use a default
-        if not search_query.strip():
+        if not search_query:
             search_query = "empresas B2B inovadoras tecnologia"
         
         logger.info(f"[QUERY_GEN] Generated basic search query: '{search_query}'")
