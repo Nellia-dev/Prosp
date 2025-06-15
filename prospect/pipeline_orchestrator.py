@@ -137,7 +137,7 @@ class PipelineOrchestrator:
     configura o ambiente RAG e enriquece cada lead em tempo real.
     """
 
-    def __init__(self, business_context: Dict[str, Any], user_id: str, job_id: str, use_hybrid: bool = True):
+    def __init__(self, business_context: Dict[str, Any], user_id: str, job_id: str, use_hybrid: bool = False):
         self.business_context = business_context
         self.user_id = user_id
         self.job_id = job_id
@@ -189,15 +189,15 @@ class PipelineOrchestrator:
             )
             
             # Initialize Hybrid Pipeline Orchestrator if enabled
-            if self.use_hybrid:
-                logger.info("[PIPELINE_STEP] Initializing HybridPipelineOrchestrator")
-                from hybrid_pipeline_orchestrator import HybridPipelineOrchestrator
-                self.hybrid_orchestrator = HybridPipelineOrchestrator(
-                    business_context=business_context,
-                    user_id=user_id,
-                    job_id=job_id
-                )
-                logger.info("Hybrid Pipeline Orchestrator initialized for intelligent agent selection.")
+            # if self.use_hybrid: # Removed hybrid orchestrator logic
+            #     logger.info("[PIPELINE_STEP] Initializing HybridPipelineOrchestrator")
+            #     from hybrid_pipeline_orchestrator import HybridPipelineOrchestrator # Removed import
+            #     self.hybrid_orchestrator = HybridPipelineOrchestrator(
+            #         business_context=business_context,
+            #         user_id=user_id,
+            #         job_id=job_id
+            #     )
+            #     logger.info("Hybrid Pipeline Orchestrator initialized for intelligent agent selection.")
             
         else: # Usa placeholders se os módulos não estiverem disponíveis
             self.lead_intake_agent = BaseAgent(name="PlaceholderLeadIntakeAgent", description="Placeholder for LeadIntakeAgent")
@@ -414,21 +414,21 @@ class PipelineOrchestrator:
         
         try:
             # Use hybrid orchestrator if enabled and available
-            if self.use_hybrid and hasattr(self, 'hybrid_orchestrator') and PROJECT_MODULES_AVAILABLE:
-                logger.info(f"[{self.job_id}-{lead_id}] Using Hybrid Pipeline Orchestrator for intelligent agent selection")
-                
-                # Pass RAG context and vector store to hybrid orchestrator
-                if hasattr(self, 'rag_context_text'):
-                    self.hybrid_orchestrator.rag_context_text = self.rag_context_text
-                if hasattr(self, 'job_vector_stores'):
-                    self.hybrid_orchestrator.job_vector_stores = self.job_vector_stores
-                
-                # Delegate COMPLETELY to hybrid orchestrator which handles everything
-                async for event in self.hybrid_orchestrator._enrich_lead(lead_data, lead_id):
-                    yield event
-                return
+            # if self.use_hybrid and hasattr(self, 'hybrid_orchestrator') and PROJECT_MODULES_AVAILABLE: # Removed hybrid orchestrator logic
+            #     logger.info(f"[{self.job_id}-{lead_id}] Using Hybrid Pipeline Orchestrator for intelligent agent selection")
+            #
+            #     # Pass RAG context and vector store to hybrid orchestrator
+            #     if hasattr(self, 'rag_context_text'):
+            #         self.hybrid_orchestrator.rag_context_text = self.rag_context_text
+            #     if hasattr(self, 'job_vector_stores'):
+            #         self.hybrid_orchestrator.job_vector_stores = self.job_vector_stores
+            #
+            #     # Delegate COMPLETELY to hybrid orchestrator which handles everything
+            #     async for event in self.hybrid_orchestrator._enrich_lead(lead_data, lead_id):
+            #         yield event
+            #     return
             
-            # Fallback to standard enrichment pipeline (only if hybrid is disabled)
+            # Fallback to standard enrichment pipeline (only if hybrid is disabled) # This is now the only path
             logger.info(f"[{self.job_id}-{lead_id}] Using standard enrichment pipeline")
             
             # 1. Análise inicial e RAG
