@@ -210,21 +210,34 @@ class LeadEnrichmentEndEvent(BaseEvent):
     error_message: Optional[str] = None
 
 
+    def _convert_value(self, value: Any) -> Any:
+        """
+        Recursively converts values for JSON serialization.
+        - Converts HttpUrl to string.
+        - Converts Pydantic models to dict using model_dump(mode='json').
+        - Recursively processes lists and dicts.
+        """
+        if isinstance(value, HttpUrl):
+            return str(value)
+        if hasattr(value, 'model_dump'): # Check for Pydantic model
+            return value.model_dump(mode='json')
+        if isinstance(value, list):
+            return [self._convert_value(item) for item in value]
+        if isinstance(value, dict):
+            return {k: self._convert_value(v) for k, v in value.items()}
+        return value
+
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
 
-        def convert_httpurl_to_str(item: Any) -> Any:
-            if isinstance(item, HttpUrl):
-                return str(item)
-            if isinstance(item, dict):
-                return {k: convert_httpurl_to_str(v) for k, v in item.items()}
-            if isinstance(item, list):
-                return [convert_httpurl_to_str(i) for i in item]
-            return item
-
         processed_final_package = None
-        if self.final_package:
-            processed_final_package = convert_httpurl_to_str(self.final_package)
+        if self.final_package is not None:
+            if hasattr(self.final_package, 'model_dump'):
+                # If final_package itself is a Pydantic model
+                processed_final_package = self.final_package.model_dump(mode='json')
+            else:
+                # Otherwise, process it using the helper (handles dicts, lists, HttpUrl etc.)
+                processed_final_package = self._convert_value(self.final_package)
 
         data.update({
             "lead_id": self.lead_id,
