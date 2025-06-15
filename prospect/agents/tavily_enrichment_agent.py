@@ -4,297 +4,328 @@ import requests
 import time
 import re
 import traceback
-from typing import Optional, List
-
-from pydantic import BaseModel
+from typing import Optional, List, Dict # Added Dict
+from pydantic import BaseModel, Field # Added Field
 
 from agents.base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
 
 # Constants
-TAVILY_SEARCH_DEPTH = "advanced"  # Or "basic"
-TAVILY_MAX_RESULTS_PER_QUERY = 5
+TAVILY_SEARCH_DEPTH = "advanced"
+TAVILY_MAX_RESULTS_PER_QUERY = 3 # Reduced to get more focused results per query
 TAVILY_TOTAL_QUERIES_PER_LEAD = 3
-GEMINI_TEXT_INPUT_TRUNCATE_CHARS = 180000  # Max input tokens for Gemini Flash is 128k, roughly 512k chars. Input is 32k tokens, output 2k.
+GEMINI_TEXT_INPUT_TRUNCATE_CHARS = 180000
 
 
 class TavilyEnrichmentInput(BaseModel):
     company_name: str
     initial_extracted_text: str
+    # product_service_offered: Optional[str] = None # Consider adding for more focused query generation
+    # lead_url: Optional[str] = None # Consider adding for context
 
-
+# Updated Pydantic Output Model
 class TavilyEnrichmentOutput(BaseModel):
-    enriched_data: str
-    tavily_api_called: bool
+    enrichment_summary: str = "Nenhum resumo de enriquecimento gerado." # Renamed from enriched_data
+    key_findings: List[str] = Field(default_factory=list)
+    tavily_api_called: bool = False # Default to False
     error_message: Optional[str] = None
 
-
 class TavilyEnrichmentAgent(BaseAgent[TavilyEnrichmentInput, TavilyEnrichmentOutput]):
-    def __init__(self, name: str, description: str, llm_client: LLMClientBase, tavily_api_key: str, **kwargs):
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, tavily_api_key: Optional[str] = None, **kwargs): # tavily_api_key can be optional
         super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
-        self.tavily_api_key = tavily_api_key
+        self.tavily_api_key = tavily_api_key or os.getenv("TAVILY_API_KEY")
+        if not self.tavily_api_key:
+            self.logger.warning("Tavily API key not provided. Tavily search will be skipped.")
+            # No ValueError raised here to allow agent to run without Tavily if desired,
+            # it will simply return initial text with tavily_api_called=False.
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
         return text[:max_chars]
 
-    def _search_with_tavily(self, query: str, search_depth: str = "advanced", max_results: int = 5) -> List[dict]:
-        """
-        Performs a search using the Tavily API.
-        """
+    def _search_with_tavily(self, query: str, search_depth: str = TAVILY_SEARCH_DEPTH, max_results: int = TAVILY_MAX_RESULTS_PER_QUERY) -> List[dict]:
+        """ Performs a search using the Tavily API. """
+        if not self.tavily_api_key:
+            self.logger.warning("Tavily API key not available. Skipping search.")
+            return []
         try:
+            self.logger.info(f"🔍 Executing Tavily search for query: '{query}'")
             response = requests.post(
                 "https://api.tavily.com/search",
                 json={
                     "api_key": self.tavily_api_key,
                     "query": query,
                     "search_depth": search_depth,
-                    "include_answer": True,
+                    "include_answer": False, # Typically we want to process source content
+                    "include_raw_content": False, # Get URLs and snippets first
                     "max_results": max_results,
+                    # "include_domains": [], "exclude_domains": [] # Optional filters
                 },
-                timeout=100  # segundos
+                timeout=20 # Reduced timeout slightly
             )
-            response.raise_for_status()  # Raise an exception for bad status codes
-            return response.json().get("results", [])
+            response.raise_for_status()
+            results = response.json().get("results", [])
+            self.logger.info(f"✅ Tavily search for '{query}' returned {len(results)} results.")
+            return results
         except requests.exceptions.RequestException as e:
-            print(f"Tavily API request failed: {e}")
+            self.logger.error(f"❌ Tavily API request failed for query '{query}': {e}")
             return []
         except json.JSONDecodeError:
-            print("Failed to decode Tavily API response.")
+            self.logger.error(f"❌ Failed to decode Tavily API response for query '{query}'.")
             return []
 
     def process(self, input_data: TavilyEnrichmentInput) -> TavilyEnrichmentOutput:
         tavily_api_called = False
         error_message = None
-        enriched_data = input_data.initial_extracted_text
+        enrichment_summary = input_data.initial_extracted_text # Default to initial if no enrichment
+        key_findings = []
         
-        self.logger.info(f"🔍 TAVILY ENRICHMENT STARTING for company: {input_data.company_name}")
-        self.logger.info(f"📊 Input data: text_length={len(input_data.initial_extracted_text)}, api_key_available={bool(self.tavily_api_key)}")
+        self.logger.info(f"🔍 TAVILY ENRICHMENT AGENT STARTING for company: {input_data.company_name}")
+        self.logger.debug(f"📊 Input data: text_length={len(input_data.initial_extracted_text)}, Tavily API key configured: {bool(self.tavily_api_key)}")
+
+        if not self.tavily_api_key:
+            return TavilyEnrichmentOutput(
+                enrichment_summary=enrichment_summary,
+                key_findings=key_findings,
+                tavily_api_called=False,
+                error_message="Tavily API key not configured; skipping enrichment."
+            )
 
         try:
-            # First LLM call to generate search queries
-            self.logger.debug("🤖 Step 1: Generating search queries with LLM")
+            # Step 1: Generate search queries with LLM
+            self.logger.debug("🤖 Step 1: Generating search queries with LLM...")
+            # Refined prompt_template_tavily_queries
             prompt_template_tavily_queries = """
-                Com base no texto extraído e no nome da empresa, gere {TAVILY_TOTAL_QUERIES_PER_LEAD} consultas de pesquisa concisas e direcionadas para o Tavily API para encontrar informações adicionais sobre a empresa.
-                Concentre-se em encontrar:
-                1.  Detalhes sobre os produtos ou serviços da empresa.
-                2.  Informações de contato (e-mails, perfis de mídia social).
-                3.  Notícias recentes ou desenvolvimentos relacionados à empresa.
-                Retorne as consultas como uma lista JSON de strings.
+                Você é um Assistente de Pesquisa IA especializado em formular queries de busca eficazes.
+                Com base no nome da empresa e no texto extraído fornecido, sua tarefa é gerar {TAVILY_TOTAL_QUERIES_PER_LEAD} consultas de pesquisa (search queries) distintas, concisas e direcionadas para a API Tavily.
+                O objetivo é encontrar informações adicionais sobre a empresa, focando em:
+                1.  Detalhes aprofundados sobre seus principais produtos ou serviços.
+                2.  Informações de contato relevantes (e-mails de departamentos, perfis de mídia social corporativos, contatos de decisores chave, se possível).
+                3.  Notícias recentes, comunicados de imprensa, ou desenvolvimentos significativos relacionados à empresa (ex: expansões, parcerias, novos lançamentos, situação financeira).
 
-                Nome da Empresa: {company_name}
-                Texto Extraído:
+                Priorize queries que provavelmente revelarão informações B2B úteis para análise de leads.
+
+                Nome da Empresa: "{company_name}"
+                Texto Extraído Inicial (para contexto):
+                \"\"\"
                 {initial_extracted_text}
+                \"\"\"
 
-                Consultas de Pesquisa (JSON):
+                Responda APENAS com um objeto JSON contendo uma lista de strings de consulta. Formato:
+                {{
+                    "search_queries": ["query 1", "query 2", "query 3"]
+                }}
             """
+            # Truncate with a buffer for the rest of the prompt
+            truncated_initial_text_for_query_gen = self._truncate_text(input_data.initial_extracted_text, GEMINI_TEXT_INPUT_TRUNCATE_CHARS - 1000)
             formatted_prompt_queries = prompt_template_tavily_queries.format(
                 TAVILY_TOTAL_QUERIES_PER_LEAD=TAVILY_TOTAL_QUERIES_PER_LEAD,
                 company_name=input_data.company_name,
-                initial_extracted_text=self._truncate_text(input_data.initial_extracted_text, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 2) # Leave space for response
+                initial_extracted_text=truncated_initial_text_for_query_gen
             )
 
-            llm_response_queries = self.generate_llm_response(formatted_prompt_queries)
+            llm_response_queries_str = self.generate_llm_response(formatted_prompt_queries)
 
-            if not llm_response_queries:
-                self.logger.error("❌ LLM call for Tavily queries returned no response")
-                return TavilyEnrichmentOutput(
-                    enriched_data=enriched_data,
-                    tavily_api_called=False,
-                    error_message="LLM call for Tavily queries returned no response."
-                )
-
-            self.logger.debug(f"✅ LLM returned queries response, length: {len(llm_response_queries)}")
-            
-            try:
-                # Extract JSON from the response
-                match = re.search(r"```json\n(.*)\n```", llm_response_queries, re.DOTALL)
-                if match:
-                    json_str = match.group(1)
-                    self.logger.debug("📝 Extracted queries from JSON markdown block")
+            search_queries = []
+            if not llm_response_queries_str:
+                self.logger.warning("⚠️ LLM call for Tavily queries returned no response. Using fallback query.")
+                error_message = "LLM did not generate search queries."
+            else:
+                self.logger.debug(f"LLM returned for query generation: {llm_response_queries_str[:300]}...")
+                queries_data = self.parse_llm_json_response(llm_response_queries_str, None) # Expect a dict
+                if queries_data and isinstance(queries_data.get("search_queries"), list):
+                    search_queries = queries_data["search_queries"]
+                    self.logger.info(f"🔍 Generated {len(search_queries)} search queries: {search_queries}")
                 else:
-                    json_str = llm_response_queries
-                    self.logger.debug("📝 Using raw response as JSON")
+                    self.logger.warning(f"⚠️ Error decoding LLM response for search queries or not a list. Fallback. Raw: {llm_response_queries_str[:300]}")
+                    error_message = "LLM did not return a valid list of search queries."
 
-                search_queries = json.loads(json_str)
-                if not isinstance(search_queries, list) or not all(isinstance(q, str) for q in search_queries):
-                    raise ValueError("LLM did not return a valid list of search strings.")
-                    
-                self.logger.info(f"🔍 Generated {len(search_queries)} search queries: {search_queries}")
-                
-            except (json.JSONDecodeError, ValueError) as e:
-                self.logger.warning(f"⚠️  Error decoding LLM response for search queries: {e}")
-                self.logger.debug(f"Failed response: {llm_response_queries[:500]}...")
-                error_message = f"Error decoding LLM response for search queries: {e}. Response: {llm_response_queries}"
-                # Fallback: use company name as a single query
-                search_queries = [f"informações sobre a empresa {input_data.company_name}"]
+            if not search_queries: # Fallback if LLM fails or returns empty list
+                search_queries = [f"latest news and key information about {input_data.company_name}"]
                 self.logger.info(f"🔄 Using fallback query: {search_queries}")
 
+
+            # Step 2: Perform Tavily searches
             all_tavily_results_text = ""
             if search_queries:
                 tavily_api_called = True
-                self.logger.info(f"🌐 Starting Tavily API calls for {len(search_queries)} queries")
+                self.logger.info(f"🌐 Starting Tavily API calls for {len(search_queries)} queries...")
                 
-                for query_count, query in enumerate(search_queries):
-                    if query_count >= TAVILY_TOTAL_QUERIES_PER_LEAD:
-                        self.logger.debug(f"⏭️  Stopping at query limit: {TAVILY_TOTAL_QUERIES_PER_LEAD}")
-                        break
-                    if not query.strip(): # Skip empty queries
-                        self.logger.debug("⏭️  Skipping empty query")
-                        continue
+                for i, query in enumerate(search_queries[:TAVILY_TOTAL_QUERIES_PER_LEAD]):
+                    if not query.strip(): continue
                     
-                    # Add company name to query if not present
-                    if input_data.company_name.lower() not in query.lower():
-                        query = f"{query} ({input_data.company_name})"
-
-                    self.logger.debug(f"🔍 Query {query_count + 1}: {query}")
-                    
-                    tavily_results = self._search_with_tavily(
-                        query,
-                        search_depth=TAVILY_SEARCH_DEPTH,
-                        max_results=TAVILY_MAX_RESULTS_PER_QUERY
-                    )
-                    
-                    self.logger.debug(f"📊 Query {query_count + 1} returned {len(tavily_results)} results")
-                    time.sleep(1) # Respect API rate limits
+                    tavily_results = self._search_with_tavily(query)
+                    time.sleep(0.5) # Small delay between Tavily calls
 
                     if tavily_results:
+                        all_tavily_results_text += f"\n\n--- Resultados da Busca para: '{query}' ---\n"
                         for result in tavily_results:
-                            content_length = len(result.get('content', ''))
-                            all_tavily_results_text += f"Fonte: {result.get('url', 'N/A')}\nConteúdo: {result.get('content', '')}\n\n"
-                            self.logger.debug(f"📄 Added result from {result.get('url', 'N/A')}: {content_length} chars")
-                            
-                    if len(all_tavily_results_text) > GEMINI_TEXT_INPUT_TRUNCATE_CHARS * 0.75: # Stop if too much text
-                        self.logger.debug(f"⏹️  Stopping due to text length limit: {len(all_tavily_results_text)} chars")
+                            all_tavily_results_text += f"Fonte: {result.get('url', 'N/A')}\nTítulo: {result.get('title', 'N/A')}\nConteúdo Snippet: {result.get('content', '')}\n\n"
+                    if len(all_tavily_results_text) > GEMINI_TEXT_INPUT_TRUNCATE_CHARS * 0.6: # Stop if too much text for summarizer
+                        self.logger.warning(f"⚠️  Stopping Tavily search early due to accumulated text length: {len(all_tavily_results_text)} chars")
                         break
-                
-                self.logger.info(f"📊 Total Tavily results collected: {len(all_tavily_results_text)} characters")
+                self.logger.info(f"📊 Total Tavily results collected: {len(all_tavily_results_text)} characters.")
             
-            if tavily_api_called and all_tavily_results_text:
-                # Second LLM call to summarize and enrich
+            # Step 3: Summarize and extract key findings with LLM
+            if tavily_api_called and all_tavily_results_text.strip():
+                self.logger.debug("🤖 Step 3: Summarizing Tavily results with LLM...")
+                # Refined prompt_template_summarize
                 prompt_template_summarize = """
-                    Com base no texto extraído original e nos resultados da pesquisa do Tavily API, forneça um resumo abrangente e enriquecido.
-                    Concentre-se em extrair e apresentar claramente:
-                    1.  Uma breve visão geral da empresa.
-                    2.  Principais produtos ou serviços oferecidos.
-                    3.  Qualquer informação de contato encontrada (e-mails, números de telefone, perfis de mídia social).
-                    4.  Pontos de interesse ou notícias recentes.
-                    5.  Seja o mais informativo possível, mas evite redundâncias.
+                    Você é um Analista de Inteligência de Negócios especializado em sintetizar informações de múltiplas fontes em resumos concisos e extrair os achados mais críticos para prospecção B2B.
 
-                    Texto Extraído Original:
+                    CONTEXTO:
+                    Texto Extraído Original da Empresa:
+                    \"\"\"
                     {initial_extracted_text}
+                    \"\"\"
 
-                    Resultados da Pesquisa Tavily:
+                    Resultados da Pesquisa Web Adicional (Tavily API):
+                    \"\"\"
                     {tavily_results_text}
+                    \"\"\"
 
-                    Resumo Enriquecido:
+                    INSTRUÇÕES:
+                    Com base no "Texto Extraído Original" E nos "Resultados da Pesquisa Web Adicional", sua tarefa é:
+                    1.  Gerar um `enrichment_summary`: Um resumo coeso que combine as informações mais relevantes de ambas as fontes. Deve fornecer uma visão geral atualizada da empresa, seus produtos/serviços, e quaisquer notícias ou desenvolvimentos recentes significativos. Evite redundância e foque em informações úteis para entender o lead. (Máximo 250-300 palavras)
+                    2.  Identificar `key_findings`: Uma lista de 3-5 pontos chave (bullet points) extraídos de QUALQUER uma das fontes que sejam particularmente relevantes para uma possível prospecção B2B. Estes podem incluir anúncios importantes, desafios mencionados, contratações chave, lançamentos de produtos, etc.
+
+                    FORMATO DA RESPOSTA:
+                    Responda EXCLUSIVAMENTE com um objeto JSON válido, seguindo o schema abaixo. Não inclua NENHUM texto, explicação, ou markdown (como ```json) antes ou depois do objeto JSON.
+
+                    SCHEMA JSON ESPERADO:
+                    {{
+                        "enrichment_summary": "string - O resumo abrangente e consolidado, conforme instrução 1.",
+                        "key_findings": ["string", ...] // Lista de 3-5 achados chave (bullet points textuais). Se menos de 3 achados significativos forem encontrados, liste os que encontrar. Se nenhum, retorne uma lista vazia [].
+                    }}
                 """
-                truncated_initial_text = self._truncate_text(input_data.initial_extracted_text, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 3)
-                truncated_tavily_results = self._truncate_text(all_tavily_results_text, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 3)
+                # Dynamic truncation based on remaining character budget for the prompt
+                summarizer_prompt_overhead = 2000
+                available_for_summarizer_inputs = GEMINI_TEXT_INPUT_TRUNCATE_CHARS - summarizer_prompt_overhead
+
+                ratio_initial = len(input_data.initial_extracted_text) / (len(input_data.initial_extracted_text) + len(all_tavily_results_text) + 1e-6) # Avoid division by zero
+                ratio_tavily = 1 - ratio_initial
+
+                tr_initial_text_sum = self._truncate_text(input_data.initial_extracted_text, int(available_for_summarizer_inputs * ratio_initial))
+                tr_tavily_results_sum = self._truncate_text(all_tavily_results_text, int(available_for_summarizer_inputs * ratio_tavily))
 
                 formatted_prompt_summarize = prompt_template_summarize.format(
-                    initial_extracted_text=truncated_initial_text,
-                    tavily_results_text=truncated_tavily_results
+                    initial_extracted_text=tr_initial_text_sum,
+                    tavily_results_text=tr_tavily_results_sum
                 )
                 
-                # This LLM call is for summarization into a string, not JSON.
-                enriched_summary_text = self.generate_llm_response(formatted_prompt_summarize)
+                llm_summary_response_str = self.generate_llm_response(formatted_prompt_summarize)
 
-                if enriched_summary_text:
-                    enriched_data = enriched_summary_text
+                if llm_summary_response_str:
+                    summary_data = self.parse_llm_json_response(llm_summary_response_str, TavilyEnrichmentOutput) # Uses new model
+                    if summary_data and not summary_data.error_message:
+                        enrichment_summary = summary_data.enrichment_summary
+                        key_findings = summary_data.key_findings
+                        self.logger.info(f"✅ Summarization and key findings extraction successful. Summary length: {len(enrichment_summary)}, Findings: {len(key_findings)}")
+                    else:
+                        self.logger.warning(f"⚠️ LLM summarization step failed JSON parsing or Pydantic validation. Error: {summary_data.error_message if summary_data else 'No data'}. Raw: {llm_summary_response_str[:300]}")
+                        # Fallback: use combined raw data and append existing error
+                        enrichment_summary = input_data.initial_extracted_text + "\n\nInformações Adicionais (Tavily - Sem Sumarização LLM):\n" + all_tavily_results_text
+                        current_error = summary_data.error_message if summary_data and summary_data.error_message else "LLM summarization failed to produce valid JSON."
+                        error_message = f"{error_message}. {current_error}" if error_message else current_error
                 else:
-                    # Fallback if summarization fails, append Tavily results to original
-                    enriched_data = input_data.initial_extracted_text + "\n\nInformações Adicionais (Tavily):\n" + all_tavily_results_text 
-                    if not error_message: # Keep previous error if any
-                        error_message = "LLM call for summarization returned no response. Appending raw Tavily data."
-            elif tavily_api_called and not all_tavily_results_text:
-                 if not error_message: # Keep previous error if any
-                    error_message = "Tavily API was called but returned no results."
+                    self.logger.warning("⚠️ LLM call for summarization returned no response. Appending raw Tavily data.")
+                    enrichment_summary = input_data.initial_extracted_text + "\n\nInformações Adicionais (Tavily - Sem Sumarização LLM):\n" + all_tavily_results_text
+                    no_summary_error = "LLM summarization failed (no response)."
+                    error_message = f"{error_message}. {no_summary_error}" if error_message else no_summary_error
             
-            # If no Tavily search was performed, enriched_data remains initial_extracted_text
+            elif tavily_api_called and not all_tavily_results_text.strip():
+                 no_results_error = "Tavily API was called but returned no results for any query."
+                 error_message = f"{error_message}. {no_results_error}" if error_message else no_results_error
+                 self.logger.warning(f"⚠️ {no_results_error}")
             
         except Exception as e:
-            print(f"An unexpected error occurred in TavilyEnrichmentAgent: {e}")
-            traceback.print_exc()
+            self.logger.error(f"❌ An unexpected error occurred in {self.name} for {input_data.company_name}: {e}", exc_info=True)
             error_message = f"An unexpected error occurred: {str(e)}"
 
         return TavilyEnrichmentOutput(
-            enriched_data=enriched_data,
+            enrichment_summary=enrichment_summary, # Use the updated field name
+            key_findings=key_findings,
             tavily_api_called=tavily_api_called,
-            error_message=error_message
+            error_message=error_message.strip() if error_message else None
         )
 
 if __name__ == '__main__':
-    # This is a placeholder for testing
-    # You would need a mock LLMClient and a Tavily API Key
+    from loguru import logger
+    import sys
+    logger.remove()
+    logger.add(sys.stderr, level="DEBUG")
+
     class MockLLMClient(LLMClientBase):
-        def __init__(self, api_key: str):
+        def __init__(self, api_key: str = "mock_key"): # api_key needed for base
             super().__init__(api_key)
 
         def generate_text_response(self, prompt: str) -> Optional[str]:
-            if "consultas de pesquisa" in prompt:
-                return json.dumps([
-                    "latest news about Test Company Inc.",
-                    "Test Company Inc. products and services",
-                    "contact Test Company Inc."
-                ])
-            elif "Resumo Enriquecido" in prompt:
-                return "This is an enriched summary about Test Company Inc. based on web search."
-            return "Default mock response."
+            logger.debug(f"MockLLMClient received prompt snippet:\n{prompt[:600]}...")
+            if "consultas de pesquisa" in prompt: # Query generation prompt
+                return json.dumps({
+                    "search_queries": [
+                        "latest news about Test Company Inc.",
+                        "Test Company Inc. products and services overview",
+                        "key contacts or decision makers at Test Company Inc."
+                    ]
+                })
+            elif "Resumo Enriquecido" in prompt or "SCHEMA JSON ESPERADO" in prompt: # Summarization prompt (new)
+                return json.dumps({
+                    "enrichment_summary": "Test Company Inc. is a notable innovator in the testing solutions sector. Recent news includes a partnership with Beta Corp and the launch of their new 'TestMax' product line. They are actively hiring for sales roles, suggesting expansion.",
+                    "key_findings": [
+                        "Partnership with Beta Corp.",
+                        "Launch of 'TestMax' product line.",
+                        "Actively hiring for sales roles (indicates expansion)."
+                    ]
+                })
+            return json.dumps({"enrichment_summary": "Default mock summary.", "key_findings": ["Default finding."]})
 
-    # Replace 'YOUR_TAVILY_API_KEY' with your actual key for testing, or ensure it's in environment variables
-    tavily_key = os.environ.get("TAVILY_API_KEY") 
+    tavily_key = os.getenv("TAVILY_API_KEY_TEST") # Use a specific test key if needed, or fallback to main
     if not tavily_key:
-        print("TAVILY_API_KEY not found in environment variables. Skipping live test.")
-    else:
-        print("Running a mock test for TavilyEnrichmentAgent...")
-        mock_llm = MockLLMClient(api_key="mock_llm_key")
-        agent = TavilyEnrichmentAgent(llm_client=mock_llm, tavily_api_key=tavily_key)
-        
-        test_input = TavilyEnrichmentInput(
-            company_name="Test Company Inc.",
-            initial_extracted_text="Test Company Inc. is a company that does testing."
-        )
-        
-        output = agent.process(test_input)
-        
-        print(f"Tavily API Called: {output.tavily_api_called}")
-        print(f"Enriched Data: {output.enriched_data}")
-        if output.error_message:
-            print(f"Error: {output.error_message}")
+        tavily_key = os.getenv("TAVILY_API_KEY")
 
-        print("\nTesting with a query that might return an error for Tavily queries LLM response (e.g. invalid JSON)")
-        class MockLLMClientError(LLMClientBase):
-            def __init__(self, api_key: str):
-                super().__init__(api_key)
-            def generate_text_response(self, prompt: str) -> Optional[str]:
-                if "consultas de pesquisa" in prompt:
-                    return "This is not a valid JSON" # Invalid response
-                elif "Resumo Enriquecido" in prompt:
-                     return "This is an enriched summary about Test Company Inc. based on web search."
-                return "Default mock response."
-
-        mock_llm_error = MockLLMClientError(api_key="mock_llm_key_error")
-        agent_error_test = TavilyEnrichmentAgent(llm_client=mock_llm_error, tavily_api_key=tavily_key)
-        output_error = agent_error_test.process(test_input)
-        print(f"Tavily API Called (error test): {output_error.tavily_api_called}")
-        print(f"Enriched Data (error test): {output_error.enriched_data}")
-        if output_error.error_message:
-            print(f"Error (error test): {output_error.error_message}")
-
-        print("\nTesting with no Tavily results")
-        # To truly test no Tavily results, you might need to mock _search_with_tavily or use a query that yields nothing
-        # For now, we'll rely on the previous error message for the case where Tavily might be called but returns nothing.
-        # A more direct test would involve a mock _search_with_tavily that returns [].
-        # The current fallback logic will use company name if LLM fails to generate queries.
-        # If that query also returns nothing, it will be caught by `tavily_api_called and not all_tavily_results_text`
+    if not tavily_key:
+        logger.warning("TAVILY_API_KEY not found in environment variables. Mock tests requiring actual Tavily calls will be limited.")
+        # Mock _search_with_tavily to prevent actual API calls if key is missing
+        def mock_search_disabled(self, query: str, search_depth: str = "advanced", max_results: int = 5) -> List[dict]:
+            logger.info(f"MOCK SEARCH (DISABLED): Would search for '{query}'")
+            return [{"url": f"http://mock.tavily.com/{query.replace(' ', '-')}", "content": f"Mock content for query: {query}"}]
+        TavilyEnrichmentAgent._search_with_tavily_original = TavilyEnrichmentAgent._search_with_tavily
+        TavilyEnrichmentAgent._search_with_tavily = mock_search_disabled
         
-        test_input_no_results_likely = TavilyEnrichmentInput(
-            company_name="NonExistentCompanyNameXYZ123",
-            initial_extracted_text="This company likely does not exist."
-        )
-        output_no_results = agent.process(test_input_no_results_likely) # Using the first agent with working LLM mock
-        print(f"Tavily API Called (no results test): {output_no_results.tavily_api_called}")
-        print(f"Enriched Data (no results test): {output_no_results.enriched_data}")
-        if output_no_results.error_message:
-            print(f"Error (no results test): {output_no_results.error_message}")
+    logger.info("Running mock test for TavilyEnrichmentAgent...")
+    mock_llm = MockLLMClient(api_key="mock_llm_key")
+    agent = TavilyEnrichmentAgent(
+        name="TestTavilyAgent",
+        description="Test Tavily Agent",
+        llm_client=mock_llm,
+        tavily_api_key=tavily_key # Pass key, even if it's None (agent handles it)
+    )
+
+    test_input = TavilyEnrichmentInput(
+        company_name="Test Company Inc.",
+        initial_extracted_text="Test Company Inc. is a company that does testing. Their website is testcompany.com."
+    )
+
+    output = agent.process(test_input)
+
+    logger.info(f"Tavily API Called: {output.tavily_api_called}")
+    logger.info(f"Enrichment Summary: {output.enrichment_summary}")
+    logger.info(f"Key Findings: {output.key_findings}")
+    if output.error_message:
+        logger.error(f"Error: {output.error_message}")
+
+    assert output.tavily_api_called if tavily_key else not output.tavily_api_called # API called only if key exists
+    assert "Test Company Inc." in output.enrichment_summary
+    if tavily_key: # Only expect key findings if Tavily was actually called and summarization worked
+        assert len(output.key_findings) > 0
+        assert "TestMax" in output.key_findings[1]
+
+    # Restore original method if mocked
+    if hasattr(TavilyEnrichmentAgent, '_search_with_tavily_original'):
+        TavilyEnrichmentAgent._search_with_tavily = TavilyEnrichmentAgent._search_with_tavily_original
+        del TavilyEnrichmentAgent._search_with_tavily_original
+
+    logger.info("\nMock test for TavilyEnrichmentAgent completed.")
+
+```
