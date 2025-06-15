@@ -224,23 +224,23 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
             <div className="space-y-2">
               <div className="text-2xl font-bold text-white">{totalLeads}</div>
-              <div className="text-sm text-slate-400">Total Leads</div>
+              <div className="text-sm text-slate-400">{t('total_leads')}</div>
             </div>
             <div className="space-y-2">
               <div className="text-2xl font-bold text-green-400">{avgValue}%</div>
-              <div className="text-sm text-slate-400">Avg ROI Potential</div>
+              <div className="text-sm text-slate-400">{t('avg_roi_potential')}</div>
             </div>
             <div className="space-y-2">
               <div className="text-2xl font-bold text-blue-400">
                 {filteredLeads.filter(l => l.qualification_tier === 'High Potential').length}
               </div>
-              <div className="text-sm text-slate-400">High Potential</div>
+              <div className="text-sm text-slate-400">{t('high_potential')}</div>
             </div>
             <div className="space-y-2">
               <div className="text-2xl font-bold text-purple-400">
                 {leadsByStage['reuniao_agendada']?.length || 0}
               </div>
-              <div className="text-sm text-slate-400">Meetings Scheduled</div>
+              <div className="text-sm text-slate-400">{t('meetings_scheduled')}</div>
             </div>
           </div>
         </CardContent>
@@ -253,7 +253,7 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
               <Input
-                placeholder="Search leads..."
+                placeholder={t('search_leads')}
                 value={filters.search}
                 onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
                 className="pl-10 bg-slate-800 border-slate-600 text-white h-10"
@@ -262,10 +262,10 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
 
             <Select value={filters.sector} onValueChange={(value) => setFilters(prev => ({ ...prev, sector: value }))}>
               <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-10">
-                <SelectValue placeholder="All Sectors" />
+                <SelectValue placeholder={t('all_sectors')} />
               </SelectTrigger>
               <SelectContent className="bg-slate-800 border-slate-700">
-                <SelectItem value="all">All Sectors</SelectItem>
+                <SelectItem value="all">{t('all_sectors')}</SelectItem>
                 {sectors.map(sector => (
                   <SelectItem key={sector} value={sector}>{sector}</SelectItem>
                 ))}
@@ -274,10 +274,10 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
 
             <Select value={filters.qualification} onValueChange={(value) => setFilters(prev => ({ ...prev, qualification: value }))}>
               <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-10">
-                <SelectValue placeholder="All Levels" />
+                <SelectValue placeholder={t('all_levels')} />
               </SelectTrigger>
               <SelectContent className="bg-slate-800 border-slate-700">
-                <SelectItem value="all">All Levels</SelectItem>
+                <SelectItem value="all">{t('all_levels')}</SelectItem>
                 {qualifications.map(qual => (
                   <SelectItem key={qual} value={qual}>{qual.split(' ')[0]}</SelectItem>
                 ))}
@@ -286,13 +286,13 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
 
             <Select value={filters.scoreRange} onValueChange={(value) => setFilters(prev => ({ ...prev, scoreRange: value }))}>
               <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-10">
-                <SelectValue placeholder="All Scores" />
+                <SelectValue placeholder={t('all_scores')} />
               </SelectTrigger>
               <SelectContent className="bg-slate-800 border-slate-700">
-                <SelectItem value="all">All Scores</SelectItem>
-                <SelectItem value="high">High (80%+)</SelectItem>
-                <SelectItem value="medium">Medium (60-79%)</SelectItem>
-                <SelectItem value="low">Low (&lt;60%)</SelectItem>
+                <SelectItem value="all">{t('all_scores')}</SelectItem>
+                <SelectItem value="high">{t('high_score')}</SelectItem>
+                <SelectItem value="medium">{t('medium_score')}</SelectItem>
+                <SelectItem value="low">{t('low_score')}</SelectItem>
               </SelectContent>
             </Select>
 
@@ -303,7 +303,7 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
               size="sm"
             >
               <RotateCcw className="w-4 h-4 mr-1" />
-              Reset
+              {t('reset')}
             </Button>
           </div>
         </CardContent>
@@ -322,7 +322,7 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
                 <div style={{ color: '#38bdf8' }}>
                   <RefreshCw className="w-4 h-4 animate-spin" />
                 </div>
-                <h3 className="font-medium text-white text-sm">Harvesting & Enriching</h3>
+                <h3 className="font-medium text-white text-sm">{t('harvesting_enriching')}</h3>
               </div>
               <Badge variant="secondary" className="text-xs bg-slate-700 text-white">
                 {liveLeads.length}
@@ -340,7 +340,7 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
             ))}
             {liveLeads.length === 0 && (
               <div className="text-center text-slate-500 py-8">
-                <div className="text-sm">No new leads being processed.</div>
+                <div className="text-sm">{t('no_new_leads_processing')}</div>
               </div>
             )}
           </div>
@@ -396,9 +396,9 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
                 ))}
                 {leadsByStage[stage.id]?.length === 0 && (
                   <div className="text-center text-slate-500 py-8">
-                    <div className="text-sm">No leads in this stage</div>
+                    <div className="text-sm">{t('no_leads_in_stage')}</div>
                     {draggedLead && (
-                      <div className="text-xs mt-2 text-slate-400">Drop lead here to move</div>
+                      <div className="text-xs mt-2 text-slate-400">{t('drop_lead_here')}</div>
                     )}
                   </div>
                 )}
@@ -440,7 +440,7 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
           <div className="bg-slate-800 p-4 rounded-lg border border-slate-600">
             <div className="flex items-center space-x-2">
               <RefreshCw className="w-4 h-4 animate-spin" />
-              <span className="text-white">Updating lead stage...</span>
+              <span className="text-white">{t('updating_lead_stage')}</span>
             </div>
           </div>
         </div>
