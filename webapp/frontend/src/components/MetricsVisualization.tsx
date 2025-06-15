@@ -444,7 +444,8 @@ export const MetricsVisualization = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="text-center">
                   <div className="text-3xl font-bold text-green-400">
-                    {dashboardMetrics?.averageProcessingTime?.toFixed(1) || 'N/A'}s
+                    {/* {dashboardMetrics?.averageProcessingTime?.toFixed(1) || 'N/A'}s */}
+                    {'N/A'}
                   </div>
                   <div className="text-sm text-slate-400">Average Processing Time</div>
                 </div>

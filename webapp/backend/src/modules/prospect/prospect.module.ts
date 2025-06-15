@@ -11,7 +11,8 @@ import { LeadsModule } from '../leads/leads.module';
 import { ProspectProcessor } from '../queue/processors/prospect.processor';
 import { EnrichmentProcessor } from '../queue/processors/enrichment.processor';
 import { WebSocketModule } from '../websocket/websocket.module';
-import { McpWebhookModule } from '../mcp-webhook/mcp-webhook.module';
+import { QueueModule } from '../queue/queue.module';
+// import { McpWebhookModule } from '../mcp-webhook/mcp-webhook.module';
 
 @Module({
   imports: [
@@ -23,7 +24,8 @@ import { McpWebhookModule } from '../mcp-webhook/mcp-webhook.module';
     }),
     BusinessContextModule,
     McpModule,
-    McpWebhookModule,
+    // McpWebhookModule,
+    QueueModule,
     UsersModule,
     QuotaModule,
     AuthModule,

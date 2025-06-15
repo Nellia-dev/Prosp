@@ -81,6 +81,9 @@ export interface AgentMetrics {
 export interface AgentStatus {
   id: string;
   name: AgentName;
+  displayName: string; // Display name for the agent
+  category: AgentCategory; // Use unified AgentCategory
+  description?: string; // Optional description for the agent
   status: AgentStatusType;
   metrics: AgentMetrics;
   last_updated: string;
@@ -129,6 +132,9 @@ export interface ComprehensiveProspectPackage {
   };
 }
 
+// Lead Status enum aligned with backend
+export type LeadStatus = 'new' | 'harvested' | 'pending_enrichment' | 'enriching' | 'enriched' | 'enrichment_failed';
+
 export interface LeadData {
   id: string;
   company_name: string;
@@ -145,7 +151,7 @@ export interface LeadData {
   pain_point_analysis?: string[];
   purchase_triggers?: string[];
   processing_stage: ProcessingStage;
-  status: string;
+  status: LeadStatus;
   enrichment_data?: ComprehensiveProspectPackage;
   created_at: string;
   updated_at: string;

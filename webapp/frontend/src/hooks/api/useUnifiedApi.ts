@@ -165,6 +165,13 @@ export const queryKeys = {
   // Prospecting
   prospect: {
     jobs: ['prospect', 'jobs'] as const,
+    jobStatus: (jobId: string) => ['prospect', 'job-status', jobId] as const,
+  },
+
+  // User Management
+  user: {
+    planStatus: ['user', 'plan-status'] as const,
+    profile: ['user', 'profile'] as const,
   },
 } as const;
 
@@ -565,7 +572,7 @@ export const usePlanInfo = (
   options?: UseQueryOptions<UserPlanStatusResponse, Error>
 ) => {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['user-plan-status'],
+    queryKey: queryKeys.user.planStatus,
     queryFn: () => userApi.getPlanStatus(),
     staleTime: 1000 * 60 * 5, // 5 minutes
     ...options,
@@ -599,9 +606,27 @@ export const useInvalidateQueries = () => {
   const queryClient = useQueryClient();
 
   return {
+    // Targeted cache invalidation functions
     invalidateAgents: () => queryClient.invalidateQueries({ queryKey: queryKeys.agents.all }),
+    invalidateAgent: (id: string) => queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(id) }),
+    invalidateAgentsByCategory: (category: ExtendedAgentResponse['category']) => 
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.byCategory(category) }),
+    
     invalidateLeads: () => queryClient.invalidateQueries({ queryKey: queryKeys.leads.all }),
+    invalidateLead: (id: string) => queryClient.invalidateQueries({ queryKey: queryKeys.leads.detail(id) }),
+    invalidateLeadsByStage: () => queryClient.invalidateQueries({ queryKey: queryKeys.leads.byStage }),
+    
     invalidateMetrics: () => queryClient.invalidateQueries({ queryKey: ['metrics'] }),
+    invalidateDashboardMetrics: () => queryClient.invalidateQueries({ queryKey: queryKeys.metrics.dashboard }),
+    
+    invalidateProspectJobs: () => queryClient.invalidateQueries({ queryKey: queryKeys.prospect.jobs }),
+    invalidateBusinessContext: () => queryClient.invalidateQueries({ queryKey: queryKeys.businessContext.current }),
+    
+    invalidateUserData: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.user.planStatus });
+      queryClient.invalidateQueries({ queryKey: queryKeys.auth.profile });
+    },
+    
     invalidateAll: () => queryClient.invalidateQueries(),
   };
 };

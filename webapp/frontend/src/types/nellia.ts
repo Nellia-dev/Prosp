@@ -49,11 +49,11 @@ export type AgentStatusType = 'active' | 'inactive' | 'processing' | 'error' | '
 export interface AgentStatus {
   id: string;
   name: AgentName; // Use unified AgentName
+  displayName: string; // Display name for the agent
   status: AgentStatusType;
   metrics: AgentMetrics;
   last_updated: string;
   current_task?: string;
-  displayName: string; 
   description?: string; 
   category: AgentCategory; // Use unified AgentCategory
 }
