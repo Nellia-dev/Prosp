@@ -461,7 +461,7 @@ class PipelineOrchestrator:
                 yield event
             
             final_package = event.get("data") if 'event' in locals() else None
-            
+
             yield LeadEnrichmentEndEvent(
                 event_type="lead_enrichment_end",
                 timestamp=datetime.now().isoformat(),

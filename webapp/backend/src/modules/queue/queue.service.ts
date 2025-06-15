@@ -295,12 +295,13 @@ export class QueueService {
       const createDto = { ...leadDto, id: leadId, userId, status: LeadStatus.HARVESTED };
       const newLead = await this.leadsService.create(createDto);
       
+      // This is not needed here, the enrichment process starts automatically.
       // Dispatch for enrichment using the queue system
-      await this.enrichmentProcessingQueue.add('enrich-lead', {
-        leadId: newLead.id,
-        userId: userId,
-        harvesterJobId: harvesterJobId,
-      });
+      // await this.enrichmentProcessingQueue.add('enrich-lead', {
+      //   leadId: newLead.id,
+      //   userId: userId,
+      //   harvesterJobId: harvesterJobId,
+      // });
 
       // Notify frontend of the new lead
       this.webSocketService.emitToUser(userId, 'lead-created', { lead: newLead });

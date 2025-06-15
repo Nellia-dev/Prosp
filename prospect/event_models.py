@@ -230,14 +230,20 @@ class LeadEnrichmentEndEvent(BaseEvent):
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
 
+        def convert_special_types(item: Any) -> Any:
+            if isinstance(item, HttpUrl):
+                return str(item)
+            if isinstance(item, datetime):
+                return item.isoformat()
+            if isinstance(item, dict):
+                return {k: convert_special_types(v) for k, v in item.items()}
+            if isinstance(item, list):
+                return [convert_special_types(i) for i in item]
+            return item
+
         processed_final_package = None
-        if self.final_package is not None:
-            if hasattr(self.final_package, 'model_dump'):
-                # If final_package itself is a Pydantic model
-                processed_final_package = self.final_package.model_dump(mode='json')
-            else:
-                # Otherwise, process it using the helper (handles dicts, lists, HttpUrl etc.)
-                processed_final_package = self._convert_value(self.final_package)
+        if self.final_package:
+            processed_final_package = convert_special_types(self.final_package)
 
         data.update({
             "lead_id": self.lead_id,
