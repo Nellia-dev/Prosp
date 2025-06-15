@@ -57,8 +57,7 @@ async def test_production_pipeline():
         orchestrator = PipelineOrchestrator(
             business_context=business_context,
             user_id=user_id,
-            job_id=job_id,
-            use_hybrid=True  # Use full production features
+            job_id=job_id
         )
         logger.success("✅ Pipeline initialized successfully")
         

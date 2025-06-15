@@ -60,10 +60,11 @@ class B2BPersonalizedMessageAgent(BaseAgent[B2BPersonalizedMessageInput, B2BPers
             crafted_message_channel = channel
 
             if channel == "N/A" or not contact_info:
-                error_message = "Nenhum canal de contato adequado encontrado."
+                # This is a predictable outcome, not an exception. Return a standard output.
                 return B2BPersonalizedMessageOutput(
-                    crafted_message_channel=channel,
-                    error_message=error_message
+                    crafted_message_channel="N/A",
+                    crafted_message_body="Não foi possível gerar a mensagem por falta de contato.",
+                    error_message="Nenhum canal de contato adequado encontrado."
                 )
 
             # Truncate inputs
@@ -173,10 +174,7 @@ class B2BPersonalizedMessageAgent(BaseAgent[B2BPersonalizedMessageInput, B2BPers
                 # Fall through to return default B2BPersonalizedMessageOutput with this error
         
         except Exception as e:
-            self.logger.error(f"An unexpected error occurred in {self.name}: {e}")
-            import traceback
-            import re # Ensure re is imported
-            traceback.print_exc()
+            self.logger.error(f"An unexpected error occurred in {self.name}: {e}", exc_info=True)
             error_message = f"An unexpected error occurred: {str(e)}"
 
         # Default return if other paths didn't hit (e.g. empty llm_response_str)

@@ -196,14 +196,18 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                     
                     # Detailed success analysis
                     error_msg = getattr(output, 'error_message', None)
-                    success = not error_msg
                     
-                    if success:
-                        # Log output quality metrics
-                        output_info = self._analyze_agent_output(agent.name, output)
-                        agent_logger.info(f"✅ Agent {agent.name} completed successfully: {output_info}")
+                    # Special handling for B2BPersonalizedMessageAgent: "No contact found" is a warning, not a failure.
+                    if agent.name == "B2BPersonalizedMessageAgent" and error_msg == "Nenhum canal de contato adequado encontrado.":
+                        success = True # It's not a failure, the pipeline can continue.
+                        agent_logger.warning(f"🟡 Agent {agent.name} completed with a known condition: {error_msg}")
                     else:
-                        agent_logger.warning(f"⚠️  Agent {agent.name} completed with error: {error_msg}")
+                        success = not error_msg
+                        if success:
+                            output_info = self._analyze_agent_output(agent.name, output)
+                            agent_logger.info(f"✅ Agent {agent.name} completed successfully: {output_info}")
+                        else:
+                            agent_logger.warning(f"⚠️  Agent {agent.name} completed with error: {error_msg}")
                         
                 except Exception as e:
                     agent_logger.error(f"❌ Sub-agent {agent.name} raised an exception: {e}")
@@ -583,6 +587,9 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             
             primary_message = PersonalizedMessage(**primary_message_args)
             
+            # Convert agent output to the correct Pydantic model for the final package.
+            internal_briefing_for_package = InternalBriefing(**internal_briefing_output.model_dump())
+
             # Create enhanced final package with AI insights
             final_package = ComprehensiveProspectPackage(
                 analyzed_lead=analyzed_lead,
@@ -590,7 +597,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 enhanced_personalized_message=EnhancedPersonalizedMessage(
                     primary_message=primary_message
                 ),
-                internal_briefing=internal_briefing_output,
+                internal_briefing=internal_briefing_for_package,
                 confidence_score=self._calculate_confidence_score_with_ai(enhanced_strategy, ai_prospect_profile),
                 roi_potential_score=self._calculate_roi_potential_with_ai(enhanced_strategy, ai_prospect_profile),
                 brazilian_market_fit=self._calculate_brazilian_fit(analyzed_lead),
@@ -627,15 +634,13 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             pipeline_logger.info(f"   • Value Propositions: {'✅' if value_props_count > 0 else '❌'} ({value_props_count} propositions)")
             pipeline_logger.info(f"   • Personalized Message: {'✅' if message_length > 0 else '❌'} ({message_length} chars via {message_channel})")
 
-            yield PipelineEndEvent(
+            yield LeadEnrichmentEndEvent(
                 event_type="pipeline_end",
-                timestamp=datetime.now().isoformat(),
                 job_id=job_id,
                 user_id=user_id,
+                lead_id=analyzed_lead.lead_id,
                 success=True,
-                total_leads_generated=1,
-                execution_time_seconds=total_time,
-                data=final_package.model_dump()
+                final_package=final_package.model_dump(mode='json')
             ).to_dict()
 
         except Exception as e:
@@ -650,6 +655,16 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 user_id=user_id,
                 error_message=str(e),
                 error_type=type(e).__name__
+            ).to_dict()
+
+            # Also yield the definitive end event on failure
+            yield LeadEnrichmentEndEvent(
+                event_type="lead_enrichment_end",
+                job_id=job_id,
+                user_id=user_id,
+                lead_id=analyzed_lead.lead_id,
+                success=False,
+                error_message=str(e)
             ).to_dict()
             raise
 

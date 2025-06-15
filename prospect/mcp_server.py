@@ -154,7 +154,6 @@ async def execute_streaming_prospect(request: Request):
                 business_context=business_context,
                 user_id=user_id,
                 job_id=job_id,
-                use_hybrid=True,  # Use hybrid mode for both Gemini and TAVILY
             )
             logger.info(f"✅ PipelineOrchestrator initialized successfully for job {job_id}")
         except Exception as init_error:

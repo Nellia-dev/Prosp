@@ -397,51 +397,53 @@ export class QueueService {
           updateData.qualification_tier = finalPackage.enhanced_strategy.lead_qualification.qualification_tier;
         }
         
-        // Extract scores from various possible locations
-        if (finalPackage.enhanced_strategy?.lead_qualification?.relevance_score !== undefined) {
-          updateData.relevance_score = finalPackage.enhanced_strategy.lead_qualification.relevance_score;
+        // Extract scores from the top-level package
+        if (finalPackage.relevance_score !== undefined) {
+          updateData.relevance_score = finalPackage.relevance_score;
         }
-        if (finalPackage.enhanced_strategy?.lead_qualification?.roi_potential_score !== undefined) {
-          updateData.roi_potential_score = finalPackage.enhanced_strategy.lead_qualification.roi_potential_score;
+        if (finalPackage.roi_potential_score !== undefined) {
+          updateData.roi_potential_score = finalPackage.roi_potential_score;
         }
-        if (finalPackage.enhanced_strategy?.lead_qualification?.brazilian_market_fit !== undefined) {
-          updateData.brazilian_market_fit = finalPackage.enhanced_strategy.lead_qualification.brazilian_market_fit;
+        if (finalPackage.brazilian_market_fit !== undefined) {
+          updateData.brazilian_market_fit = finalPackage.brazilian_market_fit;
         }
         
         // Extract analyzed lead data if available
         if (finalPackage.analyzed_lead) {
           const analyzedLead = finalPackage.analyzed_lead;
-          
+
           if (analyzedLead.analysis?.company_sector) {
             updateData.company_sector = analyzedLead.analysis.company_sector;
           }
-          
-          // Extract persona information
-          if (analyzedLead.analysis?.persona_insights) {
-            updateData.persona = {
-              likely_role: analyzedLead.analysis.persona_insights.likely_role || '',
-              decision_maker_probability: analyzedLead.analysis.persona_insights.decision_maker_probability || 0,
-            };
-          }
-          
-          // Extract pain points and purchase triggers
+
+          // Extract pain points
           if (analyzedLead.analysis?.potential_challenges) {
             updateData.pain_point_analysis = analyzedLead.analysis.potential_challenges;
           }
-          if (analyzedLead.analysis?.purchase_triggers) {
-            updateData.purchase_triggers = analyzedLead.analysis.purchase_triggers;
-          }
         }
-        
+
+        // Extract persona information from top-level package
+        if (finalPackage.persona_profile) {
+          updateData.persona = {
+            likely_role: finalPackage.persona_profile.persona_title || '',
+            decision_maker_probability: finalPackage.persona_profile.decision_maker_likelihood || 0,
+          };
+        }
+
+        // Extract purchase triggers from enhanced_strategy
+        if (finalPackage.enhanced_strategy?.purchase_triggers) {
+          updateData.purchase_triggers = finalPackage.enhanced_strategy.purchase_triggers;
+        }
+
         // Extract AI intelligence data if available
         if (finalPackage.ai_intelligence) {
           // Store AI intelligence data in enrichment_data for full preservation
           const enrichmentData = finalPackage;
           enrichmentData.ai_intelligence_summary = {
-            market_fit_score: finalPackage.ai_intelligence.market_fit_score,
-            decision_maker_likelihood: finalPackage.ai_intelligence.decision_maker_likelihood,
-            lead_quality_score: finalPackage.ai_intelligence.lead_quality_score,
-            recommended_approach: finalPackage.ai_intelligence.recommended_approach,
+            market_fit_score: finalPackage.ai_intelligence.pain_alignment_score,
+            decision_maker_likelihood: finalPackage.ai_intelligence.buying_intent_score,
+            lead_quality_score: finalPackage.ai_intelligence.prospect_score,
+            recommended_approach: finalPackage.ai_intelligence.predictive_insights,
           };
         }
         

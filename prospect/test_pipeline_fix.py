@@ -41,8 +41,7 @@ async def test_pipeline_execution():
         orchestrator = PipelineOrchestrator(
             business_context=business_context,
             user_id=user_id,
-            job_id=job_id,
-            use_hybrid=False  # Disable hybrid for simpler testing
+            job_id=job_id
         )
         logger.info("✅ PipelineOrchestrator initialized successfully")
         
