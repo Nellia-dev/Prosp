@@ -210,6 +210,23 @@ class LeadEnrichmentEndEvent(BaseEvent):
     error_message: Optional[str] = None
 
 
+    def _convert_value(self, value: Any) -> Any:
+        """
+        Recursively converts values for JSON serialization.
+        - Converts HttpUrl to string.
+        - Converts Pydantic models to dict using model_dump(mode='json').
+        - Recursively processes lists and dicts.
+        """
+        if isinstance(value, HttpUrl):
+            return str(value)
+        if hasattr(value, 'model_dump'): # Check for Pydantic model
+            return value.model_dump(mode='json')
+        if isinstance(value, list):
+            return [self._convert_value(item) for item in value]
+        if isinstance(value, dict):
+            return {k: self._convert_value(v) for k, v in value.items()}
+        return value
+
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
 
