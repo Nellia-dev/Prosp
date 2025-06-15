@@ -213,18 +213,20 @@ class LeadEnrichmentEndEvent(BaseEvent):
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
 
-        def convert_httpurl_to_str(item: Any) -> Any:
+        def convert_special_types(item: Any) -> Any:
             if isinstance(item, HttpUrl):
                 return str(item)
+            if isinstance(item, datetime):
+                return item.isoformat()
             if isinstance(item, dict):
-                return {k: convert_httpurl_to_str(v) for k, v in item.items()}
+                return {k: convert_special_types(v) for k, v in item.items()}
             if isinstance(item, list):
-                return [convert_httpurl_to_str(i) for i in item]
+                return [convert_special_types(i) for i in item]
             return item
 
         processed_final_package = None
         if self.final_package:
-            processed_final_package = convert_httpurl_to_str(self.final_package)
+            processed_final_package = convert_special_types(self.final_package)
 
         data.update({
             "lead_id": self.lead_id,
