@@ -1,8 +1,10 @@
 import { Controller, Get, Post, Body, Param, HttpException, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { McpService } from './mcp.service';
+import { Public } from '../auth/public.decorator';
 import { AgentName } from '../../shared/types/nellia.types';
 
+@Public()
 @ApiTags('MCP (Model Context Protocol)')
 @Controller('mcp')
 export class McpController {

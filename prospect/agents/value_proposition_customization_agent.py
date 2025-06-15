@@ -28,9 +28,8 @@ class ValuePropositionCustomizationOutput(BaseModel):
     error_message: Optional[str] = None
 
 class ValuePropositionCustomizationAgent(BaseAgent[ValuePropositionCustomizationInput, ValuePropositionCustomizationOutput]):
-    def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "ValuePropositionCustomizationAgent"
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -154,7 +153,11 @@ if __name__ == '__main__':
 
     print("Running mock test for ValuePropositionCustomizationAgent...")
     mock_llm = MockLLMClient()
-    agent = ValuePropositionCustomizationAgent(llm_client=mock_llm)
+    agent = ValuePropositionCustomizationAgent(
+        name="ValuePropositionCustomizationAgent",
+        description="Customizes value propositions for leads.",
+        llm_client=mock_llm
+    )
 
     test_lead_analysis = "Empresa Exemplo (TI, Médio Porte). Foco em otimizar processos. Expansão recente."
     test_persona_profile = "Carlos Mendes, Diretor de Operações da Empresa Exemplo. Busca eficiência, ROI, integração fácil."

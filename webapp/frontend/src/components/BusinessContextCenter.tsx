@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,37 +18,51 @@ export const BusinessContextCenter = () => {
 
   const [context, setContext] = useState<BusinessContext>({
     business_description: '',
+    product_service_description: '',
     target_market: '',
     value_proposition: '',
     ideal_customer: '',
     pain_points: [],
-    industry_focus: []
+    competitive_advantage: '',
+    competitors: [],
+    industry_focus: [],
+    geographic_focus: [],
   });
 
   const [newPainPoint, setNewPainPoint] = useState('');
   const [newIndustry, setNewIndustry] = useState('');
-  const [hasChanges, setHasChanges] = useState(false);
+  const [newGeographicFocus, setNewGeographicFocus] = useState('');
+
 
   // Adapter functions to convert between API and unified types
   const adaptApiToUnified = (apiContext: BusinessContextResponse): BusinessContext => ({
     id: apiContext.id,
-    business_description: apiContext.businessDescription,
-    target_market: apiContext.targetMarket,
-    value_proposition: apiContext.valueProposition,
-    ideal_customer: apiContext.idealCustomer,
-    pain_points: apiContext.painPointsSolved,
-    industry_focus: apiContext.industryFocus,
-    created_at: apiContext.createdAt,
-    updated_at: apiContext.updatedAt
+    business_description: apiContext.business_description,
+    product_service_description: apiContext.product_service_description,
+    target_market: apiContext.target_market,
+    value_proposition: apiContext.value_proposition,
+    ideal_customer: apiContext.ideal_customer,
+    pain_points: apiContext.pain_points,
+    competitive_advantage: apiContext.competitive_advantage,
+    competitors: apiContext.competitors,
+    industry_focus: apiContext.industry_focus,
+    geographic_focus: apiContext.geographic_focus,
+    is_active: apiContext.is_active,
+    created_at: apiContext.created_at,
+    updated_at: apiContext.updated_at
   });
 
   const adaptUnifiedToApi = (unifiedContext: BusinessContext): BusinessContextRequest => ({
-    businessDescription: unifiedContext.business_description,
-    targetMarket: unifiedContext.target_market,
-    valueProposition: unifiedContext.value_proposition,
-    idealCustomer: unifiedContext.ideal_customer || '',
-    painPointsSolved: unifiedContext.pain_points,
-    industryFocus: unifiedContext.industry_focus
+    business_description: unifiedContext.business_description,
+    product_service_description: unifiedContext.product_service_description,
+    target_market: unifiedContext.target_market,
+    value_proposition: unifiedContext.value_proposition,
+    ideal_customer: unifiedContext.ideal_customer || '',
+    pain_points: unifiedContext.pain_points,
+    competitive_advantage: unifiedContext.competitive_advantage || '',
+    competitors: unifiedContext.competitors || [],
+    industry_focus: unifiedContext.industry_focus,
+    geographic_focus: unifiedContext.geographic_focus || [],
   });
 
   // Load existing context when data is available
@@ -56,17 +70,16 @@ export const BusinessContextCenter = () => {
     if (existingContext) {
       const adaptedContext = adaptApiToUnified(existingContext);
       setContext(adaptedContext);
-      setHasChanges(false);
     }
   }, [existingContext]);
 
   // Track changes
-  useEffect(() => {
-    if (existingContext) {
-      const adaptedExisting = adaptApiToUnified(existingContext);
-      const hasChanged = JSON.stringify(context) !== JSON.stringify(adaptedExisting);
-      setHasChanges(hasChanged);
+  const hasChanges = useMemo(() => {
+    if (!existingContext) {
+      return false;
     }
+    const adaptedExisting = adaptApiToUnified(existingContext);
+    return JSON.stringify(context) !== JSON.stringify(adaptedExisting);
   }, [context, existingContext]);
 
   const addPainPoint = () => {
@@ -103,11 +116,26 @@ export const BusinessContextCenter = () => {
     }));
   };
 
+  const addGeographicFocus = () => {
+    if (newGeographicFocus.trim()) {
+      setContext(prev => ({
+        ...prev,
+        geographic_focus: [...prev.geographic_focus, newGeographicFocus.trim()]
+      }));
+      setNewGeographicFocus('');
+    }
+  };
+  const removeGeographicFocus = (index: number) => {
+    setContext(prev => ({
+      ...prev,
+      geographic_focus: prev.geographic_focus.filter((_, i) => i !== index)
+    }));
+  };
+
   const handleSave = async () => {
     try {
       const updateData = adaptUnifiedToApi(context);
       await updateContextMutation.mutateAsync(updateData);
-      setHasChanges(false);
     } catch (error) {
       console.error('Failed to save business context:', error);
     }
@@ -117,7 +145,6 @@ export const BusinessContextCenter = () => {
     if (existingContext) {
       const adaptedContext = adaptApiToUnified(existingContext);
       setContext(adaptedContext);
-      setHasChanges(false);
     }
   };
 
@@ -193,7 +220,17 @@ export const BusinessContextCenter = () => {
             <Textarea
               value={context.business_description}
               onChange={(e) => setContext(prev => ({ ...prev, business_description: e.target.value }))}
-              placeholder="Describe your business, products and services..."
+              placeholder="Describe your business..."
+              className="bg-slate-800 border-slate-600 text-white min-h-[100px]"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-white text-sm font-medium">Product/Service Description</label>
+            <Textarea
+              value={context.product_service_description}
+              onChange={(e) => setContext(prev => ({ ...prev, product_service_description: e.target.value }))}
+              placeholder="Describe your products and services..."
               className="bg-slate-800 border-slate-600 text-white min-h-[100px]"
             />
           </div>
@@ -301,6 +338,42 @@ export const BusinessContextCenter = () => {
               </p>
             )}
           </div>
+
+          <div>
+            <label className="text-white text-sm font-medium mb-2 block">Geographic Focus</label>
+            <div className="flex space-x-2 mb-3">
+              <Input
+                value={newGeographicFocus}
+                onChange={(e) => setNewGeographicFocus(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && addGeographicFocus()}
+                placeholder="Add location where you operate (e.g., USA, Brazil, Latin America, ...)"
+                className="bg-slate-800 border-slate-600 text-white"
+              />
+              <Button onClick={addGeographicFocus} size="sm" variant="outline">
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {context.geographic_focus.map((location, index) => (
+                <Badge key={index} variant="secondary" className="bg-green-700 text-white">
+                  {location}
+                  <Button
+                    onClick={() => removeGeographicFocus(index)}
+                    variant="ghost"
+                    size="sm"
+                    className="ml-2 h-4 w-4 p-0 hover:bg-green-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </Badge>
+              ))}
+            </div>
+            {context.geographic_focus.length === 0 && (
+              <p className="text-slate-500 text-sm mt-2">
+                Add geographic focus to help agents understand where you operate
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Context Summary */}
@@ -316,6 +389,10 @@ export const BusinessContextCenter = () => {
               <span className="text-white ml-2">{context.industry_focus.length}</span>
             </div>
             <div>
+              <span className="text-slate-400">Locations:</span>
+              <span className="text-white ml-2">{context.geographic_focus.length}</span>
+            </div>
+            <div>
               <span className="text-slate-400">Completeness:</span>
               <span className="text-white ml-2">
                 {Math.round(
@@ -324,7 +401,8 @@ export const BusinessContextCenter = () => {
                     context.target_market,
                     context.value_proposition,
                     context.pain_points.length > 0,
-                    context.industry_focus.length > 0
+                    context.industry_focus.length > 0,
+                    context.geographic_focus.length > 0
                   ].filter(Boolean).length / 5) * 100
                 )}%
               </span>

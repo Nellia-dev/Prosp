@@ -5,8 +5,11 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Index,
+  OneToMany,
 } from 'typeorm';
 import { Exclude } from 'class-transformer';
+import { PlanId, DEFAULT_PLAN } from '../../config/plans.config';
+import { Lead } from './lead.entity';
 
 export enum UserRole {
   ADMIN = 'admin',
@@ -44,6 +47,27 @@ export class User {
 
   @Column({ type: 'timestamp', nullable: true })
   last_login: Date;
+
+  // Plan and quota tracking fields
+  @Column({
+    type: 'enum',
+    enum: ['free', 'starter', 'pro', 'enterprise'],
+    default: DEFAULT_PLAN,
+  })
+  plan: PlanId;
+
+  @Column({ type: 'integer', default: 0 })
+  currentLeadQuotaUsed: number;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lastQuotaResetAt: Date;
+
+  @Column({ type: 'varchar', nullable: true, unique: true })
+  prospectingJobId: string;
+
+  // Relations
+  @OneToMany(() => Lead, (lead) => lead.user)
+  leads: Lead[];
 
   @CreateDateColumn()
   created_at: Date;

@@ -17,13 +17,15 @@ import {
   UseMutationOptions,
 } from '@tanstack/react-query';
 
-import { 
+import {
   authApi,
   agentsApi,
   leadsApi,
   businessContextApi,
   chatApi,
-  metricsApi
+  metricsApi,
+  prospectApi,
+  userApi
 } from '../../services/api';
 
 // Import existing API types
@@ -49,6 +51,8 @@ import type {
   MetricsSummaryResponse,
   PaginatedResponse,
   BulkLeadOperation,
+  ProspectJob,
+  UserPlanStatusResponse,
 } from '../../types/api';
 
 // Import unified types for extended agent support
@@ -156,6 +160,18 @@ export const queryKeys = {
     agents: ['metrics', 'agents'] as const,
     leads: ['metrics', 'leads'] as const,
     summary: ['metrics', 'summary'] as const,
+  },
+
+  // Prospecting
+  prospect: {
+    jobs: ['prospect', 'jobs'] as const,
+    jobStatus: (jobId: string) => ['prospect', 'job-status', jobId] as const,
+  },
+
+  // User Management
+  user: {
+    planStatus: ['user', 'plan-status'] as const,
+    profile: ['user', 'profile'] as const,
   },
 } as const;
 
@@ -355,13 +371,42 @@ export const useProcessLead = (
 };
 
 // ===================================
+// Prospecting Hooks
+// ===================================
+
+export const useStartProspectingJob = (
+  options?: UseMutationOptions<{ jobId: string | number; status: string }, Error, BusinessContextRequest>
+) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (businessContext: BusinessContextRequest) => prospectApi.startProspectingJob(businessContext),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.prospect.jobs });
+      queryClient.invalidateQueries({ queryKey: queryKeys.metrics.dashboard });
+    },
+    ...options,
+  });
+};
+
+export const useProspectJobs = (
+  options?: UseQueryOptions<ProspectJob[], Error>
+) => {
+  return useQuery({
+    queryKey: queryKeys.prospect.jobs,
+    queryFn: () => prospectApi.getJobs(),
+    ...options,
+  });
+};
+
+// ===================================
 // Business Context Hooks
 // ===================================
 
 export const useBusinessContext = (
-  options?: UseQueryOptions<BusinessContextResponse, Error>
+  options?: UseQueryOptions<BusinessContextResponse | null, Error>
 ) => {
-  return useQuery({
+  return useQuery<BusinessContextResponse | null>({
     queryKey: queryKeys.businessContext.current,
     queryFn: () => businessContextApi.get(),
     staleTime: 1000 * 60 * 10, // 10 minutes
@@ -523,6 +568,36 @@ export const useProfile = (
   });
 };
 
+export const usePlanInfo = (
+  options?: UseQueryOptions<UserPlanStatusResponse, Error>
+) => {
+  const { data, isLoading, error } = useQuery({
+    queryKey: queryKeys.user.planStatus,
+    queryFn: () => userApi.getPlanStatus(),
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    ...options,
+  });
+
+  const quotaUsagePercentage = data?.quota ? (data.quota.used / data.quota.total) * 100 : 0;
+  const isQuotaExhausted = data?.quota ? data.quota.remaining <= 0 : true;
+  const quotaDisplay = data?.quota ? `${data.quota.used} / ${data.quota.total === Infinity ? '∞' : data.quota.total}` : 'N/A';
+  const nextResetFormatted = data?.quota?.nextResetAt ? new Date(data.quota.nextResetAt).toLocaleDateString() : 'N/A';
+
+  return {
+    plan: data?.plan,
+    quota: data?.quota,
+    canStartProspecting: data?.canStartProspecting,
+    hasActiveJob: data?.hasActiveJob,
+    activeJobId: data?.activeJobId,
+    quotaUsagePercentage,
+    isQuotaExhausted,
+    quotaDisplay,
+    nextResetFormatted,
+    isLoading,
+    error,
+  };
+};
+
 // ===================================
 // Utility Hooks and Helpers
 // ===================================
@@ -531,9 +606,27 @@ export const useInvalidateQueries = () => {
   const queryClient = useQueryClient();
 
   return {
+    // Targeted cache invalidation functions
     invalidateAgents: () => queryClient.invalidateQueries({ queryKey: queryKeys.agents.all }),
+    invalidateAgent: (id: string) => queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(id) }),
+    invalidateAgentsByCategory: (category: ExtendedAgentResponse['category']) => 
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.byCategory(category) }),
+    
     invalidateLeads: () => queryClient.invalidateQueries({ queryKey: queryKeys.leads.all }),
+    invalidateLead: (id: string) => queryClient.invalidateQueries({ queryKey: queryKeys.leads.detail(id) }),
+    invalidateLeadsByStage: () => queryClient.invalidateQueries({ queryKey: queryKeys.leads.byStage }),
+    
     invalidateMetrics: () => queryClient.invalidateQueries({ queryKey: ['metrics'] }),
+    invalidateDashboardMetrics: () => queryClient.invalidateQueries({ queryKey: queryKeys.metrics.dashboard }),
+    
+    invalidateProspectJobs: () => queryClient.invalidateQueries({ queryKey: queryKeys.prospect.jobs }),
+    invalidateBusinessContext: () => queryClient.invalidateQueries({ queryKey: queryKeys.businessContext.current }),
+    
+    invalidateUserData: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.user.planStatus });
+      queryClient.invalidateQueries({ queryKey: queryKeys.auth.profile });
+    },
+    
     invalidateAll: () => queryClient.invalidateQueries(),
   };
 };
@@ -559,7 +652,6 @@ export const usePipelineStatus = () => {
     isProcessing: agents?.some(agent => agent.status === 'processing') || false,
     activeAgentCount: agents?.filter(agent => agent.status === 'active').length || 0,
     totalLeads: metrics?.totalLeads || 0,
-    processedLeads: metrics?.processedLeads || 0,
-    processingRate: metrics ? (metrics.processedLeads / metrics.totalLeads) * 100 : 0,
+    processingRate: metrics?.processingRate || 0,
   };
 };

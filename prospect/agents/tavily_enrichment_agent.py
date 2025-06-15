@@ -30,8 +30,8 @@ class TavilyEnrichmentOutput(BaseModel):
 
 
 class TavilyEnrichmentAgent(BaseAgent[TavilyEnrichmentInput, TavilyEnrichmentOutput]):
-    def __init__(self, llm_client: LLMClientBase, tavily_api_key: str):
-        super().__init__(llm_client)
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, tavily_api_key: str, **kwargs):
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
         self.tavily_api_key = tavily_api_key
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
@@ -67,9 +67,13 @@ class TavilyEnrichmentAgent(BaseAgent[TavilyEnrichmentInput, TavilyEnrichmentOut
         tavily_api_called = False
         error_message = None
         enriched_data = input_data.initial_extracted_text
+        
+        self.logger.info(f"🔍 TAVILY ENRICHMENT STARTING for company: {input_data.company_name}")
+        self.logger.info(f"📊 Input data: text_length={len(input_data.initial_extracted_text)}, api_key_available={bool(self.tavily_api_key)}")
 
         try:
             # First LLM call to generate search queries
+            self.logger.debug("🤖 Step 1: Generating search queries with LLM")
             prompt_template_tavily_queries = """
                 Com base no texto extraído e no nome da empresa, gere {TAVILY_TOTAL_QUERIES_PER_LEAD} consultas de pesquisa concisas e direcionadas para o Tavily API para encontrar informações adicionais sobre a empresa.
                 Concentre-se em encontrar:
@@ -93,47 +97,78 @@ class TavilyEnrichmentAgent(BaseAgent[TavilyEnrichmentInput, TavilyEnrichmentOut
             llm_response_queries = self.generate_llm_response(formatted_prompt_queries)
 
             if not llm_response_queries:
+                self.logger.error("❌ LLM call for Tavily queries returned no response")
                 return TavilyEnrichmentOutput(
                     enriched_data=enriched_data,
                     tavily_api_called=False,
                     error_message="LLM call for Tavily queries returned no response."
                 )
 
+            self.logger.debug(f"✅ LLM returned queries response, length: {len(llm_response_queries)}")
+            
             try:
-                search_queries = json.loads(llm_response_queries)
+                # Extract JSON from the response
+                match = re.search(r"```json\n(.*)\n```", llm_response_queries, re.DOTALL)
+                if match:
+                    json_str = match.group(1)
+                    self.logger.debug("📝 Extracted queries from JSON markdown block")
+                else:
+                    json_str = llm_response_queries
+                    self.logger.debug("📝 Using raw response as JSON")
+
+                search_queries = json.loads(json_str)
                 if not isinstance(search_queries, list) or not all(isinstance(q, str) for q in search_queries):
                     raise ValueError("LLM did not return a valid list of search strings.")
+                    
+                self.logger.info(f"🔍 Generated {len(search_queries)} search queries: {search_queries}")
+                
             except (json.JSONDecodeError, ValueError) as e:
+                self.logger.warning(f"⚠️  Error decoding LLM response for search queries: {e}")
+                self.logger.debug(f"Failed response: {llm_response_queries[:500]}...")
                 error_message = f"Error decoding LLM response for search queries: {e}. Response: {llm_response_queries}"
                 # Fallback: use company name as a single query
                 search_queries = [f"informações sobre a empresa {input_data.company_name}"]
-
+                self.logger.info(f"🔄 Using fallback query: {search_queries}")
 
             all_tavily_results_text = ""
             if search_queries:
                 tavily_api_called = True
+                self.logger.info(f"🌐 Starting Tavily API calls for {len(search_queries)} queries")
+                
                 for query_count, query in enumerate(search_queries):
                     if query_count >= TAVILY_TOTAL_QUERIES_PER_LEAD:
+                        self.logger.debug(f"⏭️  Stopping at query limit: {TAVILY_TOTAL_QUERIES_PER_LEAD}")
                         break
                     if not query.strip(): # Skip empty queries
+                        self.logger.debug("⏭️  Skipping empty query")
                         continue
                     
                     # Add company name to query if not present
                     if input_data.company_name.lower() not in query.lower():
                         query = f"{query} ({input_data.company_name})"
 
+                    self.logger.debug(f"🔍 Query {query_count + 1}: {query}")
+                    
                     tavily_results = self._search_with_tavily(
                         query,
                         search_depth=TAVILY_SEARCH_DEPTH,
                         max_results=TAVILY_MAX_RESULTS_PER_QUERY
                     )
+                    
+                    self.logger.debug(f"📊 Query {query_count + 1} returned {len(tavily_results)} results")
                     time.sleep(1) # Respect API rate limits
 
                     if tavily_results:
                         for result in tavily_results:
+                            content_length = len(result.get('content', ''))
                             all_tavily_results_text += f"Fonte: {result.get('url', 'N/A')}\nConteúdo: {result.get('content', '')}\n\n"
+                            self.logger.debug(f"📄 Added result from {result.get('url', 'N/A')}: {content_length} chars")
+                            
                     if len(all_tavily_results_text) > GEMINI_TEXT_INPUT_TRUNCATE_CHARS * 0.75: # Stop if too much text
+                        self.logger.debug(f"⏹️  Stopping due to text length limit: {len(all_tavily_results_text)} chars")
                         break
+                
+                self.logger.info(f"📊 Total Tavily results collected: {len(all_tavily_results_text)} characters")
             
             if tavily_api_called and all_tavily_results_text:
                 # Second LLM call to summarize and enrich

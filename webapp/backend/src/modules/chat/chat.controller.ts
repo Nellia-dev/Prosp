@@ -9,7 +9,7 @@ import {
   HttpStatus,
   HttpException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { ChatService } from './chat.service';
 import { ChatMessage } from '../../shared/types/nellia.types';
 
@@ -28,6 +28,7 @@ interface DateRangeDto {
   endDate: string;
 }
 
+@ApiBearerAuth()
 @ApiTags('chat')
 @Controller('chat')
 export class ChatController {

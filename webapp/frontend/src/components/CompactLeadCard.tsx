@@ -2,15 +2,24 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Globe, Eye } from "lucide-react";
-import { LeadData } from "../types/nellia";
+import { LeadData } from "../types/unified";
 import { useState } from "react";
+import { useTranslation } from "../hooks/useTranslation";
+
+interface EnrichmentEvent {
+  status_message?: string;
+  agent_name?: string;
+}
 
 interface CompactLeadCardProps {
   lead: LeadData;
   onExpand?: (lead: LeadData) => void;
+  isUpdated?: boolean;
+  enrichmentEvent?: EnrichmentEvent;
 }
 
-export const CompactLeadCard = ({ lead, onExpand }: CompactLeadCardProps) => {
+export const CompactLeadCard = ({ lead, onExpand, isUpdated, enrichmentEvent }: CompactLeadCardProps) => {
+  const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
 
   const getQualificationColor = (tier: string) => {
@@ -25,8 +34,8 @@ export const CompactLeadCard = ({ lead, onExpand }: CompactLeadCardProps) => {
   const formatScore = (score: number) => (score * 100).toFixed(0);
 
   return (
-    <Card 
-      className="relative overflow-hidden bg-slate-800 border-slate-600 hover:border-green-500/50 transition-all duration-200 cursor-pointer group mb-2"
+    <Card
+      className={`relative overflow-hidden bg-slate-800 border-slate-600 hover:border-green-500/50 transition-all duration-200 cursor-pointer group mb-2 ${isUpdated ? 'glow-animation' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={() => onExpand?.(lead)}
@@ -50,29 +59,36 @@ export const CompactLeadCard = ({ lead, onExpand }: CompactLeadCardProps) => {
           )}
         </div>
 
-        {/* Compact Scores */}
-        <div className="grid grid-cols-3 gap-2 text-center text-xs">
-          <div>
-            <div className="text-slate-400">REL</div>
-            <div className="text-white font-semibold">{formatScore(lead.relevance_score)}%</div>
+        {/* Enrichment Status or Scores */}
+        {enrichmentEvent ? (
+          <div className="text-center text-xs text-slate-300 py-2">
+            <p className="font-semibold">{enrichmentEvent.status_message || t('processing')}</p>
+            {enrichmentEvent.agent_name && <p className="text-slate-500">{t('agent')}: {enrichmentEvent.agent_name}</p>}
           </div>
-          <div>
-            <div className="text-slate-400">ROI</div>
-            <div className="text-white font-semibold">{formatScore(lead.roi_potential_score)}%</div>
-          </div>
-          <div>
-            <div className="text-slate-400">FIT</div>
-            <div className="text-white font-semibold">{formatScore(lead.brazilian_market_fit)}%</div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between">
-          <Badge variant="outline" className="text-xs text-slate-300 border-slate-600 px-1 py-0">
-            {lead.qualification_tier.split(' ')[0]}
-          </Badge>
-          <span className="text-xs text-slate-400 truncate ml-2">{lead.company_sector}</span>
-        </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div>
+                <div className="text-slate-400">REL</div>
+                <div className="text-white font-semibold">{formatScore(lead.relevance_score)}%</div>
+              </div>
+              <div>
+                <div className="text-slate-400">ROI</div>
+                <div className="text-white font-semibold">{formatScore(lead.roi_potential_score)}%</div>
+              </div>
+              <div>
+                <div className="text-slate-400">FIT</div>
+                <div className="text-white font-semibold">{formatScore(lead.brazilian_market_fit)}%</div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between mt-2">
+              <Badge variant="outline" className="text-xs text-slate-300 border-slate-600 px-1 py-0">
+                {lead.qualification_tier.split(' ')[0]}
+              </Badge>
+              <span className="text-xs text-slate-400 truncate ml-2">{lead.company_sector}</span>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

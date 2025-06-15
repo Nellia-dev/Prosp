@@ -15,21 +15,21 @@ import {
   Settings,
   Target
 } from "lucide-react";
-import { ExtendedAgentResponse } from "../types/unified";
+import { AgentStatus } from "../types/nellia";
 import { useTranslation } from "../hooks/useTranslation";
 import { useStartAgent, useStopAgent } from "../hooks/api/useUnifiedApi";
 import { useState } from "react";
 
 interface AgentStatusCardProps {
-  agent: ExtendedAgentResponse;
+  agent: AgentStatus;
   showControls?: boolean;
-  onAgentClick?: (agent: ExtendedAgentResponse) => void;
+  onAgentClick?: (agent: AgentStatus) => void;
 }
 
-export const AgentStatusCard = ({ 
-  agent, 
+export const AgentStatusCard = ({
+  agent,
   showControls = true,
-  onAgentClick 
+  onAgentClick,
 }: AgentStatusCardProps) => {
   const { t } = useTranslation();
   const [isActioning, setIsActioning] = useState(false);
@@ -238,14 +238,14 @@ export const AgentStatusCard = ({
             className="h-1"
           />
           <div className="flex justify-between text-xs text-slate-500">
-            <span>Prompt: {agent.metrics.llm_usage.prompt_tokens.toLocaleString()}</span>
-            <span>Completion: {agent.metrics.llm_usage.completion_tokens.toLocaleString()}</span>
+            <span>{t('prompt')}: {agent.metrics.llm_usage.prompt_tokens.toLocaleString()}</span>
+            <span>{t('completion')}: {agent.metrics.llm_usage.completion_tokens.toLocaleString()}</span>
           </div>
         </div>
 
         {agent.last_updated && (
           <div className="text-xs text-slate-500 border-t border-slate-700 pt-2">
-            Last updated: {new Date(agent.last_updated).toLocaleTimeString()}
+            {t('last_updated')}: {new Date(agent.last_updated).toLocaleTimeString()}
           </div>
         )}
       </CardContent>

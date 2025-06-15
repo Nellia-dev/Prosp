@@ -1,4 +1,6 @@
-import { AgentCategory, AgentName, ProcessingStage, QualificationTier } from '../enums/nellia.enums';
+import { AgentCategory, AgentName, ProcessingStage, QualificationTier, LeadStatus } from '../enums/nellia.enums';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsArray, IsOptional, IsNotEmpty } from 'class-validator';
 
 export interface AgentMetrics {
   processing_time_seconds: number;
@@ -41,16 +43,25 @@ export interface LeadData {
   processing_stage: ProcessingStage;
   created_at: string;
   updated_at: string;
+  status: LeadStatus;
+  enrichment_data?: any;
 }
 
 export interface BusinessContext {
   id?: string;
+  userId?: string;
   business_description: string;
+  product_service_description: string;
   target_market: string;
   value_proposition: string;
   ideal_customer?: string;
   pain_points: string[];
+  competitive_advantage?: string;
+  competitors?: string[];
   industry_focus: string[];
+  geographic_focus?: string[];
+  user_search_query?: string;
+  is_active?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -105,6 +116,8 @@ export interface CreateLeadDto {
   market_region?: string;
   company_size?: string;
   annual_revenue?: number;
+  userId?: string; // Associated user for multi-tenant support
+  status?: LeadStatus;
 }
 
 export interface UpdateLeadDto {
@@ -144,22 +157,125 @@ export interface LeadFilters {
   offset?: number;
 }
 
-export interface CreateBusinessContextDto {
+export class CreateBusinessContextDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
   business_description: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  product_service_description: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
   target_market: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
   value_proposition: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
   ideal_customer?: string;
+
+  @ApiProperty()
+  @IsArray()
+  @IsString({ each: true })
   pain_points: string[];
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  competitive_advantage?: string;
+
+  @ApiProperty({ required: false })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  competitors?: string[];
+
+  @ApiProperty()
+  @IsArray()
+  @IsString({ each: true })
   industry_focus: string[];
+
+  @ApiProperty({ required: false })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  geographic_focus?: string[];
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  user_search_query?: string;
+
 }
 
-export interface UpdateBusinessContextDto {
+export class UpdateBusinessContextDto {
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
   business_description?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  product_service_description?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
   target_market?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
   value_proposition?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
   ideal_customer?: string;
+
+  @ApiProperty({ required: false })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
   pain_points?: string[];
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  competitive_advantage?: string;
+
+  @ApiProperty({ required: false })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  competitors?: string[];
+
+  @ApiProperty({ required: false })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
   industry_focus?: string[];
+
+  @ApiProperty({ required: false })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  geographic_focus?: string[];
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  user_search_query?: string;
 }
 
 // Metrics-related types
@@ -187,3 +303,30 @@ export interface PerformanceDataPoint {
 }
 
 export type MetricsPeriod = '24h' | '7d' | '30d' | '90d';
+
+// As per FRONTEND_EMPTY_STATE_FIX_PLAN.md for Metrics
+export interface RecentActivityItem {
+  id: string;
+  type: 'lead_created' | 'agent_status_change' | 'prospect_job_started' | 'prospect_job_completed';
+  description: string;
+  timestamp: string;
+  metadata?: Record<string, any>;
+}
+
+export interface DashboardMetricsResponse {
+  totalLeads: number;
+  totalAgents: number;
+  activeAgents: number;
+  processingRate: number; // Placeholder, to be defined more clearly
+  successRate: number;
+  recentActivity: RecentActivityItem[];
+  lastUpdated: Date; // Keeping this as it's generally useful
+}
+
+// Generic paginated response for API list endpoints
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+}

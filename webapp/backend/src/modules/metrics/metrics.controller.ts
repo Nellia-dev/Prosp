@@ -13,16 +13,19 @@ import {
   ApiResponse,
   ApiQuery,
   ApiParam,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { MetricsService } from './metrics.service';
 import {
-  DashboardMetrics,
+  // DashboardMetrics, // Will be replaced by DashboardMetricsResponse
+  DashboardMetricsResponse, // Import new type
   AgentPerformanceData,
   PerformanceDataPoint,
   MetricsPeriod,
   AgentMetrics,
 } from '../../shared/types/nellia.types';
 
+@ApiBearerAuth()
 @ApiTags('metrics')
 @Controller('metrics')
 export class MetricsController {
@@ -35,15 +38,16 @@ export class MetricsController {
   @ApiResponse({
     status: 200,
     description: 'Dashboard metrics retrieved successfully',
+    // type: DashboardMetricsResponse, // Removed to fix TS error, DashboardMetricsResponse is an interface
   })
   @ApiResponse({
     status: 500,
     description: 'Internal server error',
   })
-  async getDashboardMetrics(): Promise<DashboardMetrics> {
+  async getDashboardMetrics(): Promise<DashboardMetricsResponse> { // Update return type
     try {
       this.logger.log('Fetching dashboard metrics');
-      const metrics = await this.metricsService.getDashboardMetrics();
+      const metrics = await this.metricsService.getDashboardMetrics(); // This now returns DashboardMetricsResponse
       this.logger.log('Dashboard metrics retrieved successfully');
       return metrics;
     } catch (error) {
@@ -248,9 +252,12 @@ export class MetricsController {
       const summary = {
         overview: {
           totalLeads: dashboardMetrics.totalLeads,
-          completedLeads: dashboardMetrics.completedLeads,
+          // completedLeads: dashboardMetrics.completedLeads, // No longer directly available
           successRate: dashboardMetrics.successRate,
-          averageRoiPotential: dashboardMetrics.averageRoiPotential,
+          // averageRoiPotential: dashboardMetrics.averageRoiPotential, // No longer directly available
+          activeAgents: dashboardMetrics.activeAgents, // Add new available fields
+          totalAgents: dashboardMetrics.totalAgents,
+          processingRate: dashboardMetrics.processingRate,
         },
         stageDistribution: leadStats,
         agentSummary: {

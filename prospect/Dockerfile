@@ -15,6 +15,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 WORKDIR /app
 
+# Set Hugging Face home directory for caching models
+# This directory will be created and permissioned below.
+ENV HF_HOME=/app/.cache/huggingface/hub
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
@@ -33,15 +37,15 @@ COPY . .
 RUN mkdir -p /app/data /app/logs /app/harvester_output && \
     chown -R appuser:appuser /app
 
+# Create and permission Hugging Face cache directory
+RUN mkdir -p /app/.cache/huggingface/hub /app/.cache/huggingface_cache && \
+    chown -R appuser:appuser /app/.cache
+
 # MCP Server target
 FROM base AS mcp-server
 
-# Install MCP server specific dependencies
-COPY mcp-server/requirements.txt mcp-requirements.txt
-RUN pip install --no-cache-dir -r mcp-requirements.txt
-
-# Install additional dependencies for web server
-RUN pip install --no-cache-dir gunicorn
+# Install additional dependencies for web server (uvicorn for FastAPI)
+RUN pip install --no-cache-dir uvicorn
 
 # Expose MCP server port
 EXPOSE 5001
@@ -57,8 +61,8 @@ USER appuser
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD /app/healthcheck.sh
 
-# Start MCP server
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "2", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "--chdir", "/app/mcp-server", "app_enhanced:app"]
+# Start MCP server with Uvicorn
+CMD ["uvicorn", "mcp_server:app", "--host", "0.0.0.0", "--port", "5001", "--workers", "2"]
 
 # Agents System target
 FROM base AS agents-system
@@ -114,10 +118,6 @@ RUN pip install --no-cache-dir \
     mypy \
     ipython \
     jupyter
-
-# Install MCP server dependencies for development
-COPY mcp-server/requirements.txt mcp-requirements.txt
-RUN pip install --no-cache-dir -r mcp-requirements.txt
 
 # Install playwright for development
 RUN pip install --no-cache-dir playwright && \

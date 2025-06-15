@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TranslationProvider, useTranslation } from '../hooks/useTranslation';
-import { useAgents, useLeads, useDashboardMetrics } from '../hooks/api';
+import { useAgents, useLeads, useDashboardMetrics, useBusinessContext, useStartProspectingJob } from '../hooks/api/useUnifiedApi';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,236 +17,208 @@ import {
   Activity,
   BarChart3,
   Zap,
-  Kanban
+  Kanban,
+  Rocket
 } from "lucide-react";
 
+import { ProspectDashboard } from '../components/ProspectDashboard';
 import { AgentStatusCard } from '../components/AgentStatusCard';
 import { LeadCard } from '../components/LeadCard';
 import { ChatInterface } from '../components/ChatInterface';
+import { BusinessContextForm } from '../components/BusinessContextForm';
 import { BusinessContextCenter } from '../components/BusinessContextCenter';
 import { MetricsVisualization } from '../components/MetricsVisualization';
 import { CRMBoard } from '../components/CRMBoard';
 import { ConnectionStatus } from '../components/ConnectionStatus';
+import { AgentsEmptyState } from '../components/EmptyStates/AgentsEmptyState';
+import { LeadsEmptyState } from '../components/EmptyStates/LeadsEmptyState';
+import { WebSocketProvider } from '../contexts/WebSocketContext';
 
-import { AgentStatus, LeadData } from '../types/nellia';
+import { 
+  AgentStatus, 
+  LeadData, 
+  AgentName,
+  AgentCategory,
+  AgentStatusType,
+  DashboardMetrics,
+  ExtendedAgentResponse
+} from '../types/unified';
 import { Language } from '../i18n/translations';
-import { LeadResponse, AgentResponse } from '../types/api';
+import { LeadResponse, AgentResponse, DashboardMetricsResponse } from '../types/api'; // Restored LeadResponse and AgentResponse for transformers
+
+// Helper function to provide default metrics structure, matching DashboardMetricsResponse
+const getDefaultFrontendMetrics = (): DashboardMetricsResponse => ({
+  totalLeads: 0,
+  totalAgents: 0,
+  activeAgents: 0,
+  processingRate: 0,
+  successRate: 0,
+  recentActivity: [],
+  lastUpdated: new Date().toISOString(),
+});
 
 // Helper function to transform API response to frontend types
+
+// Copied from unified.ts for AGENT_DISPLAY_NAMES
+export const AGENT_DISPLAY_NAMES: Record<AgentName, string> = {
+  'lead_intake_agent': 'Lead Intake Agent',
+  'lead_analysis_agent': 'Lead Analysis Agent',
+  'enhanced_lead_processor': 'Enhanced Lead Processor',
+  'tavily_enrichment_agent': 'Web Research Agent',
+  'contact_extraction_agent': 'Contact Extraction Agent',
+  'pain_point_deepening_agent': 'Pain Point Analysis Agent',
+  'lead_qualification_agent': 'Lead Qualification Agent',
+  'competitor_identification_agent': 'Competitor Analysis Agent',
+  'strategic_question_generation_agent': 'Strategic Questions Agent',
+  'buying_trigger_identification_agent': 'Buying Triggers Agent',
+  'tot_strategy_generation_agent': 'Strategy Generation Agent',
+  'tot_strategy_evaluation_agent': 'Strategy Evaluation Agent',
+  'tot_action_plan_synthesis_agent': 'Action Plan Synthesis Agent',
+  'detailed_approach_plan_agent': 'Approach Planning Agent',
+  'objection_handling_agent': 'Objection Handling Agent',
+  'value_proposition_customization_agent': 'Value Proposition Agent',
+  'b2b_personalized_message_agent': 'Message Personalization Agent',
+  'internal_briefing_summary_agent': 'Internal Briefing Agent',
+  'approach_strategy_agent': 'Approach Strategy Agent',
+  'b2b_persona_creation_agent': 'B2B Persona Agent',
+  'message_crafting_agent': 'Message Crafting Agent',
+  'persona_creation_agent': 'Persona Creation Agent',
+  'lead_analysis_generation_agent': 'Analysis Generation Agent'
+};
+// End copied AGENT_DISPLAY_NAMES
+
 const transformLeadResponse = (apiLead: LeadResponse): LeadData => ({
   id: apiLead.id,
-  company_name: apiLead.companyName,
+  company_name: apiLead.company_name,
   website: apiLead.website,
-  relevance_score: apiLead.relevanceScore,
-  roi_potential_score: apiLead.roiPotential,
-  brazilian_market_fit: apiLead.brazilianMarketFit,
-  qualification_tier: apiLead.qualificationTier === 'A' ? 'High Potential' : 
-                     apiLead.qualificationTier === 'B' ? 'Medium Potential' : 'Low Potential',
-  company_sector: apiLead.sector,
-  persona: {
-    likely_role: apiLead.likelyContactRole,
-    decision_maker_probability: apiLead.decisionMakerProbability
-  },
-  pain_point_analysis: apiLead.painPoints,
-  purchase_triggers: apiLead.triggers,
-  processing_stage: apiLead.processingStage as LeadData['processing_stage'],
-  created_at: apiLead.createdAt,
-  updated_at: apiLead.updatedAt
+  relevance_score: apiLead.relevance_score,
+  roi_potential_score: apiLead.roi_potential_score,
+  brazilian_market_fit: apiLead.brazilian_market_fit,
+  qualification_tier: apiLead.qualification_tier,
+  company_sector: apiLead.company_sector,
+  persona: apiLead.persona,
+  pain_point_analysis: apiLead.pain_point_analysis,
+  purchase_triggers: apiLead.purchase_triggers,
+  processing_stage: apiLead.processing_stage,
+  created_at: apiLead.created_at,
+  updated_at: apiLead.updated_at,
+  status: apiLead.status,
+  enrichment_data: apiLead.enrichment_data
 });
 
 // Helper function to transform Agent API response to frontend types
-const transformAgentResponse = (apiAgent: AgentResponse): AgentStatus => ({
-  id: apiAgent.id,
-  name: apiAgent.name,
-  status: apiAgent.status,
-  current_task: apiAgent.currentTask,
-  metrics: {
-    processing_time_seconds: apiAgent.processingTime,
-    llm_usage: {
-      total_tokens: apiAgent.llmTokenUsage,
-      prompt_tokens: Math.floor(apiAgent.llmTokenUsage * 0.5), // Estimated
-      completion_tokens: Math.floor(apiAgent.llmTokenUsage * 0.5) // Estimated
-    },
-    success_rate: apiAgent.successRate,
-    queue_depth: apiAgent.queueDepth,
-    throughput_per_hour: apiAgent.throughput
-  },
-  last_updated: apiAgent.updatedAt
-});
+const transformAgentResponse = (apiAgent: AgentResponse): AgentStatus => {
+  // Assuming apiAgent.name is a string that should match one of AgentName
+  // and apiAgent.category is a string that should match one of AgentCategory
+  // The AgentResponse type from types/api.ts should ideally reflect this.
+  const agentName = apiAgent.name as AgentName;
+   // Cast, assuming API provides valid names
+  const agentCategory = (apiAgent.category || 'specialized') as AgentCategory; // Default category if undefined
 
-// Mock data
-const mockAgents: AgentStatus[] = [
-  {
-    id: '1',
-    name: 'lead_intake',
-    status: 'active',
-    current_task: 'Processing TechCorp lead data',
+  return {
+    id: apiAgent.id,
+    name: agentName,
+    status: apiAgent.status as AgentStatusType, // Cast status
+    displayName: AGENT_DISPLAY_NAMES[agentName] || apiAgent.name, // Use display name map or fallback to name
+    description: apiAgent.description || `Details for ${apiAgent.name}`, // Fallback description
+    category: agentCategory,
+    current_task: apiAgent.currentTask,
     metrics: {
-      processing_time_seconds: 2.3,
-      llm_usage: { total_tokens: 45230, prompt_tokens: 23400, completion_tokens: 21830 },
-      success_rate: 0.98,
-      queue_depth: 3,
-      throughput_per_hour: 67
+      processing_time_seconds: apiAgent.processingTime ?? 0,
+      llm_usage: {
+        total_tokens: apiAgent.llmTokenUsage ?? 0,
+        prompt_tokens: Math.floor((apiAgent.llmTokenUsage ?? 0) * 0.5),
+        completion_tokens: Math.floor((apiAgent.llmTokenUsage ?? 0) * 0.5)
+      },
+      success_rate: apiAgent.successRate ?? 0,
+      queue_depth: apiAgent.queueDepth ?? 0,
+      throughput_per_hour: apiAgent.throughput ?? 0
     },
-    last_updated: new Date().toISOString()
-  },
-  {
-    id: '2',
-    name: 'analysis',
-    status: 'processing',
-    current_task: 'Analyzing market fit for Inovacorp',
-    metrics: {
-      processing_time_seconds: 1.8,
-      llm_usage: { total_tokens: 52100, prompt_tokens: 28900, completion_tokens: 23200 },
-      success_rate: 0.94,
-      queue_depth: 1,
-      throughput_per_hour: 89
-    },
-    last_updated: new Date().toISOString()
-  },
-  {
-    id: '3',
-    name: 'persona_creation',
-    status: 'completed',
-    current_task: '',
-    metrics: {
-      processing_time_seconds: 2.1,
-      llm_usage: { total_tokens: 38700, prompt_tokens: 19400, completion_tokens: 19300 },
-      success_rate: 0.96,
-      queue_depth: 0,
-      throughput_per_hour: 54
-    },
-    last_updated: new Date().toISOString()
-  },
-  {
-    id: '4',
-    name: 'approach_strategy',
-    status: 'inactive',
-    current_task: '',
-    metrics: {
-      processing_time_seconds: 2.7,
-      llm_usage: { total_tokens: 41200, prompt_tokens: 22100, completion_tokens: 19100 },
-      success_rate: 0.92,
-      queue_depth: 0,
-      throughput_per_hour: 43
-    },
-    last_updated: new Date().toISOString()
-  },
-  {
-    id: '5',
-    name: 'message_crafting',
-    status: 'inactive',
-    current_task: '',
-    metrics: {
-      processing_time_seconds: 1.9,
-      llm_usage: { total_tokens: 36800, prompt_tokens: 18900, completion_tokens: 17900 },
-      success_rate: 0.97,
-      queue_depth: 0,
-      throughput_per_hour: 38
-    },
-    last_updated: new Date().toISOString()
-  }
-];
-
-const mockLeads: LeadData[] = [
-  {
-    id: '1',
-    company_name: 'TechCorp Brasil',
-    website: 'techcorp.com.br',
-    relevance_score: 0.89,
-    roi_potential_score: 0.76,
-    brazilian_market_fit: 0.92,
-    qualification_tier: 'High Potential',
-    company_sector: 'SaaS B2B',
-    persona: {
-      likely_role: 'CTO',
-      decision_maker_probability: 0.87
-    },
-    pain_point_analysis: ['Escalabilidade', 'Integração de sistemas', 'Automação de processos'],
-    purchase_triggers: ['Crescimento de 200%', 'Expansão para novos mercados'],
-      processing_stage: 'prospecting',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: '2',
-    company_name: 'InovaCorp',
-    website: 'inovacorp.com.br',
-    relevance_score: 0.72,
-    roi_potential_score: 0.68,
-    brazilian_market_fit: 0.85,
-    qualification_tier: 'Medium Potential',
-    company_sector: 'E-commerce',
-    persona: {
-      likely_role: 'Head de Marketing',
-      decision_maker_probability: 0.64
-    },
-    processing_stage: 'analyzing_refining',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: '3',
-    company_name: 'FinTech Solutions',
-    website: 'fintechsol.com.br',
-    relevance_score: 0.94,
-    roi_potential_score: 0.88,
-    brazilian_market_fit: 0.96,
-    qualification_tier: 'High Potential',
-    company_sector: 'Fintech',
-    persona: {
-      likely_role: 'CEO',
-      decision_maker_probability: 0.95
-    },
-    processing_stage: 'reuniao_agendada',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }
-];
+    last_updated: apiAgent.updatedAt || new Date().toISOString()
+  };
+};
 
 const DashboardContent = () => {
   const { t, language, setLanguage } = useTranslation();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [showBusinessContextForm, setShowBusinessContextForm] = useState(false);
 
   // Initialize real-time updates
   useRealTimeUpdates();
 
   // API calls
-  const { data: agentsData = [], isLoading: agentsLoading, error: agentsError } = useAgents();
+  const { data: agentsData, isLoading: agentsLoading, error: agentsError } = useAgents();
   const { data: leadsResponse, isLoading: leadsLoading, error: leadsError } = useLeads();
-  const { data: metrics, isLoading: metricsLoading, error: metricsError } = useDashboardMetrics();
+  const { data: metricsData, isLoading: metricsLoading, error: metricsError } = useDashboardMetrics();
+  const { data: businessContext, isLoading: businessContextLoading, isError: businessContextError, isSuccess: businessContextSuccess } = useBusinessContext();
+  const startProspectingMutation = useStartProspectingJob();
 
-  // Transform API data to frontend types
-  const agents = agentsData.map(transformAgentResponse);
-  const leads = leadsResponse?.data?.map(transformLeadResponse) || [];
+  const handleContextSetupComplete = () => {
+    setShowBusinessContextForm(false);
+    // Optionally, you can force a refetch of data here if needed
+  };
 
-  const handleLeadUpdate = (updatedLead: LeadData) => {
-    // This will be handled by React Query mutations
-    console.log('Lead updated:', updatedLead);
+  const handleStartHarvesting = () => {
+    if (businessContext) {
+      startProspectingMutation.mutate(businessContext);
+    }
   };
 
   // Show loading state
-  if (agentsLoading || leadsLoading || metricsLoading) {
+  if (agentsLoading || leadsLoading || metricsLoading || businessContextLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950 flex items-center justify-center">
-        <div className="text-white text-xl">Loading...</div>
+        <div className="text-white text-xl">{t('loading')}</div>
       </div>
     );
   }
 
   // Show error state
-  if (agentsError || leadsError || metricsError) {
+  if (agentsError || leadsError || metricsError || businessContextError) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950 flex items-center justify-center">
-        <div className="text-red-400 text-xl">Error loading data. Please try again later.</div>
+        <div className="text-red-400 text-xl">{t('error_loading_data')}</div>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950">
-      {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm">
+  // Onboarding Flow for new users: show if the context query is successful but there's no context.
+  if (businessContextSuccess && !businessContext) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950 flex items-center justify-center">
+        <Card className="p-8 bg-slate-800 border-slate-700 text-white text-center max-w-lg">
+          {!showBusinessContextForm ? (
+            <>
+              <Zap size={48} className="mx-auto mb-4 text-green-500" />
+              <h2 className="text-2xl font-bold mb-4">{t('welcome_nellia')}</h2>
+              <p className="mb-6 text-slate-300">
+                {t('first_time_message')}
+              </p>
+              <Button onClick={() => setShowBusinessContextForm(true)} className="bg-green-600 hover:bg-green-700">
+                {t('setup_business_context')}
+              </Button>
+            </>
+          ) : (
+            <BusinessContextForm onComplete={handleContextSetupComplete} />
+          )}
+        </Card>
+      </div>
+    );
+  }
+
+  if (businessContextSuccess && businessContext) {
+    const agents: AgentStatus[] = Array.isArray(agentsData) ? agentsData.map(transformAgentResponse) : [];
+    const leads: LeadData[] = leadsResponse?.data ? leadsResponse.data.map(transformLeadResponse) : [];
+    const metrics: DashboardMetricsResponse = metricsData || getDefaultFrontendMetrics();
+
+    const handleLeadUpdate = (updatedLead: LeadData) => {
+      console.log('Lead updated:', updatedLead);
+    };
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950">
+        {/* Header */}
+        <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -276,7 +248,7 @@ const DashboardContent = () => {
               </Select>
               
               <Badge variant="outline" className="bg-green-600/20 text-green-400 border-green-600">
-                Real-time Active
+                {t('real_time_active')}
               </Badge>
             </div>
           </div>
@@ -286,10 +258,14 @@ const DashboardContent = () => {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid grid-cols-6 bg-slate-800 border border-slate-700">
+          <TabsList className="grid grid-cols-7 bg-slate-800 border border-slate-700">
             <TabsTrigger value="dashboard" className="text-white data-[state=active]:bg-slate-700">
               <BarChart3 className="w-4 h-4 mr-2" />
               {t('dashboard')}
+            </TabsTrigger>
+            <TabsTrigger value="prospect" className="text-white data-[state=active]:bg-slate-700">
+               <Rocket className="w-4 h-4 mr-2" />
+               {t('prospect')}
             </TabsTrigger>
             <TabsTrigger value="crm" className="text-white data-[state=active]:bg-slate-700">
               <Kanban className="w-4 h-4 mr-2" />
@@ -309,7 +285,7 @@ const DashboardContent = () => {
             </TabsTrigger>
             <TabsTrigger value="context" className="text-white data-[state=active]:bg-slate-700">
               <Settings className="w-4 h-4 mr-2" />
-              Contexto
+              {t('contexto')}
             </TabsTrigger>
           </TabsList>
 
@@ -319,12 +295,12 @@ const DashboardContent = () => {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-white text-lg flex items-center">
                     <TrendingUp className="w-5 h-5 mr-2" />
-                    Total ROI
+                    {t('success_rate_title')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-white">527%</div>
-                  <p className="text-green-200 text-sm">Média dos últimos 30 dias</p>
+                  <div className="text-3xl font-bold text-white">{metrics.successRate.toFixed(1)}%</div>
+                  <p className="text-green-200 text-sm">{t('completed_leads')}</p>
                 </CardContent>
               </Card>
 
@@ -332,12 +308,12 @@ const DashboardContent = () => {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-white text-lg flex items-center">
                     <Users className="w-5 h-5 mr-2" />
-                    Leads Processados
+                    {t('total_leads_title')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-white">1,234</div>
-                  <p className="text-blue-200 text-sm">Últimas 24 horas</p>
+                  <div className="text-3xl font-bold text-white">{metrics.totalLeads}</div>
+                  <p className="text-blue-200 text-sm">{t('in_system')}</p>
                 </CardContent>
               </Card>
 
@@ -345,43 +321,89 @@ const DashboardContent = () => {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-white text-lg flex items-center">
                     <Activity className="w-5 h-5 mr-2" />
-                    Agentes Ativos
+                    {t('agents_title')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-white">5/5</div>
-                  <p className="text-purple-200 text-sm">Sistema 100% operacional</p>
+                  <div className="text-3xl font-bold text-white">{metrics.activeAgents}/{metrics.totalAgents}</div>
+                  <p className="text-purple-200 text-sm">{t('active_total')}</p>
                 </CardContent>
               </Card>
             </div>
 
             <MetricsVisualization />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Card className="md:col-span-3 bg-slate-800/50 border-slate-700">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="text-lg font-medium text-white">
+                        {t('automated_prospecting')}
+                    </CardTitle>
+                    <Zap className="w-5 h-5 text-green-500" />
+                </CardHeader>
+                <CardContent>
+                    <p className="text-sm text-slate-400 mb-4">
+                        {t('automated_prospecting_desc')}
+                    </p>
+                    <Button
+                        onClick={handleStartHarvesting}
+                        disabled={!businessContext || startProspectingMutation.isPending}
+                        className="w-full bg-green-600 hover:bg-green-700 disabled:bg-slate-600 disabled:cursor-not-allowed"
+                    >
+                        {startProspectingMutation.isPending ? t('harvesting_progress') : t('start_new_harvest')}
+                    </Button>
+                    {startProspectingMutation.isError && (
+                        <p className="text-red-400 text-sm mt-2">
+                            {t('error_starting_harvesting')} {startProspectingMutation.error.message}
+                        </p>
+                    )}
+                </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:col-span-3">
               {agents.slice(0, 3).map((agent) => (
-                <AgentStatusCard key={agent.id} agent={agent} />
+                <AgentStatusCard key={agent.id} agent={agent} showControls={false} />
               ))}
             </div>
+          </TabsContent>
+
+          <TabsContent value="prospect">
+            <ProspectDashboard />
           </TabsContent>
 
           <TabsContent value="crm" className="space-y-6">
             <CRMBoard leads={leads} onLeadUpdate={handleLeadUpdate} />
           </TabsContent>
 
-          <TabsContent value="agents" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {agents.map((agent) => (
-                <AgentStatusCard key={agent.id} agent={agent} />
-              ))}
-            </div>
+          <TabsContent value="agents" className="space_y-6">
+            {agentsLoading && <p className="text-white">{t('loading_agents')}</p>}
+            {!agentsLoading && agentsError && <p className="text-red-400">{t('error_loading_agents')}</p>}
+            {!agentsLoading && !agentsError && agents.length === 0 && (
+              <AgentsEmptyState />
+            )}
+            {!agentsLoading && !agentsError && agents.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {agents.map((agent) => (
+                  <AgentStatusCard key={agent.id} agent={agent} showControls={false} />
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="leads" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {leads.map((lead) => (
-                <LeadCard key={lead.id} lead={lead} />
-              ))}
-            </div>
+            {leadsLoading && <p className="text-white">{t('loading_leads')}</p>}
+            {!leadsLoading && leadsError && <p className="text-red-400">{t('error_loading_leads')}</p>}
+            {!leadsLoading && !leadsError && leads.length === 0 && (
+              // TODO: The onStartProspecting function needs to be defined.
+              // For now, it will be a console log.
+              <LeadsEmptyState onStartProspecting={() => console.log('Start Prospecting clicked')} />
+            )}
+            {!leadsLoading && !leadsError && leads.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {leads.map((lead) => (
+                  <LeadCard key={lead.id} lead={lead} />
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="chat">
@@ -396,12 +418,16 @@ const DashboardContent = () => {
     </div>
   );
 };
+}
+
 
 const Index = () => {
   return (
-    <TranslationProvider>
-      <DashboardContent />
-    </TranslationProvider>
+    <WebSocketProvider>
+      <TranslationProvider>
+        <DashboardContent />
+      </TranslationProvider>
+    </WebSocketProvider>
   );
 };
 

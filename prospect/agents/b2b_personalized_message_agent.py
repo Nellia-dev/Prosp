@@ -30,9 +30,8 @@ class B2BPersonalizedMessageOutput(BaseModel):
     error_message: Optional[str] = None
 
 class B2BPersonalizedMessageAgent(BaseAgent[B2BPersonalizedMessageInput, B2BPersonalizedMessageOutput]):
-    def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "B2BPersonalizedMessageAgent"
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -219,7 +218,11 @@ if __name__ == '__main__':
 
     print("Running mock test for B2BPersonalizedMessageAgent (Email)...")
     mock_llm_email = MockLLMClient()
-    agent_email = B2BPersonalizedMessageAgent(llm_client=mock_llm_email)
+    agent_email = B2BPersonalizedMessageAgent(
+        name="B2BPersonalizedMessageAgent",
+        description="Generates personalized B2B messages.",
+        llm_client=mock_llm_email
+    )
 
     test_action_plan = "Plano: Email para Carlos com foco em eficiência na expansão. Pergunta: Como priorizam otimização?"
     test_value_props = "VP1: Escale com IA. VP2: Modernize com ROI."
@@ -252,7 +255,11 @@ if __name__ == '__main__':
 
     print("\nRunning mock test for B2BPersonalizedMessageAgent (Instagram)...")
     mock_llm_insta = MockLLMClient() # Can reuse if prompt drives behavior
-    agent_insta = B2BPersonalizedMessageAgent(llm_client=mock_llm_insta)
+    agent_insta = B2BPersonalizedMessageAgent(
+        name="B2BPersonalizedMessageAgent",
+        description="Generates personalized B2B messages.",
+        llm_client=mock_llm_insta
+    )
     test_contacts_insta = ContactDetailsInput(emails_found=[], instagram_profiles_found=["@carlosmendes_exemploinsta"])
     
     input_data_insta = B2BPersonalizedMessageInput(

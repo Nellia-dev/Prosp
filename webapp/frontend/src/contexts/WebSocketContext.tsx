@@ -3,8 +3,8 @@ import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import { useToast } from '../hooks/use-toast';
 
-interface WebSocketEventData {
-  [key: string]: unknown;
+interface SubscribeFunction {
+  <T>(event: string, callback: (data: T) => void): () => void;
 }
 
 interface WebSocketContextType {
@@ -13,8 +13,8 @@ interface WebSocketContextType {
   connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'error';
   connect: () => void;
   disconnect: () => void;
-  emit: (event: string, data?: WebSocketEventData) => void;
-  subscribe: (event: string, callback: (data: WebSocketEventData) => void) => () => void;
+  emit: (event: string, data?: unknown) => void;
+  subscribe: SubscribeFunction;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
@@ -25,174 +25,115 @@ interface WebSocketProviderProps {
 
 export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
-  const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  
   const { user, token } = useAuth();
   const { toast } = useToast();
 
-  const maxReconnectAttempts = 5;
-  const reconnectDelay = (attempt: number) => Math.min(1000 * Math.pow(2, attempt), 30000); // Exponential backoff, max 30s
+  // Effect for connection management
+  useEffect(() => {
+    if (user && token) {
+      const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
+      const newSocket = io(wsUrl, {
+        auth: { token },
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        timeout: 10000,
+      });
+
+      setSocket(newSocket);
+      setConnectionStatus('connecting');
+
+      newSocket.on('connect', () => {
+        console.log('WebSocket connected:', newSocket.id);
+        setConnectionStatus('connected');
+        toast({
+          title: "Connected",
+          description: "Real-time updates enabled",
+          duration: 2000,
+        });
+      });
+
+      newSocket.on('disconnect', (reason) => {
+        console.log('WebSocket disconnected:', reason);
+        setConnectionStatus('disconnected');
+        if (reason !== 'io client disconnect') {
+          toast({
+            title: "Connection Lost",
+            description: "Attempting to reconnect...",
+            variant: "destructive",
+          });
+        }
+      });
+
+      newSocket.on('connect_error', (error) => {
+        console.error('WebSocket connection error:', error.message);
+        setConnectionStatus('error');
+      });
+
+      newSocket.on('unauthorized', (error) => {
+        console.error('WebSocket authentication error:', error);
+        setConnectionStatus('error');
+        toast({
+          title: "Authentication Error",
+          description: "Please refresh and log in again",
+          variant: "destructive",
+        });
+        newSocket.disconnect();
+      });
+
+      return () => {
+        newSocket.disconnect();
+        setSocket(null);
+        setConnectionStatus('disconnected');
+      };
+    }
+  }, [user, token, toast]);
 
   const connect = useCallback(() => {
-    if (socket?.connected) return;
-    
-    if (!token) {
-      console.log('WebSocket: No token available, skipping connection');
-      return;
-    }
-
-    setConnectionStatus('connecting');
-    
-    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
-    
-    const newSocket = io(wsUrl, {
-      auth: {
-        token: token
-      },
-      transports: ['websocket', 'polling'],
-      timeout: 10000,
-      reconnection: false, // We'll handle reconnection manually
-    });
-
-    // Connection handlers
-    newSocket.on('connect', () => {
-      console.log('WebSocket connected:', newSocket.id);
-      setIsConnected(true);
-      setConnectionStatus('connected');
-      setReconnectAttempts(0);
-      
-      toast({
-        title: "Connected",
-        description: "Real-time updates enabled",
-        duration: 2000,
-      });
-    });
-
-    newSocket.on('disconnect', (reason) => {
-      console.log('WebSocket disconnected:', reason);
-      setIsConnected(false);
-      setConnectionStatus('disconnected');
-      
-      // Auto-reconnect on unexpected disconnections
-      if (reason === 'io server disconnect') {
-        // Server initiated disconnect, don't reconnect
-        toast({
-          title: "Disconnected",
-          description: "Connection closed by server",
-          variant: "destructive",
-        });
-      } else {
-        // Client side disconnect or network issue, attempt reconnect
-        setTimeout(() => {
-          if (reconnectAttempts < maxReconnectAttempts) {
-            setReconnectAttempts(prev => prev + 1);
-            connect();
-          }
-        }, reconnectDelay(reconnectAttempts));
-      }
-    });
-
-    newSocket.on('connect_error', (error) => {
-      console.error('WebSocket connection error:', error);
-      setConnectionStatus('error');
-      
-      if (reconnectAttempts < maxReconnectAttempts) {
-        setTimeout(() => {
-          setReconnectAttempts(prev => prev + 1);
-          connect();
-        }, reconnectDelay(reconnectAttempts));
-      } else {
-        toast({
-          title: "Connection Failed",
-          description: "Unable to establish real-time connection",
-          variant: "destructive",
-        });
-      }
-    });
-
-    // Authentication error
-    newSocket.on('unauthorized', (error) => {
-      console.error('WebSocket authentication error:', error);
-      setConnectionStatus('error');
-      toast({
-        title: "Authentication Error",
-        description: "Please refresh and log in again",
-        variant: "destructive",
-      });
-    });
-
-    setSocket(newSocket);
-  }, [token, reconnectAttempts, toast]);
-
-  const disconnect = useCallback(() => {
-    if (socket) {
-      socket.disconnect();
-      setSocket(null);
-      setIsConnected(false);
-      setConnectionStatus('disconnected');
-      setReconnectAttempts(0);
-    }
+    socket?.connect();
   }, [socket]);
 
-  const emit = useCallback((event: string, data?: WebSocketEventData) => {
+  const disconnect = useCallback(() => {
+    socket?.disconnect();
+  }, [socket]);
+
+  const emit = useCallback((event: string, data?: unknown) => {
     if (socket?.connected) {
       socket.emit(event, data);
     }
   }, [socket]);
 
-  const subscribe = useCallback((event: string, callback: (data: WebSocketEventData) => void) => {
+  const subscribe = useCallback(<T,>(event: string, callback: (data: T) => void) => {
     if (socket) {
-      socket.on(event, callback);
+      const handler = (data: unknown) => callback(data as T);
+      socket.on(event, handler);
       
-      // Return unsubscribe function
       return () => {
-        socket.off(event, callback);
+        socket.off(event, handler);
       };
     }
-    
     return () => {}; // No-op if no socket
   }, [socket]);
 
-  // Connect when user is authenticated
-  useEffect(() => {
-    if (user && token) {
-      connect();
-    } else {
-      disconnect();
-    }
-
-    // Cleanup on unmount
-    return () => {
-      disconnect();
-    };
-  }, [user, token, connect, disconnect]);
-
-  // Handle window focus/blur for connection management
+  // Handle window focus for reconnection
   useEffect(() => {
     const handleFocus = () => {
-      if (user && token && !socket?.connected) {
+      if (socket && !socket.connected) {
         connect();
       }
     };
-
-    const handleBlur = () => {
-      // Keep connection alive on blur, just reduce activity
-    };
-
     window.addEventListener('focus', handleFocus);
-    window.addEventListener('blur', handleBlur);
-
     return () => {
       window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('blur', handleBlur);
     };
-  }, [user, token, socket, connect]);
+  }, [socket, connect]);
 
   const value: WebSocketContextType = {
     socket,
-    isConnected,
+    isConnected: connectionStatus === 'connected',
     connectionStatus,
     connect,
     disconnect,

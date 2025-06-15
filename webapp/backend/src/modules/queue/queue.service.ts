@@ -2,26 +2,40 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { ProcessingStage } from '../../shared/types/nellia.types';
+import { WebSocketService } from '../websocket/websocket.service';
+import { LeadsService } from '../leads/leads.service';
+import { QuotaService } from '../quota/quota.service';
+import { UsersService } from '../users/users.service';
+import { CreateLeadDto } from '../../shared/types/nellia.types';
+import { JobCompletedData, JobFailedData, QuotaUpdateData } from '../websocket/dto/websocket.dto';
+import { LeadStatus } from '@/shared/enums/nellia.enums';
+import { PLANS } from '../../config/plans.config';
 
 @Injectable()
 export class QueueService {
   private readonly logger = new Logger(QueueService.name);
 
   constructor(
-    @InjectQueue('lead-processing')
-    private readonly leadProcessingQueue: Queue,
+    @InjectQueue('prospect-processing')
+    private readonly prospectProcessingQueue: Queue,
+    @InjectQueue('enrichment-processing')
+    private readonly enrichmentProcessingQueue: Queue,
     @InjectQueue('metrics-collection')
     private readonly metricsQueue: Queue,
     @InjectQueue('cleanup')
     private readonly cleanupQueue: Queue,
+    private readonly webSocketService: WebSocketService,
+    private readonly leadsService: LeadsService,
+    private readonly quotaService: QuotaService,
+    private readonly usersService: UsersService,
   ) {}
 
   // ===================================
   // Lead Processing Queue Methods
   // ===================================
 
-  async addLeadProcessingJob(leadId: string, stage: ProcessingStage, priority = 0): Promise<void> {
-    await this.leadProcessingQueue.add(
+  async addProspectProcessingJob(leadId: string, stage: ProcessingStage, priority = 0): Promise<void> {
+    await this.prospectProcessingQueue.add(
       'process-lead',
       {
         leadId,
@@ -37,8 +51,8 @@ export class QueueService {
     this.logger.log(`Added lead processing job for lead ${leadId} at stage ${stage}`);
   }
 
-  async addBulkLeadProcessingJob(leadIds: string[], priority = 0): Promise<void> {
-    await this.leadProcessingQueue.add(
+  async addBulkProspectProcessingJob(leadIds: string[], priority = 0): Promise<void> {
+    await this.prospectProcessingQueue.add(
       'bulk-process-leads',
       {
         leadIds,
@@ -154,18 +168,21 @@ export class QueueService {
   // ===================================
 
   async getQueueStats(): Promise<{
-    leadProcessing: any;
+    prospectProcessing: any;
+    enrichmentProcessing: any;
     metricsCollection: any;
     cleanup: any;
   }> {
-    const [leadStats, metricsStats, cleanupStats] = await Promise.all([
-      this.getQueueInfo(this.leadProcessingQueue),
+    const [prospectStats, enrichmentStats, metricsStats, cleanupStats] = await Promise.all([
+      this.getQueueInfo(this.prospectProcessingQueue),
+      this.getQueueInfo(this.enrichmentProcessingQueue),
       this.getQueueInfo(this.metricsQueue),
       this.getQueueInfo(this.cleanupQueue),
     ]);
 
     return {
-      leadProcessing: leadStats,
+      prospectProcessing: prospectStats,
+      enrichmentProcessing: enrichmentStats,
       metricsCollection: metricsStats,
       cleanup: cleanupStats,
     };
@@ -210,8 +227,10 @@ export class QueueService {
 
   private getQueueByName(name: string): Queue {
     switch (name) {
-      case 'lead-processing':
-        return this.leadProcessingQueue;
+      case 'prospect-processing':
+        return this.prospectProcessingQueue;
+      case 'enrichment-processing':
+        return this.enrichmentProcessingQueue;
       case 'metrics-collection':
         return this.metricsQueue;
       case 'cleanup':
@@ -219,6 +238,223 @@ export class QueueService {
       default:
         throw new Error(`Unknown queue: ${name}`);
     }
+  }
+
+  // ===================================
+  // MCP Event Processing Methods (Migrated from MCP-Webhook)
+  // ===================================
+
+  async processStreamedEvent(event: any): Promise<void> {
+    const { user_id, job_id, event_type, ...data } = event;
+
+    if (!user_id) {
+      this.logger.warn('Received a streamed event without a user_id. Cannot broadcast.');
+      return;
+    }
+
+    this.logger.debug(`Processing streamed event [${event_type}] for job [${job_id}] for user [${user_id}]`);
+
+    // Map Python event types to specific frontend WebSocket events
+    switch (event_type) {
+      case 'lead_generated':
+        await this.handleLeadGenerated(user_id, job_id, data.lead_id, data.lead_data);
+        break;
+
+      case 'lead_enrichment_start':
+        await this.handleLeadEnrichmentStart(user_id, job_id, data.lead_id, data.company_name);
+        break;
+
+      case 'lead_enrichment_end':
+        await this.handleLeadEnrichmentEnd(user_id, job_id, data.lead_id, data.success, data.final_package, data.error_message);
+        break;
+        
+      case 'pipeline_end':
+        await this.handlePipelineEnd(user_id, job_id, data.total_leads_generated);
+        break;
+
+      case 'status_update':
+        await this.handleStatusUpdate(user_id, job_id, data);
+        break;
+
+      case 'agent_start':
+      case 'agent_end':
+      case 'pipeline_error':
+        // These events are all related to the enrichment process status and are broadcasted to the user
+        this.webSocketService.emitEnrichmentUpdate(user_id, event);
+        break;
+
+      default:
+        this.logger.warn(`Unhandled event type received: ${event_type}`);
+        this.webSocketService.emitToUser(user_id, 'unhandled-pipeline-event', event);
+        break;
+    }
+  }
+
+  private async handleLeadGenerated(userId: string, harvesterJobId: string, leadId: string, leadDto: CreateLeadDto): Promise<void> {
+    try {
+      const createDto = { ...leadDto, id: leadId, userId, status: LeadStatus.HARVESTED };
+      const newLead = await this.leadsService.create(createDto);
+      
+      // Dispatch for enrichment using the queue system
+      await this.enrichmentProcessingQueue.add('enrich-lead', {
+        leadId: newLead.id,
+        userId: userId,
+        harvesterJobId: harvesterJobId,
+      });
+
+      // Notify frontend of the new lead
+      this.webSocketService.emitToUser(userId, 'lead-created', { lead: newLead });
+      this.logger.log(`Successfully created lead ${newLead.id} and dispatched for enrichment.`);
+
+    } catch (error) {
+      this.logger.error(`Failed to create or dispatch lead for ${leadDto.company_name}: ${error.message}`, error.stack);
+    }
+  }
+
+  private async handleLeadEnrichmentStart(userId: string, jobId: string, leadId: string, companyName: string): Promise<void> {
+    try {
+      // Update lead status to indicate enrichment has started
+      await this.leadsService.updateStatus(leadId, LeadStatus.ENRICHING);
+      await this.leadsService.updateStage(leadId, ProcessingStage.ANALYZING_REFINING);
+
+      // Emit real-time update to frontend
+      this.webSocketService.emitEnrichmentUpdate(userId, {
+        event_type: 'lead_enrichment_start',
+        job_id: jobId,
+        lead_id: leadId,
+        company_name: companyName,
+        timestamp: new Date().toISOString(),
+      });
+
+      this.logger.log(`Enrichment started for lead ${leadId} (${companyName})`);
+    } catch (error) {
+      this.logger.error(`Error handling enrichment start for lead ${leadId}: ${error.message}`, error.stack);
+    }
+  }
+
+  private async handleStatusUpdate(userId: string, jobId: string, data: any): Promise<void> {
+    try {
+      // Extract relevant information from the status update
+      const { status_message, lead_id, agent_name, progress_percentage } = data;
+
+      // If this status update is for a specific lead, update its processing stage
+      if (lead_id) {
+        // Map status messages to processing stages
+        let newStage: ProcessingStage | null = null;
+        
+        if (status_message?.includes('qualification')) {
+          newStage = ProcessingStage.LEAD_QUALIFICATION;
+        } else if (status_message?.includes('analyzing') || status_message?.includes('analysis')) {
+          newStage = ProcessingStage.ANALYZING_REFINING;
+        } else if (status_message?.includes('strategy') || status_message?.includes('approach')) {
+          newStage = ProcessingStage.POSSIBLY_QUALIFIED;
+        }
+
+        if (newStage) {
+          await this.leadsService.updateStage(lead_id, newStage);
+        }
+
+        // Emit enrichment progress update
+        this.webSocketService.emitEnrichmentUpdate(userId, {
+          event_type: 'enrichment_progress',
+          job_id: jobId,
+          lead_id,
+          current_agent: agent_name || 'AI Agent',
+          status_message: status_message || 'Processing...',
+          progress_percentage: progress_percentage || 50,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        // General status update for the job
+        this.webSocketService.emitEnrichmentUpdate(userId, {
+          event_type: 'job_status_update',
+          job_id: jobId,
+          status_message: status_message || 'Pipeline processing...',
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      this.logger.debug(`Status update processed for job ${jobId}: ${status_message}`);
+    } catch (error) {
+      this.logger.error(`Error handling status update for job ${jobId}: ${error.message}`, error.stack);
+    }
+  }
+
+  private async handleLeadEnrichmentEnd(userId: string, jobId: string, leadId: string, success: boolean, finalPackage: any, errorMessage?: string): Promise<void> {
+    try {
+      if (success && finalPackage) {
+        // Use the specific update methods
+        await this.leadsService.updateStatus(leadId, LeadStatus.ENRICHED);
+        await this.leadsService.updateStage(leadId, ProcessingStage.COMPLETED);
+        await this.leadsService.updateEnrichmentData(leadId, finalPackage);
+        await this.leadsService.update(leadId, {
+          qualification_tier: finalPackage.enhanced_strategy?.lead_qualification?.qualification_tier,
+        });
+
+        const updatedLead = await this.leadsService.findOne(leadId);
+        this.webSocketService.emitToUser(userId, 'lead-enriched', { lead: updatedLead });
+        this.logger.log(`Successfully enriched lead ${leadId}.`);
+      } else {
+        await this.leadsService.updateStatus(leadId, LeadStatus.ENRICHMENT_FAILED);
+        this.webSocketService.emitToUser(userId, 'lead_enrichment_failed', { leadId, error: errorMessage });
+        this.logger.error(`Enrichment failed for lead ${leadId}: ${errorMessage}`);
+      }
+    } catch (error) {
+      this.logger.error(`Error finalizing enrichment for lead ${leadId}: ${error.message}`, error.stack);
+    }
+  }
+
+  private async handlePipelineEnd(userId: string, jobId: string, totalLeads: number): Promise<void> {
+    try {
+      await this.usersService.clearProspectingJob(userId);
+      
+      const user = await this.usersService.getUserById(userId);
+      const planDetails = PLANS[user.plan];
+      const quotaRemaining = await this.quotaService.getRemainingQuota(userId);
+      const quotaUsed = planDetails.quota - quotaRemaining;
+
+      const quotaUpdate: QuotaUpdateData = {
+        userId,
+        planId: user.plan,
+        planName: planDetails.name,
+        quotaUsed,
+        quotaTotal: planDetails.quota === Infinity ? 999999 : planDetails.quota,
+        quotaRemaining: quotaRemaining,
+        quotaUsagePercentage: planDetails.quota === Infinity ? 0 : Math.round((quotaUsed / planDetails.quota) * 100),
+        nextResetAt: this.calculateNextResetDate(user.lastQuotaResetAt, planDetails.period),
+        leadsGenerated: totalLeads,
+        timestamp: new Date().toISOString(),
+      };
+
+      const jobCompletedData: JobCompletedData = {
+        jobId,
+        userId,
+        status: 'completed',
+        leadsGenerated: totalLeads,
+        searchQuery: 'Context-driven Search',
+        quotaUpdate,
+        startedAt: new Date().toISOString(), // This should be improved to use actual start time
+        completedAt: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
+      };
+
+      this.webSocketService.emitJobCompleted(userId, jobCompletedData);
+      this.logger.log(`Prospecting job ${jobId} officially completed for user ${userId}.`);
+
+    } catch (error) {
+      this.logger.error(`Error handling pipeline end for job ${jobId}: ${error.message}`, error.stack);
+    }
+  }
+
+  private calculateNextResetDate(lastResetAt: Date, period: 'day' | 'week' | 'month'): string {
+    const lastReset = new Date(lastResetAt);
+    const nextReset = new Date(lastReset);
+    switch (period) {
+      case 'day': nextReset.setDate(nextReset.getDate() + 1); break;
+      case 'week': nextReset.setDate(nextReset.getDate() + 7); break;
+      case 'month': nextReset.setMonth(nextReset.getMonth() + 1); break;
+    }
+    return nextReset.toISOString();
   }
 
   // ===================================

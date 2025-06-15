@@ -1,10 +1,25 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { AxiosResponse } from 'axios';
 import { firstValueFrom } from 'rxjs';
-import { AgentMetrics, LeadData, ProcessingStage } from '../../shared/types/nellia.types';
+import { AgentMetrics, LeadData, ProcessingStage, BusinessContext as BusinessContextType } from '../../shared/types/nellia.types';
 import { AgentName, AgentCategory } from '../../shared/enums/nellia.enums';
+import { Lead } from '@/database/entities/lead.entity';
+import { BusinessContextService } from '../business-context/business-context.service';
+import EventSource from 'eventsource';
+import { AxiosError } from 'axios';
+
+export class McpApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status?: number,
+    public readonly data?: any,
+  ) {
+    super(message);
+    this.name = 'McpApiError';
+  }
+}
 
 // MCP Server API Types (matching prospect/mcp-server Flask API)
 interface LeadProcessingStateCreate {
@@ -42,6 +57,16 @@ interface RunStatus {
   leads: any[];
 }
 
+interface EnrichmentJobData {
+  user_id: string;
+  job_id: string;
+  analyzed_lead_data: any; // Sending the full lead entity as dict
+  product_service_context: string;
+  competitors_list?: string;
+  timestamp: string;
+}
+
+
 @Injectable()
 export class McpService implements OnModuleInit {
   private readonly logger = new Logger(McpService.name);
@@ -51,9 +76,11 @@ export class McpService implements OnModuleInit {
   constructor(
     private readonly configService: ConfigService,
     private readonly httpService: HttpService,
+    @Inject(forwardRef(() => BusinessContextService))
+    private readonly businessContextService: BusinessContextService,
   ) {
     this.baseUrl = this.configService.get('MCP_SERVER_URL', 'http://localhost:5001');
-    this.timeout = this.configService.get('MCP_SERVER_TIMEOUT', 30000);
+    this.timeout = this.configService.get('MCP_SERVER_TIMEOUT', 180000); // Increased timeout for long-running processes
   }
 
   async onModuleInit() {
@@ -114,8 +141,14 @@ export class McpService implements OnModuleInit {
 
       return response.data;
     } catch (error) {
-      this.logger.error(`MCP API request failed: ${method} ${endpoint}`, error.message);
-      throw new Error(`MCP server request failed: ${error.message}`);
+      this.logger.error(`MCP API request failed: ${method} ${endpoint}`, error.stack);
+      if (error.isAxiosError) {
+        const axiosError = error as AxiosError;
+        const status = axiosError.response?.status;
+        const data = axiosError.response?.data;
+        throw new McpApiError(`MCP server request failed with status ${status}`, status, data);
+      }
+      throw new McpApiError(`MCP server request failed: ${error.message}`);
     }
   }
 
@@ -151,85 +184,6 @@ export class McpService implements OnModuleInit {
     return this.makeRequest('GET', `/api/run/${runId}/status`);
   }
 
-  // =====================================
-  // Legacy Methods (Adapted for HTTP)
-  // =====================================
-
-  /**
-   * Process lead - triggers processing and returns status
-   */
-  async processLead(leadData: LeadData): Promise<LeadData> {
-    try {
-      // Generate unique IDs for tracking
-      const leadId = `lead_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      const runId = `run_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      // Start lead processing in MCP server
-      const processingState: LeadProcessingStateCreate = {
-        lead_id: leadId,
-        run_id: runId,
-        url: leadData.website,
-        start_time: new Date().toISOString(),
-        current_agent: 'LeadIntakeAgent',
-      };
-
-      const result = await this.startLeadProcessing(processingState);
-      
-      // Return enhanced lead data with tracking information
-      return {
-        ...leadData,
-        id: leadId,
-        // Note: runId is not part of LeadData interface, storing in processing_stage for now
-        processing_stage: 'lead_qualification' as ProcessingStage,
-      } as LeadData;
-    } catch (error) {
-      this.logger.error('Failed to process lead', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get lead progress - gets current processing status
-   */
-  async getLeadProgress(leadId: string): Promise<any> {
-    try {
-      const status = await this.getLeadStatus(leadId);
-      return {
-        leadId,
-        status: status.lead_status.status,
-        currentAgent: status.lead_status.current_agent,
-        startTime: status.lead_status.start_time,
-        lastUpdate: status.lead_status.last_update_time,
-        endTime: status.lead_status.end_time,
-        agentExecutions: status.agent_executions,
-        errorMessage: status.lead_status.error_message,
-      };
-    } catch (error) {
-      this.logger.error(`Failed to get lead progress for ${leadId}`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update lead stage - records agent completion
-   */
-  async updateLeadStage(leadId: string, stage: string, agentName?: string): Promise<void> {
-    try {
-      const eventPayload: AgentEventPayload = {
-        agent_name: agentName || stage,
-        status: 'SUCCESS',
-        start_time: new Date().toISOString(),
-        end_time: new Date().toISOString(),
-        processing_time_seconds: 1.0,
-        output_json: JSON.stringify({ stage, status: 'completed' }),
-      };
-
-      await this.recordAgentEvent(leadId, eventPayload);
-    } catch (error) {
-      this.logger.error(`Failed to update lead stage for ${leadId}`, error);
-      throw error;
-    }
-  }
 
   // =====================================
   // Enhanced Agent Management Methods
@@ -555,17 +509,80 @@ export class McpService implements OnModuleInit {
   }
 
   // =====================================
-  // Business Context Methods (Not implemented)
+  // Business Context Methods
   // =====================================
 
-  async updateBusinessContext(context: any): Promise<void> {
-    this.logger.warn('Business context functionality not implemented in current MCP server');
+  async updateBusinessContext(context: BusinessContextType | null): Promise<void> {
+    this.logger.log(`Syncing business context with MCP server. Context: ${context ? context.id : 'null'}`);
+    try {
+      // Assuming an endpoint like /api/business-context
+      // If context is null, it means clear the context on MCP side
+      await this.makeRequest('POST', '/api/business-context', context);
+      this.logger.log('Business context synced with MCP server successfully.');
+    } catch (error) {
+      this.logger.error('Failed to sync business context with MCP server.', error.stack);
+      // Do not rethrow, allow main app to function even if MCP sync fails
+    }
   }
 
-  async getBusinessContext(): Promise<any> {
-    this.logger.warn('Business context functionality not implemented in current MCP server');
-    return {};
+  async getBusinessContext(): Promise<BusinessContextType | null> {
+    this.logger.log('Attempting to get business context from MCP server.');
+    try {
+      // Assuming an endpoint like /api/business-context
+      const context = await this.makeRequest<BusinessContextType | null>('GET', '/api/business-context');
+      this.logger.log(context ? 'Business context retrieved from MCP.' : 'No business context found on MCP.');
+      return context;
+    } catch (error) {
+      this.logger.error('Failed to get business context from MCP server.', error.stack);
+      return null;
+    }
   }
+
+  // =====================================
+  // Prospecting Specific Methods
+  // =====================================
+
+  /**
+   * Runs the agentic harvester process via MCP with quota-aware limits.
+   * This method calls the new /api/v2/run_agentic_harvester endpoint.
+   * @param query The search query.
+   * @param maxSites Maximum number of sites to process.
+   * @param context The business context to use for harvesting.
+   * @param maxLeadsToReturn Maximum number of leads to return (quota-aware).
+   * @param userId User ID for logging and potential user-specific context.
+   * @returns A promise resolving to an array of harvester results.
+   */
+  async runHarvester(
+    maxSites: number,
+    context: BusinessContextType,
+    maxLeadsToReturn?: number,
+    userId?: string,
+  ): Promise<{ status: string; job_id: string }> {
+    this.logger.log(`[MCP_SERVICE] Preparing to dispatch harvester job for user ${userId || 'unknown'}.`);
+    
+    const payload = {
+      user_id: userId || 'unknown',
+      business_context: context,
+      max_leads_to_generate: maxLeadsToReturn || 50, // Default fallback
+      max_sites_to_scrape: maxSites,
+      timestamp: new Date().toISOString(),
+    };
+    this.logger.debug(`[MCP_SERVICE] Payload for MCP: ${JSON.stringify(payload, null, 2)}`);
+
+    // This now returns the immediate response from the MCP server, not the results.
+    this.logger.log('[MCP_SERVICE] Sending request to /api/v2/run_agentic_harvester...');
+    const response = await this.makeRequest<{
+      status: string;
+      message: string;
+      job_id: string;
+      user_id: string;
+    }>('POST', '/api/v2/run_agentic_harvester', payload);
+
+    this.logger.log(`[MCP_SERVICE] Successfully dispatched harvester job to MCP. Response: ${JSON.stringify(response)}`);
+    
+    return { status: response.status, job_id: response.job_id };
+  }
+
 
   // =====================================
   // System Methods
@@ -623,6 +640,85 @@ export class McpService implements OnModuleInit {
     } catch (error) {
       this.logger.error('MCP server connection test failed', error);
       return false;
+    }
+  }
+
+  async streamEnrichmentPipeline(lead: Lead, userId: string, jobId: string): Promise<AsyncIterable<any>> {
+    const url = `${this.baseUrl}/api/v2/execute_streaming_prospect`;
+    this.logger.log(`Initiating enrichment stream for lead ${lead.id} at ${url}`);
+
+    const businessContext = await this.businessContextService.getContextForMcp(userId);
+
+    const payload: EnrichmentJobData = {
+      user_id: userId,
+      job_id: jobId,
+      analyzed_lead_data: lead,
+      product_service_context: businessContext.product_service_description,
+      competitors_list: businessContext.competitors?.join(','),
+      timestamp: new Date().toISOString(),
+    };
+
+    const response = await firstValueFrom(
+        this.httpService.post(url, payload, {
+            responseType: 'stream',
+        }),
+    );
+
+    return response.data;
+  }
+
+  async executeUnifiedPipeline(
+    businessContext: BusinessContextType,
+    userId: string,
+    jobId: string,
+  ): Promise<AsyncIterable<any>> {
+    const url = `${this.baseUrl}/api/v2/execute_streaming_prospect`;
+    this.logger.log(`[MCP_SERVICE] Initiating unified pipeline stream for job ${jobId} at ${url}`);
+
+    const payload = {
+      user_id: userId,
+      job_id: jobId,
+      business_context: businessContext,
+    };
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(url, payload, {
+          responseType: 'stream',
+          timeout: 900000, // 15 minute timeout for the entire process
+        }),
+      );
+
+      // The response.data is a stream. We need to handle it as an async iterator.
+      const stream = response.data;
+      
+      return (async function* () {
+        // Buffer to handle multi-line data chunks
+        let buffer = '';
+        for await (const chunk of stream) {
+          buffer += chunk.toString();
+          let eolIndex;
+          // Process all complete events in the buffer
+          while ((eolIndex = buffer.indexOf('\n\n')) >= 0) {
+            const eventString = buffer.substring(0, eolIndex).trim();
+            buffer = buffer.substring(eolIndex + 2);
+            
+            if (eventString.startsWith('data:')) {
+              const jsonString = eventString.substring(5).trim();
+              try {
+                const event = JSON.parse(jsonString);
+                yield event;
+              } catch (e) {
+                this.logger.warn(`Failed to parse JSON from stream event: ${jsonString}`);
+              }
+            }
+          }
+        }
+      }.bind(this))();
+
+    } catch (error) {
+      this.logger.error(`[MCP_SERVICE] Failed to initiate unified pipeline stream for job ${jobId}: ${error.message}`, error.stack);
+      throw new McpApiError(`Failed to start unified pipeline: ${error.message}`);
     }
   }
 }

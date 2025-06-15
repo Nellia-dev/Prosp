@@ -10,6 +10,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import { RealTimeProgress } from "./components/RealTimeProgress";
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -18,16 +19,17 @@ const App = () => (
         <TooltipProvider>
           <Toaster />
           <Sonner />
+          <RealTimeProgress />
           <BrowserRouter>
             <Routes>
               <Route path="/login" element={<Login />} />
-              <Route 
-                path="/" 
+              <Route
+                path="/"
                 element={
                   <ProtectedRoute>
                     <Index />
                   </ProtectedRoute>
-                } 
+                }
               />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />

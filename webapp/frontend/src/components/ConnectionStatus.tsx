@@ -1,4 +1,4 @@
-import { useConnectionStatus, useNelliaSocket } from '../hooks/useSocketIO';
+import { useWebSocket } from '../contexts/WebSocketContext';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Wifi, WifiOff, RotateCcw, AlertCircle } from 'lucide-react';
@@ -9,11 +9,10 @@ interface ConnectionStatusProps {
 }
 
 export const ConnectionStatus = ({ className = '', showText = true }: ConnectionStatusProps) => {
-  const { status, statusColor, statusText, isConnected } = useConnectionStatus();
-  const { connect } = useNelliaSocket();
+  const { connectionStatus, isConnected, connect } = useWebSocket();
 
   const getStatusIcon = () => {
-    switch (status) {
+    switch (connectionStatus) {
       case 'connected':
         return <Wifi className="w-3 h-3" />;
       case 'connecting':
@@ -26,7 +25,7 @@ export const ConnectionStatus = ({ className = '', showText = true }: Connection
   };
 
   const getStatusBadgeColor = () => {
-    switch (status) {
+    switch (connectionStatus) {
       case 'connected':
         return 'bg-green-500 hover:bg-green-600';
       case 'connecting':
@@ -37,6 +36,14 @@ export const ConnectionStatus = ({ className = '', showText = true }: Connection
         return 'bg-gray-500 hover:bg-gray-600';
     }
   };
+  
+  const statusText = {
+    connected: 'Connected',
+    connecting: 'Connecting...',
+    error: 'Connection Error',
+    disconnected: 'Disconnected',
+  }[connectionStatus];
+
 
   const handleReconnect = () => {
     if (!isConnected) {
@@ -44,7 +51,7 @@ export const ConnectionStatus = ({ className = '', showText = true }: Connection
     }
   };
 
-  if (status === 'connecting') {
+  if (connectionStatus === 'connecting') {
     return (
       <Badge className={`${getStatusBadgeColor()} text-white ${className}`}>
         {getStatusIcon()}
@@ -53,7 +60,7 @@ export const ConnectionStatus = ({ className = '', showText = true }: Connection
     );
   }
 
-  if (status === 'error' || status === 'disconnected') {
+  if (connectionStatus === 'error' || connectionStatus === 'disconnected') {
     return (
       <Button
         onClick={handleReconnect}

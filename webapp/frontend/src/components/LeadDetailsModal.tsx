@@ -8,8 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useUpdateLead, useDeleteLead, useProcessLead } from '../hooks/api/useLeads';
-import { LeadData } from '../types/nellia';
+import { useUpdateLead, useDeleteLead, useProcessLead } from '../hooks/api/useUnifiedApi';
+import { LeadData, ProcessingStage, QualificationTier, PROCESSING_STAGES, QUALIFICATION_TIERS } from '../types/unified';
 import { useTranslation } from '../hooks/useTranslation';
 import { 
   Save, 
@@ -35,19 +35,6 @@ interface LeadDetailsModalProps {
   onLeadUpdate?: (lead: LeadData) => void;
 }
 
-const PROCESSING_STAGES = [
-  'lead_qualification',
-  'analyzing_refining', 
-  'possibly_qualified',
-  'prospecting',
-  'revisando',
-  'primeiras_mensagens',
-  'negociando',
-  'desqualificado',
-  'reuniao_agendada'
-];
-
-const QUALIFICATION_TIERS = ['High Potential', 'Medium Potential', 'Low Potential'];
 
 export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDetailsModalProps) => {
   const { t } = useTranslation();
@@ -84,17 +71,18 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
 
   const handleSave = async () => {
     try {
+      // Now using the proper snake_case format that matches backend
       const updateData = {
-        companyName: formData.company_name,
+        company_name: formData.company_name,
         website: formData.website,
-        sector: formData.company_sector,
-        qualificationTier: formData.qualification_tier as 'A' | 'B' | 'C',
-        relevanceScore: formData.relevance_score,
-        roiPotential: formData.roi_potential_score,
-        brazilianMarketFit: formData.brazilian_market_fit,
-        processingStage: formData.processing_stage,
-        painPoints: formData.pain_point_analysis,
-        triggers: formData.purchase_triggers,
+        company_sector: formData.company_sector,
+        qualification_tier: formData.qualification_tier,
+        relevance_score: formData.relevance_score,
+        roi_potential_score: formData.roi_potential_score,
+        brazilian_market_fit: formData.brazilian_market_fit,
+        processing_stage: formData.processing_stage,
+        pain_point_analysis: formData.pain_point_analysis,
+        purchase_triggers: formData.purchase_triggers,
       };
 
       const updatedLead = await updateLeadMutation.mutateAsync({ 
@@ -102,56 +90,35 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
         data: updateData 
       });
 
-      // Convert API response back to LeadData format
-      const convertedLead: LeadData = {
-        id: updatedLead.id,
-        company_name: updatedLead.companyName,
-        website: updatedLead.website,
-        company_sector: updatedLead.sector,
-        qualification_tier: updatedLead.qualificationTier === 'A' ? 'High Potential' : 
-                           updatedLead.qualificationTier === 'B' ? 'Medium Potential' : 'Low Potential',
-        processing_stage: updatedLead.processingStage as LeadData['processing_stage'],
-        pain_point_analysis: updatedLead.painPoints || [],
-        purchase_triggers: updatedLead.triggers || [],
-        relevance_score: updatedLead.relevanceScore,
-        roi_potential_score: updatedLead.roiPotential,
-        brazilian_market_fit: updatedLead.brazilianMarketFit,
-        persona: {
-          likely_role: updatedLead.likelyContactRole || '',
-          decision_maker_probability: updatedLead.decisionMakerProbability || 0,
-        },
-        created_at: updatedLead.createdAt,
-        updated_at: updatedLead.updatedAt,
-      };
-
-      onLeadUpdate?.(convertedLead);
+      // API response is now already in the correct format (LeadData)
+      onLeadUpdate?.(updatedLead);
       setIsEditing(false);
       toast({
-        title: "Lead Updated",
-        description: "Lead information has been successfully updated.",
+        title: t('lead_updated'),
+        description: t('lead_updated_success'),
       });
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Failed to update lead. Please try again.",
+        title: t('error'),
+        description: t('update_error'),
         variant: "destructive",
       });
     }
   };
 
   const handleDelete = async () => {
-    if (confirm('Are you sure you want to delete this lead?')) {
+    if (confirm(t('delete_confirmation'))) {
       try {
         await deleteLeadMutation.mutateAsync(lead.id);
         toast({
-          title: "Lead Deleted",
-          description: "Lead has been successfully deleted.",
+          title: t('lead_deleted'),
+          description: t('lead_deleted_success'),
         });
         onClose();
       } catch (error) {
         toast({
-          title: "Error",
-          description: "Failed to delete lead. Please try again.",
+          title: t('error'),
+          description: t('delete_error'),
           variant: "destructive",
         });
       }
@@ -162,13 +129,13 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
     try {
       await processLeadMutation.mutateAsync(lead.id);
       toast({
-        title: "Processing Started",
-        description: "Lead processing has been initiated.",
+        title: t('processing_started'),
+        description: t('processing_started_success'),
       });
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Failed to start processing. Please try again.",
+        title: t('error'),
+        description: t('process_error'),
         variant: "destructive",
       });
     }
@@ -211,11 +178,12 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
         </DialogHeader>
 
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 bg-slate-800">
-            <TabsTrigger value="overview" className="text-slate-300">Overview</TabsTrigger>
-            <TabsTrigger value="details" className="text-slate-300">Details</TabsTrigger>
-            <TabsTrigger value="insights" className="text-slate-300">Insights</TabsTrigger>
-            <TabsTrigger value="actions" className="text-slate-300">Actions</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-5 bg-slate-800">
+            <TabsTrigger value="overview" className="text-slate-300">{t('overview')}</TabsTrigger>
+            <TabsTrigger value="details" className="text-slate-300">{t('details')}</TabsTrigger>
+            <TabsTrigger value="insights" className="text-slate-300">{t('insights')}</TabsTrigger>
+            <TabsTrigger value="strategy" className="text-slate-300">{t('strategy')}</TabsTrigger>
+            <TabsTrigger value="actions" className="text-slate-300">{t('actions')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
@@ -225,14 +193,14 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                 <CardHeader>
                   <CardTitle className="text-white text-sm flex items-center">
                     <Building className="w-4 h-4 mr-2" />
-                    Company Information
+                    {t('company_information')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {isEditing ? (
                     <>
                       <div>
-                        <Label className="text-slate-300">Company Name</Label>
+                        <Label className="text-slate-300">{t('company_name')}</Label>
                         <Input
                           value={formData.company_name || ''}
                           onChange={(e) => handleInputChange('company_name', e.target.value)}
@@ -240,7 +208,7 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                         />
                       </div>
                       <div>
-                        <Label className="text-slate-300">Website</Label>
+                        <Label className="text-slate-300">{t('website')}</Label>
                         <Input
                           value={formData.website || ''}
                           onChange={(e) => handleInputChange('website', e.target.value)}
@@ -248,7 +216,7 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                         />
                       </div>
                       <div>
-                        <Label className="text-slate-300">Sector</Label>
+                        <Label className="text-slate-300">{t('sector')}</Label>
                         <Input
                           value={formData.company_sector || ''}
                           onChange={(e) => handleInputChange('company_sector', e.target.value)}
@@ -284,14 +252,14 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                 <CardHeader>
                   <CardTitle className="text-white text-sm flex items-center">
                     <TrendingUp className="w-4 h-4 mr-2" />
-                    Performance Scores
+                    {t('performance_scores')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {isEditing ? (
                     <>
                       <div>
-                        <Label className="text-slate-300">Relevance Score</Label>
+                        <Label className="text-slate-300">{t('relevance_score')}</Label>
                         <Input
                           type="number"
                           min="0"
@@ -303,7 +271,7 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                         />
                       </div>
                       <div>
-                        <Label className="text-slate-300">ROI Potential</Label>
+                        <Label className="text-slate-300">{t('roi_potential')}</Label>
                         <Input
                           type="number"
                           min="0"
@@ -315,7 +283,7 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                         />
                       </div>
                       <div>
-                        <Label className="text-slate-300">Brazilian Market Fit</Label>
+                        <Label className="text-slate-300">{t('brazilian_market_fit')}</Label>
                         <Input
                           type="number"
                           min="0"
@@ -330,19 +298,19 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                   ) : (
                     <>
                       <div className="flex justify-between items-center">
-                        <span className="text-slate-300">Relevance</span>
+                        <span className="text-slate-300">{t('relevance')}</span>
                         <span className={`font-bold ${getScoreColor(lead.relevance_score)}`}>
                           {(lead.relevance_score * 100).toFixed(1)}%
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-slate-300">ROI Potential</span>
+                        <span className="text-slate-300">{t('roi_potential')}</span>
                         <span className={`font-bold ${getScoreColor(lead.roi_potential_score)}`}>
                           {(lead.roi_potential_score * 100).toFixed(1)}%
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-slate-300">Market Fit</span>
+                        <span className="text-slate-300">{t('market_fit')}</span>
                         <span className={`font-bold ${getScoreColor(lead.brazilian_market_fit)}`}>
                           {(lead.brazilian_market_fit * 100).toFixed(1)}%
                         </span>
@@ -506,6 +474,63 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                       <span className="text-slate-500">No triggers identified</span>
                     )}
                   </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="strategy" className="space-y-4">
+            <Card className="bg-slate-800 border-slate-700">
+              <CardHeader>
+                <CardTitle className="text-white text-sm flex items-center">
+                  <TrendingUp className="w-4 h-4 mr-2" />
+                  Approach Plan
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {lead.enrichment_data?.enhanced_strategy?.detailed_approach_plan ? (
+                  <div className="space-y-4 text-slate-300">
+                    <div>
+                      <h4 className="font-semibold text-white">Main Objective</h4>
+                      <p>{lead.enrichment_data.enhanced_strategy.detailed_approach_plan.main_objective}</p>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-white">Elevator Pitch</h4>
+                      <p>{lead.enrichment_data.enhanced_strategy.detailed_approach_plan.adapted_elevator_pitch}</p>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-white">Contact Sequence</h4>
+                      <div className="space-y-2">
+                        {lead.enrichment_data.enhanced_strategy.detailed_approach_plan.contact_sequence.map((step: any) => (
+                          <div key={step.step_number} className="p-2 bg-slate-850 rounded-md">
+                            <p className="font-bold">{step.step_number}. {step.channel}</p>
+                            <p><span className="font-semibold">Objective:</span> {step.objective}</p>
+                            <p><span className="font-semibold">CTA:</span> {step.cta}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-slate-500">No detailed approach plan available. Enrich the lead to generate one.</p>
+                )}
+              </CardContent>
+            </Card>
+            <Card className="bg-slate-800 border-slate-700">
+              <CardHeader>
+                <CardTitle className="text-white text-sm flex items-center">
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Personalized Message
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {lead.enrichment_data?.enhanced_personalized_message?.primary_message ? (
+                  <div className="space-y-2 text-slate-300 bg-slate-850 p-3 rounded-md">
+                    <p className="font-semibold text-white">{lead.enrichment_data.enhanced_personalized_message.primary_message.subject_line}</p>
+                    <p className="whitespace-pre-wrap">{lead.enrichment_data.enhanced_personalized_message.primary_message.message_body}</p>
+                  </div>
+                ) : (
+                  <p className="text-slate-500">No personalized message available.</p>
                 )}
               </CardContent>
             </Card>

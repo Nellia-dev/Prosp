@@ -1,5 +1,5 @@
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 from agents.base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
@@ -20,10 +20,26 @@ class ContactStepDetail(BaseModel):
     step_number: int
     channel: str
     objective: str
-    key_topics_arguments: List[str]
+    key_topics_arguments: List[str] = Field(default_factory=list)
     key_questions: List[str] = Field(default_factory=list)
     cta: str
     supporting_materials: Optional[str] = None
+    
+    @validator('key_questions', pre=True)
+    def validate_key_questions(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [v] if v.strip() else []
+        return v if isinstance(v, list) else []
+    
+    @validator('key_topics_arguments', pre=True)
+    def validate_key_topics_arguments(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [v] if v.strip() else []
+        return v if isinstance(v, list) else []
 
 class DetailedApproachPlanOutput(BaseModel):
     main_objective: str = "Não especificado"
@@ -35,9 +51,10 @@ class DetailedApproachPlanOutput(BaseModel):
     error_message: Optional[str] = None
 
 class DetailedApproachPlanAgent(BaseAgent[DetailedApproachPlanInput, DetailedApproachPlanOutput]):
-    def __init__(self, llm_client: LLMClientBase):
-        super().__init__(llm_client)
-        self.name = "DetailedApproachPlanAgent"
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
+        from loguru import logger
+        self.logger = logger
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -177,7 +194,11 @@ if __name__ == '__main__':
 
     print("Running mock test for DetailedApproachPlanAgent...")
     mock_llm = MockLLMClient()
-    agent = DetailedApproachPlanAgent(llm_client=mock_llm)
+    agent = DetailedApproachPlanAgent(
+        name="DetailedApproachPlanAgent",
+        description="Creates a detailed approach plan.",
+        llm_client=mock_llm
+    )
 
     test_lead_analysis = "Empresa Exemplo (TI, Médio Porte). Foco em otimizar processos."
     test_persona_profile = "Carlos Mendes, Diretor de Operações. Busca eficiência, ROI, integração fácil."

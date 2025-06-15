@@ -1,12 +1,33 @@
-import { Controller, Get, Post, Delete, Param, Body } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Controller, Get, Post, Delete, Param, Body, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { QueueService } from './queue.service';
 import { ProcessingStage } from '../../shared/types/nellia.types';
+import { Public } from '../auth/public.decorator';
 
+@ApiBearerAuth()
 @ApiTags('Queue Management')
 @Controller('queue')
 export class QueueController {
+  private readonly logger = new Logger(QueueController.name);
+
   constructor(private readonly queueService: QueueService) {}
+
+  @Public()
+  @Post('mcp/event-stream')
+  @ApiOperation({ summary: 'Webhook for real-time events from MCP pipelines (now handled by queue)' })
+  @ApiResponse({ status: 200, description: 'Event processed successfully' })
+  async handleMcpEventStream(@Body() event: any): Promise<{ status: string }> {
+    const eventType = event.event_type || 'unknown_event';
+    const jobId = event.job_id || 'unknown_job';
+    this.logger.debug(`Received MCP event-stream for job ${jobId}, event: ${eventType}`);
+    try {
+      await this.queueService.processStreamedEvent(event);
+      return { status: 'received' };
+    } catch (error) {
+      this.logger.error(`Error processing MCP event-stream for job ${jobId}: ${error.message}`, error.stack);
+      throw new HttpException('Error processing event webhook', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
 
   @Get('stats')
   @ApiOperation({ summary: 'Get queue statistics' })
@@ -15,22 +36,22 @@ export class QueueController {
     return this.queueService.getQueueStats();
   }
 
-  @Post('lead-processing')
-  @ApiOperation({ summary: 'Add lead processing job' })
-  @ApiResponse({ status: 201, description: 'Lead processing job added successfully' })
-  async addLeadProcessingJob(@Body() body: { leadId: string; stage: ProcessingStage; priority?: number }) {
+  @Post('prospect-processing')
+  @ApiOperation({ summary: 'Add prospect processing job' })
+  @ApiResponse({ status: 201, description: 'Prospect processing job added successfully' })
+  async addProspectProcessingJob(@Body() body: { leadId: string; stage: ProcessingStage; priority?: number }) {
     const { leadId, stage, priority = 0 } = body;
-    await this.queueService.addLeadProcessingJob(leadId, stage, priority);
-    return { message: 'Lead processing job added successfully', leadId, stage };
+    await this.queueService.addProspectProcessingJob(leadId, stage, priority);
+    return { message: 'Prospect processing job added successfully', leadId, stage };
   }
 
-  @Post('bulk-lead-processing')
-  @ApiOperation({ summary: 'Add bulk lead processing job' })
-  @ApiResponse({ status: 201, description: 'Bulk lead processing job added successfully' })
-  async addBulkLeadProcessingJob(@Body() body: { leadIds: string[]; priority?: number }) {
+  @Post('bulk-prospect-processing')
+  @ApiOperation({ summary: 'Add bulk prospect processing job' })
+  @ApiResponse({ status: 201, description: 'Bulk prospect processing job added successfully' })
+  async addBulkProspectProcessingJob(@Body() body: { leadIds: string[]; priority?: number }) {
     const { leadIds, priority = 0 } = body;
-    await this.queueService.addBulkLeadProcessingJob(leadIds, priority);
-    return { message: 'Bulk lead processing job added successfully', leadCount: leadIds.length };
+    await this.queueService.addBulkProspectProcessingJob(leadIds, priority);
+    return { message: 'Bulk prospect processing job added successfully', leadCount: leadIds.length };
   }
 
   @Post('metrics-collection/agent')
