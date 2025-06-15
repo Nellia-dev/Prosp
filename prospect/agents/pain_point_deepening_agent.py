@@ -1,5 +1,6 @@
 from typing import Optional, List
 from pydantic import BaseModel, Field
+import json # For mock test
 
 from agents.base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
@@ -8,21 +9,24 @@ from core_logic.llm_client import LLMClientBase
 GEMINI_TEXT_INPUT_TRUNCATE_CHARS = 180000
 
 class PainPointDeepeningInput(BaseModel):
-    lead_analysis: str
-    persona_profile: str
-    product_service_offered: str
-    company_name: str # Added company_name for more context
+    lead_analysis: str # Summary from LeadAnalysisAgent
+    persona_profile: str # Summary from PersonaCreationAgent (or constructed)
+    product_service_offered: str # User's product/service
+    company_name: str
 
+# Updated Pydantic Models
 class DetailedPainPoint(BaseModel):
-    pain_description: str
-    business_impact: str
-    solution_alignment: str # How the user's product/service aligns
+    pain_point_title: str = Field(default="Dor não especificada", description="Título curto e impactante da dor (ex: Baixa Eficiência Operacional, Dificuldade em Escalar Vendas).")
+    detailed_description: str = Field(default="Descrição não fornecida.", description="Descrição elaborada da dor, suas causas e sintomas percebidos no contexto da empresa.")
+    potential_business_impact: str = Field(default="Impacto não fornecido.", description="Impacto potencial ou real dessa dor no negócio do lead (ex: Perda de receita, Aumento de custos, Riscos de conformidade, Insatisfação de clientes).")
+    how_our_solution_helps: str = Field(default="Alinhamento com solução não fornecido.", description="Como nosso produto/serviço especificamente aborda e resolve esta dor.")
+    investigative_questions: List[str] = Field(default_factory=list, description="1-2 perguntas abertas para aprofundar o entendimento desta dor específica durante uma conversa.")
 
 class PainPointDeepeningOutput(BaseModel):
-    primary_pain_category: str = "Não especificado"
+    primary_pain_category: str = Field(default="Não especificado", description="Categoria principal que engloba as dores identificadas (ex: Eficiência Operacional, Crescimento de Receita, Gestão de Riscos, Custos Elevados).")
     detailed_pain_points: List[DetailedPainPoint] = Field(default_factory=list)
-    urgency_level: str = "medium" # e.g., low, medium, high, critical
-    investigative_questions: List[str] = Field(default_factory=list)
+    urgency_level: str = Field(default="medium", description="Nível de urgência percebido para a resolução destas dores (Enum: 'low', 'medium', 'high', 'critical').")
+    overall_pain_summary: Optional[str] = Field(default=None, description="Breve resumo geral (1-2 frases) sobre o cenário de dores do lead e sua aparente prontidão ou necessidade por soluções.")
     error_message: Optional[str] = None
 
 class PainPointDeepeningAgent(BaseAgent[PainPointDeepeningInput, PainPointDeepeningOutput]):
@@ -34,57 +38,72 @@ class PainPointDeepeningAgent(BaseAgent[PainPointDeepeningInput, PainPointDeepen
         return text[:max_chars]
 
     def process(self, input_data: PainPointDeepeningInput) -> PainPointDeepeningOutput:
-        deepened_pain_points = ""
         error_message = None
         
-        self.logger.info(f"🎯 PAIN POINT DEEPENING STARTING for company: {input_data.company_name}")
-        self.logger.info(f"📊 Input data: analysis_length={len(input_data.lead_analysis)}, persona_length={len(input_data.persona_profile)}")
-        self.logger.debug(f"🔧 Service offered: {input_data.product_service_offered}")
+        self.logger.info(f"🎯 PAIN POINT DEEPENING AGENT STARTING for company: {input_data.company_name}")
+        self.logger.debug(f"📊 Input data: analysis_length={len(input_data.lead_analysis)}, persona_length={len(input_data.persona_profile)}, service='{input_data.product_service_offered}'")
 
         try:
             # Truncate inputs
-            truncated_analysis = self._truncate_text(input_data.lead_analysis, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 4)
-            truncated_persona = self._truncate_text(input_data.persona_profile, GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 4)
+            prompt_fixed_overhead = 4000 # Estimate for fixed parts of the prompt and JSON structure
+            available_for_dynamic = GEMINI_TEXT_INPUT_TRUNCATE_CHARS - prompt_fixed_overhead
             
-            self.logger.debug(f"✂️  Text truncation: analysis {len(input_data.lead_analysis)} -> {len(truncated_analysis)}, persona {len(input_data.persona_profile)} -> {len(truncated_persona)}")
+            tr_lead_analysis = self._truncate_text(input_data.lead_analysis, int(available_for_dynamic * 0.40))
+            tr_persona_profile = self._truncate_text(input_data.persona_profile, int(available_for_dynamic * 0.40))
+            # product_service_offered and company_name are typically short. Remaining 20% for them and buffer.
             
+            self.logger.debug(f"✂️  Text truncation: analysis {len(input_data.lead_analysis)} -> {len(tr_lead_analysis)}, persona {len(input_data.persona_profile)} -> {len(tr_persona_profile)}")
+
+            # Refined prompt_template
             prompt_template = """
-                Você é um Consultor de Vendas Estratégicas especializado em identificar e aprofundar os pontos de dor de clientes B2B.
-                Seu objetivo é ajudar a equipe de vendas a entender melhor as necessidades implícitas e explícitas da persona na empresa '{company_name}'.
+                Você é um Consultor de Negócios B2B Sênior e Estrategista de Contas, com expertise em diagnosticar profundamente os pontos de dor de empresas e alinhar soluções de forma eficaz, especialmente no mercado brasileiro.
+                Sua tarefa é analisar as informações da empresa '{company_name}' e da persona alvo, e detalhar os pontos de dor mais críticos, avaliando seu impacto e urgência, e formulando perguntas para aprofundamento.
 
-                ANÁLISE DO LEAD:
-                {lead_analysis}
+                INFORMAÇÕES DISPONÍVEIS PARA ANÁLISE:
 
-                PERFIL DA PERSONA (Tomador de Decisão na {company_name}):
-                {persona_profile}
+                1. ANÁLISE PRELIMINAR DO LEAD:
+                   \"\"\"
+                   {lead_analysis}
+                   \"\"\"
 
-                PRODUTO/SERVIÇO QUE VOCÊ OFERECE:
-                {product_service_offered}
+                2. PERFIL DA PERSONA (Tomador de Decisão na {company_name}):
+                   \"\"\"
+                   {persona_profile}
+                   \"\"\"
 
-                INSTRUÇÕES:
-                Com base nas informações fornecidas:
-                1.  Identifique a categoria principal dos pontos de dor.
-                2.  Liste de 2 a 3 pontos de dor detalhados que a persona provavelmente enfrenta, considerando o contexto da empresa '{company_name}' e a análise do lead. Para cada um:
-                    a.  Descreva a dor específica.
-                    b.  Explique o impacto de negócio dessa dor (operações, receita, etc.).
-                    c.  Indique como o {product_service_offered} se alinha para resolver essa dor.
-                3.  Avalie o nível de urgência geral para resolver esses pontos de dor (low, medium, high, critical).
-                4.  Formule de 2 a 4 perguntas investigativas abertas e específicas para aprofundar a compreensão dos problemas e suas implicações.
-                
-                Retorne APENAS um objeto JSON com a seguinte estrutura:
+                3. NOSSO PRODUTO/SERVIÇO (que estamos oferecendo à {company_name}):
+                   "{product_service_offered}"
+
+                INSTRUÇÕES PARA O DIAGNÓSTICO DE PONTOS DE DOR:
+                1.  **Identifique a Categoria Principal das Dores:** Determine uma categoria geral que englobe os principais desafios da empresa (ex: Eficiência Operacional, Crescimento de Receita, Gestão de Riscos, Custos Elevados, Inovação Tecnológica).
+                2.  **Detalhe 2-3 Pontos de Dor Críticos:** Para cada ponto de dor identificado:
+                    a.  `pain_point_title`: Crie um título curto e impactante para a dor.
+                    b.  `detailed_description`: Descreva a dor de forma elaborada, incluindo suas possíveis causas e sintomas no contexto da '{company_name}'.
+                    c.  `potential_business_impact`: Explique o impacto potencial ou real dessa dor nos negócios da '{company_name}' (ex: perda de receita, aumento de custos, riscos, insatisfação de clientes, perda de competitividade).
+                    d.  `how_our_solution_helps`: Detalhe como o nosso "{product_service_offered}" especificamente aborda e ajuda a resolver esta dor.
+                    e.  `investigative_questions`: Formule de 1 a 2 perguntas investigativas abertas e específicas para esta dor, destinadas a aprofundar a compreensão do problema e suas implicações durante uma conversa com a persona.
+                3.  **Avalie o Nível de Urgência Geral:** Com base na sua análise, classifique o nível de urgência para a '{company_name}' resolver esses pontos de dor (opções: "low", "medium", "high", "critical").
+                4.  **Crie um Resumo Geral das Dores:** Forneça um breve resumo (1-2 frases) sobre o cenário geral de dores do lead e sua aparente prontidão ou necessidade por soluções.
+                5.  **Contexto Brasileiro:** Considere as nuances do mercado brasileiro ao avaliar os impactos e a urgência.
+
+                FORMATO DA RESPOSTA:
+                Responda EXCLUSIVAMENTE com um objeto JSON válido, seguindo o schema e as descrições de campo abaixo. Não inclua NENHUM texto, explicação, ou markdown (como ```json) antes ou depois do objeto JSON.
+
+                SCHEMA JSON ESPERADO:
                 {{
-                    "primary_pain_category": "Categoria principal dos pontos de dor (string)",
-                    "detailed_pain_points": [
+                    "primary_pain_category": "string - Categoria principal que engloba as dores identificadas (ex: Eficiência Operacional, Crescimento de Receita).",
+                    "detailed_pain_points": [ // Lista de 2 a 3 objetos, um para cada dor detalhada.
                         {{
-                            "pain_description": "Descrição específica da dor (string)",
-                            "business_impact": "Como isso impacta operações/receita (string)",
-                            "solution_alignment": "Como nossa solução {product_service_offered} aborda essa dor (string)"
+                            "pain_point_title": "string - Título curto e impactante da dor (ex: Baixa Eficiência em Processos Chave).",
+                            "detailed_description": "string - Descrição elaborada da dor, suas causas e sintomas percebidos na empresa.",
+                            "potential_business_impact": "string - Impacto potencial ou real dessa dor no negócio do lead (ex: Perda de receita devido a processos lentos).",
+                            "how_our_solution_helps": "string - Como nosso produto/serviço '{product_service_offered}' especificamente aborda esta dor.",
+                            "investigative_questions": ["string", ...] // Lista de 1-2 perguntas abertas para aprofundar esta dor específica. Lista vazia [] se não houver perguntas específicas.
                         }}
                     ],
-                    "urgency_level": "low|medium|high|critical (string)",
-                    "investigative_questions": ["Pergunta investigativa 1 (string)", "Pergunta investigativa 2 (string)"]
+                    "urgency_level": "string", // Enum: "low", "medium", "high", "critical" - Nível de urgência geral para resolver estas dores.
+                    "overall_pain_summary": "string | null" // Breve resumo geral (1-2 frases) sobre o cenário de dores do lead. Use null se não houver um resumo conciso a adicionar.
                 }}
-                Não inclua explicações adicionais fora do JSON.
             """
 
             formatted_prompt = prompt_template.format(
@@ -93,66 +112,82 @@ class PainPointDeepeningAgent(BaseAgent[PainPointDeepeningInput, PainPointDeepen
                 product_service_offered=input_data.product_service_offered,
                 company_name=input_data.company_name
             )
+            self.logger.debug(f"Prompt for {self.name} (length: {len(formatted_prompt)}):\n{formatted_prompt[:600]}...")
 
-            self.logger.debug("🤖 Generating LLM response for pain point analysis")
             llm_response_str = self.generate_llm_response(formatted_prompt)
 
             if not llm_response_str:
-                self.logger.error("❌ LLM call returned no response for pain point deepening")
+                self.logger.error(f"❌ LLM call returned no response for {self.name} for company {input_data.company_name}")
                 return PainPointDeepeningOutput(error_message="LLM call returned no response.")
 
-            self.logger.debug(f"✅ LLM returned response, length: {len(llm_response_str)}")
+            self.logger.debug(f"LLM response received for {self.name} (length: {len(llm_response_str)}). Attempting to parse.")
             
             parsed_output = self.parse_llm_json_response(llm_response_str, PainPointDeepeningOutput)
             
-            # If parsing failed, parse_llm_json_response might set parsed_output.error_message
             if parsed_output.error_message:
-                self.logger.warning(f"⚠️  PainPointDeepeningAgent JSON parsing failed. Raw response: {llm_response_str[:500]}")
-                self.logger.warning("❌ No regex fallback available for complex pain point structure")
-            else:
-                # Log successful parsing details
-                pain_points_count = len(parsed_output.detailed_pain_points)
-                questions_count = len(parsed_output.investigative_questions)
-                self.logger.info(f"✅ Pain point analysis successful: category={parsed_output.primary_pain_category}, points={pain_points_count}, urgency={parsed_output.urgency_level}, questions={questions_count}")
+                self.logger.warning(f"⚠️  {self.name} JSON parsing/validation failed for {input_data.company_name}. Error: {parsed_output.error_message}. Raw response snippet: {llm_response_str[:500]}")
+                return parsed_output
 
+            pain_points_count = len(parsed_output.detailed_pain_points)
+            self.logger.info(f"✅ Pain point analysis successful for {input_data.company_name}: category='{parsed_output.primary_pain_category}', points_found={pain_points_count}, urgency='{parsed_output.urgency_level}'.")
             return parsed_output
 
         except Exception as e:
-            self.logger.error(f"An unexpected error occurred in {self.name}: {e}")
-            import traceback
-            traceback.print_exc()
+            self.logger.error(f"❌ An unexpected error occurred in {self.name} for {input_data.company_name}: {e}", exc_info=True)
             return PainPointDeepeningOutput(error_message=f"An unexpected error occurred: {str(e)}")
 
 if __name__ == '__main__':
+    from loguru import logger
+    import sys
+    logger.remove()
+    logger.add(sys.stderr, level="DEBUG")
+
     class MockLLMClient(LLMClientBase):
         def __init__(self, api_key: str = "mock_key"):
             super().__init__(api_key)
 
         def generate_text_response(self, prompt: str) -> Optional[str]:
-            if "PONTOS DE DOR APROFUNDADOS E PERGUNTAS INVESTIGATIVAS" in prompt:
-                return (
-                    "Para a Empresa Exemplo:\n\n"
-                    "Ponto de Dor 1: Otimização de Processos Manuais Identificada na Análise.\n"
-                    "   - Pergunta Investigativa: Carlos, você mencionou a busca por eficiência. Poderia descrever como os processos manuais atuais impactam o tempo de resposta da sua equipe?\n"
-                    "   - Pergunta Investigativa: Quais são os custos (diretos e indiretos) que você associa à manutenção desses processos manuais?\n"
-                    "   - Observação: Soluções como Nossas Soluções Incríveis frequentemente ajudam a automatizar tais processos, liberando tempo da equipe para tarefas mais estratégicas.\n\n"
-                    "Ponto de Dor 2: Integração de Novas Tecnologias (mencionado no perfil da persona).\n"
-                    "   - Pergunta Investigativa: Ao considerar novas tecnologias, quais são suas maiores preocupações em termos de integração com os sistemas existentes na Empresa Exemplo?\n"
-                    "   - Pergunta Investigativa: Como a equipe normalmente lida com a curva de aprendizado de novas ferramentas?\n"
-                    "   - Observação: A facilidade de integração e o suporte robusto são aspectos que Nossas Soluções Incríveis priorizam para mitigar esses desafios."
-                )
-            return "Resposta padrão do mock."
+            logger.debug(f"MockLLMClient received prompt snippet:\n{prompt[:600]}...")
+            # Simulate LLM returning valid JSON based on the refined prompt and new model
+            return json.dumps({
+                "primary_pain_category": "Eficiência Operacional e Escalabilidade",
+                "detailed_pain_points": [
+                    {
+                        "pain_point_title": "Otimização de Processos Manuais em Expansão",
+                        "detailed_description": "A Empresa Exemplo, ao expandir para LATAM, enfrenta desafios com processos manuais que não escalam, especialmente em QA, gerando lentidão e potenciais erros.",
+                        "potential_business_impact": "Atrasos em lançamentos de produtos/features, aumento de custos operacionais para manter a qualidade, dificuldade em atender a nova demanda do mercado LATAM.",
+                        "how_our_solution_helps": "Nossas Soluções Incríveis de Automação com IA podem automatizar ciclos de QA repetitivos e complexos, liberando a equipe para focar em testes mais estratégicos e acelerando o time-to-market.",
+                        "investigative_questions": [
+                            "Como a expansão para LATAM está impactando especificamente os prazos de entrega de software?",
+                            "Quais são os principais gargalos que vocês percebem nos processos de QA atualmente?"
+                        ]
+                    },
+                    {
+                        "pain_point_title": "Integração de Novas Tecnologias com Sistemas Legados",
+                        "detailed_description": "A busca por modernização tecnológica mencionada pela Empresa Exemplo pode ser dificultada pela necessidade de integrar novas ferramentas com sistemas já existentes, um desafio comum para Diretores de Operações como Carlos Mendes.",
+                        "potential_business_impact": "Aumento da complexidade técnica, custos de integração elevados, possível resistência da equipe a múltiplas ferramentas desconexas, tempo maior para obter valor das novas tecnologias.",
+                        "how_our_solution_helps": "Nossas Soluções Incríveis de Automação com IA são projetadas com foco em integração facilitada (APIs robustas, conectores) e oferecem um dashboard unificado, simplificando a gestão.",
+                        "investigative_questions": [
+                            "Carlos, ao considerar novas tecnologias, qual é sua maior preocupação em relação à integração com o stack tecnológico atual da Empresa Exemplo?",
+                            "Como a equipe técnica costuma lidar com a curva de aprendizado e adoção de novas plataformas?"
+                        ]
+                    }
+                ],
+                "urgency_level": "high",
+                "overall_pain_summary": "A Empresa Exemplo possui dores significativas relacionadas à eficiência e escalabilidade de seus processos de TI, especialmente QA, impulsionadas pela expansão. Há uma necessidade clara de modernização e automação."
+            })
 
-    print("Running mock test for PainPointDeepeningAgent...")
-    mock_llm = MockLLMClient()
-    agent = PainPointDeepeningAgent(llm_client=mock_llm)
-
-    test_lead_analysis = "A Empresa Exemplo (médio porte, setor de TI) enfrenta desafios na otimização de processos internos, muitos ainda manuais."
-    test_persona_profile = (
-        "Carlos Mendes, Diretor de Operações da Empresa Exemplo. Responsável por eficiência e implementação de novas tecnologias. "
-        "Busca ROI claro e integração fácil. Comunicação direta."
+    logger.info("Running mock test for PainPointDeepeningAgent...")
+    mock_llm = MockLLMClient(api_key="mock_llm_key")
+    agent = PainPointDeepeningAgent(
+        name="TestPainPointDeepeningAgent",
+        description="Test Agent for Pain Point Deepening",
+        llm_client=mock_llm
     )
-    test_product_service = "Nossas Soluções Incríveis"
+
+    test_lead_analysis = "A Empresa Exemplo (médio porte, setor de TI) enfrenta desafios na otimização de processos internos, muitos ainda manuais, para suportar sua recente expansão para o mercado LATAM. Ganhou prêmios de inovação e busca modernizar sua pilha de tecnologia."
+    test_persona_profile = "Carlos Mendes é o Diretor de Operações da Empresa Exemplo. Suas principais responsabilidades incluem garantir a eficiência operacional e a implementação de novas tecnologias. Ele busca soluções com ROI claro e que sejam de fácil integração. É motivado por resultados mensuráveis e pelo reconhecimento de otimizar a operação da empresa. Seu estilo de comunicação é direto e formal."
+    test_product_service = "Nossas Soluções Incríveis de Automação com IA para QA e DevOps"
     test_company_name = "Empresa Exemplo"
 
     input_data = PainPointDeepeningInput(
@@ -164,13 +199,29 @@ if __name__ == '__main__':
 
     output = agent.process(input_data)
 
-    print(f"Deepened Pain Points: {output.deepened_pain_points}")
     if output.error_message:
-        print(f"Error: {output.error_message}")
+        logger.error(f"Error: {output.error_message}")
+    else:
+        logger.success("PainPointDeepeningAgent processed successfully.")
+        logger.info(f"Primary Pain Category: {output.primary_pain_category}")
+        logger.info(f"Urgency Level: {output.urgency_level}")
+        logger.info(f"Overall Pain Summary: {output.overall_pain_summary}")
+        logger.info(f"Detailed Pain Points ({len(output.detailed_pain_points)}):")
+        for i, dp_point in enumerate(output.detailed_pain_points):
+            logger.info(f"  Pain Point {i+1}: {dp_point.pain_point_title}")
+            logger.info(f"    Description: {dp_point.detailed_description}")
+            logger.info(f"    Impact: {dp_point.potential_business_impact}")
+            logger.info(f"    Solution Fit: {dp_point.how_our_solution_helps}")
+            logger.info(f"    Investigative Questions: {dp_point.investigative_questions}")
 
-    assert "Empresa Exemplo" in output.deepened_pain_points
-    assert "Carlos" in output.deepened_pain_points # Check if persona context was used
-    assert "Nossas Soluções Incríveis" in output.deepened_pain_points
-    assert "Pergunta Investigativa:" in output.deepened_pain_points
     assert output.error_message is None
-    print("Mock test completed.")
+    assert output.primary_pain_category == "Eficiência Operacional e Escalabilidade"
+    assert len(output.detailed_pain_points) == 2
+    assert "expansão para LATAM" in output.detailed_pain_points[0].detailed_description
+    assert len(output.detailed_pain_points[0].investigative_questions) > 0
+    assert output.urgency_level == "high"
+    assert output.overall_pain_summary is not None
+
+    logger.info("\nMock test for PainPointDeepeningAgent completed successfully.")
+
+```

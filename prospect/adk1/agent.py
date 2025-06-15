@@ -167,12 +167,18 @@ def search_and_qualify_leads(query: str, max_search_results_to_scrape: int) -> L
                     full_content = scraped_data.get('content')
                     print(f"--- DEBUG (search_and_qualify_leads): [Attempt {leads_attempted_to_scrape}/{max_search_results_to_scrape}] Successfully scraped {len(full_content)} chars from {url_to_scrape}. ---")
 
+                    # Refined prompt_qualify
                     prompt_qualify = (
-                        f"Analise o seguinte conteúdo de uma página web para determinar se ela representa um "
-                        f"potencial lead para a query '{query}'. "
-                        f"Resuma os pontos chave da empresa/organização e avalie rapidamente sua relevância e tipo de negócio. "
-                        f"Identifique o nome da empresa, se possível. Responda de forma concisa.\n\n"
-                        f"Conteúdo:\n{full_content[:MAX_GEMINI_INPUT_CHARS]}"
+                        f"Você é um analista de negócios especializado em qualificação de leads.\n"
+                        f"Sua tarefa é analisar o seguinte conteúdo de uma página web e determinar se ela representa um "
+                        f"potencial lead B2B relevante para a query de busca original: '{query}'.\n"
+                        f"Principais Ações:\n"
+                        f"1. Identifique o nome da empresa/organização, se claramente disponível.\n"
+                        f"2. Resuma os pontos chave sobre a empresa/organização e seu tipo de negócio.\n"
+                        f"3. Avalie a relevância como um lead para a query '{query}'.\n"
+                        f"4. Seja conciso na sua resposta.\n\n"
+                        f"Se o conteúdo não for relevante para a query ou for uma página de erro/indisponível, indique isso claramente.\n\n"
+                        f"Conteúdo da Página Web:\n\"\"\"\n{full_content[:MAX_GEMINI_INPUT_CHARS]}\n\"\"\""
                     )
                     qualification_summary = "Não foi possível qualificar com Gemini. Conteúdo bruto disponível." # Default value
                     print(f"--- DEBUG (search_and_qualify_leads): [Attempt {leads_attempted_to_scrape}/{max_search_results_to_scrape}] Calling Gemini's model.generate_content for qualification of {url_to_scrape}. ---")
@@ -295,14 +301,21 @@ def find_and_extract_structured_leads(query: str, max_search_results_to_process:
 
 
                     # 2. Extração com Gemini para dados mais complexos/nuançados
+                    # Refined prompt_extract
                     prompt_extract = (
-                        f"Extraia as seguintes informações sobre a empresa/organização deste texto. "
-                        f"Responda APENAS com um objeto JSON válido. Se uma informação não for encontrada, use null. "
-                        f"Campos: company_name (string), website (string, preferencialmente o principal), "
-                        f"contact_emails (lista de strings), contact_phones (lista de strings), "
-                        f"industry (string, ex: 'Tecnologia', 'Saúde'), description (string, breve resumo), "
-                        f"size (string, ex: '1-10 funcionários', 'PME', 'Grande Empresa', 'Não informado').\n\n"
-                        f"Conteúdo:\n{full_content[:MAX_GEMINI_INPUT_CHARS]}"
+                        f"Você é um especialista em extração de dados encarregado de popular um banco de dados de leads.\n"
+                        f"Sua tarefa é analisar o conteúdo de uma página web e extrair as seguintes informações sobre a empresa/organização descrita no texto. "
+                        f"Responda EXCLUSIVAMENTE com um objeto JSON válido. Não inclua nenhum texto explicativo antes ou depois do JSON.\n"
+                        f"Se uma informação específica não for encontrada no texto, o valor do campo correspondente deve ser `null`.\n\n"
+                        f"Schema JSON Esperado:\n"
+                        f"- `company_name`: (string) O nome oficial da empresa/organização.\n"
+                        f"- `website`: (string) O website principal da empresa. Se múltiplos forem mencionados, escolha o mais relevante ou o domínio principal.\n"
+                        f"- `contact_emails`: (lista de strings) Uma lista de endereços de e-mail de contato encontrados. Se nenhum for encontrado, use uma lista vazia `[]`.\n"
+                        f"- `contact_phones`: (lista de strings) Uma lista de números de telefone de contato encontrados. Se nenhum for encontrado, use uma lista vazia `[]`.\n"
+                        f"- `industry`: (string) O setor de atuação da empresa (ex: 'Tecnologia', 'Saúde', 'Consultoria'). Se não claro, use 'Não informado'.\n"
+                        f"- `description`: (string) Um breve resumo da empresa, seus produtos/serviços ou missão. Máximo de 2-3 frases.\n"
+                        f"- `size`: (string) O tamanho estimado da empresa (ex: 'Pequena Empresa (1-50 funcionários)', 'Média Empresa (51-200 funcionários)', 'Grande Empresa (201+ funcionários)', 'Não informado'). Infire se possível.\n\n"
+                        f"Conteúdo da Página Web para Análise:\n\"\"\"\n{full_content[:MAX_GEMINI_INPUT_CHARS]}\n\"\"\""
                     )
                     
                     gemini_extracted_data = {}
@@ -381,9 +394,23 @@ def process_provided_urls_for_leads(urls: List[str], lead_analysis_instruction: 
     """
     print(f"--- DEBUG (process_provided_urls_for_leads): Processando {len(urls)} URLs. ---")
     
-    # Use default value if not provided
-    if lead_analysis_instruction is None:
-        lead_analysis_instruction = "Analise este conteúdo para identificar e extrair informações de leads como nome da empresa, site, e-mails de contato e números de telefone. Apresente como um objeto JSON com os campos: company_name, website, contact_emails (lista), contact_phones (lista), industry, description, size. Se uma informação não for encontrada, use null."
+    # Refined default_lead_analysis_instruction
+    default_lead_analysis_instruction = (
+        "Você é um especialista em extração de dados encarregado de analisar conteúdo de URLs fornecidas.\n"
+        "Sua tarefa é analisar o conteúdo de uma página web e extrair informações de leads. "
+        "Responda EXCLUSIVAMENTE com um objeto JSON válido. Não inclua nenhum texto explicativo antes ou depois do JSON.\n"
+        "Se uma informação específica não for encontrada no texto, o valor do campo correspondente deve ser `null`.\n\n"
+        "Schema JSON Esperado:\n"
+        "- `company_name`: (string) O nome oficial da empresa/organização.\n"
+        "- `website`: (string) O website principal da empresa. Se múltiplos forem mencionados, escolha o mais relevante ou o domínio principal. Se a URL analisada for o site, use-a.\n"
+        "- `contact_emails`: (lista de strings) Uma lista de endereços de e-mail de contato encontrados. Se nenhum for encontrado, use uma lista vazia `[]`.\n"
+        "- `contact_phones`: (lista de strings) Uma lista de números de telefone de contato encontrados. Se nenhum for encontrado, use uma lista vazia `[]`.\n"
+        "- `industry`: (string) O setor de atuação da empresa (ex: 'Tecnologia', 'Saúde', 'Consultoria'). Se não claro, use 'Não informado'.\n"
+        "- `description`: (string) Um breve resumo da empresa, seus produtos/serviços ou missão. Máximo de 2-3 frases.\n"
+        "- `size`: (string) O tamanho estimado da empresa (ex: 'Pequena Empresa (1-50 funcionários)', 'Média Empresa (51-200 funcionários)', 'Grande Empresa (201+ funcionários)', 'Não informado'). Infire se possível.\n"
+    )
+
+    current_analysis_instruction = lead_analysis_instruction if lead_analysis_instruction is not None else default_lead_analysis_instruction
     
     results = []
     try:
@@ -406,7 +433,7 @@ def process_provided_urls_for_leads(urls: List[str], lead_analysis_instruction: 
                 content = scraped_data.get("content", "")
                 item_result["title"] = scraped_data.get("title", "No Title Found")
 
-                full_prompt = f"{lead_analysis_instruction}\n\nConteúdo:\n{content[:MAX_GEMINI_INPUT_CHARS]}"
+                full_prompt = f"{current_analysis_instruction}\n\nConteúdo da Página Web para Análise:\n\"\"\"\n{content[:MAX_GEMINI_INPUT_CHARS]}\n\"\"\""
                 
                 response = model.generate_content(full_prompt)
                 json_str = response.text.strip().replace('```json\n', '').replace('\n```', '')
@@ -437,24 +464,38 @@ def process_provided_urls_for_leads(urls: List[str], lead_analysis_instruction: 
 # NOVO AGENTE: Ponto de entrada que transforma o contexto de negócio em uma query de busca.
 business_context_to_query_agent = Agent(
     name="business_context_to_query_agent",
-    model="gemini-1.5-flash-8b",
+    model="gemini-1.5-flash-8b", # Assuming this model exists and is suitable. Original was gemini-1.5-flash
     description="""Você é um especialista em marketing e prospecção. Sua função é analisar um rico contexto de negócio de um cliente e destilar essa informação em uma query de busca curta e eficaz para encontrar leads.""",
-    instruction="""Sua tarefa é receber um objeto JSON 'business_context'.
-    Analise a descrição do negócio, o público-alvo, a indústria e a localização.
-    Com base nisso, crie uma única string de busca otimizada para encontrar leads B2B relevantes.
-    A query deve ser concisa e focada.
-    SUA RESPOSTA FINAL DEVE SER APENAS A QUERY DE BUSCA GERADA, SEM QUALQUER TEXTO ADICIONAL.
+    # Refined instruction for business_context_to_query_agent
+    instruction="""Como um especialista em marketing e prospecção, sua tarefa é analisar o objeto JSON 'business_context' fornecido.
+Este objeto contém detalhes sobre o negócio de um cliente, incluindo descrição, público-alvo, indústria e localização.
+Com base em uma análise profunda desses detalhes, sua missão é criar uma ÚNICA string de busca (query) altamente otimizada.
+Esta query será usada para encontrar leads B2B (business-to-business) relevantes em mecanismos de busca.
 
-    Exemplo de Contexto de Negócio:
-    {
-      "business_description": "Oferecemos um software de CRM baseado em IA para otimizar o funil de vendas de equipes de pequeno e médio porte.",
-      "industry_focus": ["SaaS", "Tecnologia", "Vendas"],
-      "target_market": "Pequenas e médias empresas no Brasil",
-      "location": "São Paulo, Brasil"
-    }
+Critérios para a Query:
+1.  **Relevância B2B**: Focada em encontrar outras empresas, não consumidores finais.
+2.  **Concisa e Focada**: Use palavras-chave essenciais. Evite frases longas ou perguntas.
+3.  **Termos Práticos**: Pense em termos que as empresas alvo usariam para se descrever ou que decisores usariam para encontrar soluções.
+4.  **Impacto**: A query deve ser eficaz em identificar potenciais clientes.
 
-    Sua resposta: "empresas SaaS PME em São Paulo que precisam de CRM"
-    """,
+Formato da Resposta:
+SUA RESPOSTA FINAL DEVE SER APENAS A STRING DE BUSCA GERADA, SEM QUALQUER TEXTO ADICIONAL, SAUDAÇÕES OU EXPLICAÇÕES.
+
+Exemplo de Contexto de Negócio (entrada que você receberá):
+```json
+{
+  "business_description": "Oferecemos um software de CRM baseado em IA para otimizar o funil de vendas de equipes de pequeno e médio porte.",
+  "industry_focus": ["SaaS", "Tecnologia", "Vendas"],
+  "target_market": "Pequenas e médias empresas no Brasil que buscam melhorar a gestão de relacionamento com clientes.",
+  "location": "Brasil",
+  "value_proposition": "Aumentamos a eficiência de vendas em até 30% com automação inteligente.",
+  "pain_points_solved": ["Baixa conversão de leads", "Dificuldade no acompanhamento de clientes"]
+}
+```
+
+Exemplo de Sua Resposta (o que você deve gerar):
+"empresas SaaS PME Brasil CRM otimização funil vendas"
+""",
     tools=[]
 )
 
@@ -464,16 +505,37 @@ business_context_to_query_agent = Agent(
 _query_refiner_agent_internal = Agent(
     name="query_refiner_agent",
     model="gemini-1.5-flash",
-    description="""Simple keyword repeater.""",
-    instruction="""Just output keywords from any input you receive. No other text.
+    description="""Repetidor e extrator de palavras-chave simples.""", # Updated description
+    # Refined instruction for _query_refiner_agent_internal
+    instruction="""Você é um assistente de processamento de texto ultrassimplificado.
+Sua única função é extrair e repetir os termos chave (palavras-chave) de qualquer texto de entrada.
+NÃO adicione nenhuma palavra, explicação ou formatação. Apenas os termos chave.
 
-Input: AI consulting Brazil small companies
-Output: AI consulting Brazil small companies
+Se a entrada parecer uma lista de palavras-chave, repita-as.
+Se a entrada for uma frase, extraia os substantivos e termos técnicos principais.
 
-Input: technology software
-Output: technology software
+Exemplos:
 
-Just extract and output the main keywords.""",
+Entrada: AI consulting Brazil small companies
+Saída: AI consulting Brazil small companies
+
+Entrada: software de tecnologia para empresas de manufatura
+Saída: software tecnologia empresas manufatura
+
+Entrada: marketing digital avançado
+Saída: marketing digital avançado
+
+Entrada: http://example.com
+Saída: http://example.com
+
+Entrada: (vazio)
+Saída: (vazio)
+
+Entrada: Olá, como você está?
+Saída: Olá
+
+SUA RESPOSTA DEVE CONTER APENAS OS TERMOS PROCESSADOS.
+""",
     tools=[]
 )
 # Alias para corresponder à importação desejada no __init__.py
@@ -482,40 +544,85 @@ root_agent = _query_refiner_agent_internal
 
 lead_search_and_qualify_agent = Agent(
     name="lead_search_and_qualify_agent",
-    model="gemini-1.5-flash-8b",
+    model="gemini-1.5-flash-8b", # Assuming this model exists. Original was gemini-1.5-flash
     description="""Você é um agente especializado em buscar potenciais leads na web usando EXATAMENTE a query fornecida pelo usuário. Você NÃO deve modificar, interpretar ou alterar a query de busca de forma alguma.""",
-    instruction="""INSTRUÇÕES CRÍTICAS:
-    1. Use EXATAMENTE a query fornecida pelo usuário, sem modificações
-    2. NÃO interprete, traduza ou altere a query de busca
-    3. Use a ferramenta `search_and_qualify_leads` com a query EXATA fornecida
-    4. Use max_search_results_to_scrape=3 para otimizar o processo
-    5. Retorne a saída da ferramenta diretamente
-    
-    EXEMPLO:
-    Input: "businesses announcing expansion"
-    Ação: search_and_qualify_leads(query="businesses announcing expansion", max_search_results_to_scrape=3)
-    
-    IMPORTANTE: NÃO mude a query para "marketing agency" ou qualquer outra coisa!""",
+    # Refined instruction for lead_search_and_qualify_agent
+    instruction="""VOCÊ É UM AGENTE DE BUSCA E QUALIFICAÇÃO DE LEADS. SUA FUNÇÃO É EXCLUSIVAMENTE OPERACIONAL.
+
+INSTRUÇÕES CRÍTICAS E OBRIGATÓRIAS:
+1.  Você receberá uma query de busca do usuário.
+2.  Use EXATAMENTE esta query, sem qualquer modificação, interpretação, tradução ou alteração.
+3.  Sua ÚNICA ação é invocar a ferramenta `search_and_qualify_leads`.
+4.  Ao chamar `search_and_qualify_leads`, passe a query EXATA que você recebeu.
+5.  Utilize o parâmetro `max_search_results_to_scrape` com o valor `3` para esta chamada. Não use outro valor.
+6.  Após a ferramenta ser executada, retorne a saída da ferramenta DIRETAMENTE, sem adicionar nenhum texto, comentário ou formatação.
+
+EXEMPLO DE COMPORTAMENTO ESPERADO:
+Se o Input do Usuário for: "startups de tecnologia em crescimento no Brasil"
+
+Sua Ação DEVE SER a chamada da ferramenta:
+`search_and_qualify_leads(query="startups de tecnologia em crescimento no Brasil", max_search_results_to_scrape=3)`
+
+LEMBRE-SE: NÃO altere a query. Se a query for "empresas X", use "empresas X". Não mude para "agência Y" ou qualquer outra coisa. A fidelidade à query original é crucial.
+Sua resposta deve ser apenas a chamada da ferramenta ou o resultado dela.
+""",
     tools=[search_and_qualify_leads]
 )
 
 
 structured_lead_extractor_agent = Agent(
     name="structured_lead_extractor_agent",
-    model="gemini-1.5-flash-8b", 
+    model="gemini-1.5-flash-8b", # Assuming this model exists. Original was gemini-1.5-flash
     description="""Você é um agente altamente especializado na extração de dados estruturados de leads a partir de conteúdo web. Sua função é buscar informações detalhadas como nome da empresa, site, e-mails de contato, telefones, setor e tamanho, e apresentá-las em um formato padronizado.""",
-    instruction="""Sua única tarefa é usar a ferramenta `find_and_extract_structured_leads` com a query fornecida.
-    Use o parâmetro `max_search_results_to_process` para limitar a busca a 3 ou 4 resultados.
-    Retorne a saída da ferramenta diretamente.""",
+    # Refined instruction for structured_lead_extractor_agent
+    instruction="""VOCÊ É UM AGENTE EXTRATOR DE DADOS ESTRUTURADOS DE LEADS. SUA FUNÇÃO É EXCLUSIVAMENTE OPERACIONAL.
+
+INSTRUÇÕES CRÍTICAS E OBRIGATÓRIAS:
+1.  Você receberá uma query de busca do usuário.
+2.  Sua ÚNICA ação é invocar a ferramenta `find_and_extract_structured_leads`.
+3.  Ao chamar `find_and_extract_structured_leads`, passe a query EXATA que você recebeu. Não modifique ou interprete a query.
+4.  Utilize o parâmetro `max_search_results_to_process` com o valor `3`. Não use outro valor.
+5.  Após a ferramenta ser executada, retorne a saída da ferramenta DIRETAMENTE, sem adicionar nenhum texto, comentário ou formatação.
+
+EXEMPLO DE COMPORTAMENTO ESPERADO:
+Se o Input do Usuário for: "contatos de empresas de software em Curitiba"
+
+Sua Ação DEVE SER a chamada da ferramenta:
+`find_and_extract_structured_leads(query="contatos de empresas de software em Curitiba", max_search_results_to_process=3)`
+
+Sua resposta deve ser apenas a chamada da ferramenta ou o resultado dela.
+""",
     tools=[find_and_extract_structured_leads]
 )
 
 
 direct_url_lead_processor_agent = Agent(
     name="direct_url_lead_processor_agent",
-    model="gemini-1.5-flash-8b", 
+    model="gemini-1.5-flash-8b", # Assuming this model exists. Original was gemini-1.5-flash
     description="""Você é um agente especializado em processar diretamente uma lista de URLs fornecidas pelo usuário para extrair informações de leads. Para cada URL, você raspará o conteúdo e usará o Google Gemini para analisar e extrair dados de leads, gerenciando a taxa de chamadas da API.""",
-    instruction="""Sua única tarefa é extrair todas as URLs da query do usuário e usar a ferramenta `process_provided_urls_for_leads` com a lista de URLs extraídas.
-    Retorne a saída da ferramenta diretamente.""",
+    # Refined instruction for direct_url_lead_processor_agent
+    instruction="""VOCÊ É UM AGENTE PROCESSADOR DE URLS PARA EXTRAÇÃO DE LEADS. SUA FUNÇÃO É EXCLUSIVAMENTE OPERACIONAL.
+
+INSTRUÇÕES CRÍTICAS E OBRIGATÓRIAS:
+1.  Você receberá uma query do usuário, que pode conter uma ou mais URLs.
+2.  Sua PRIMEIRA tarefa é identificar e extrair TODAS as URLs válidas (começando com http:// ou https://) da query fornecida. Ignore qualquer outro texto.
+3.  Se nenhuma URL válida for encontrada, você pode retornar uma mensagem indicando isso (ex: "Nenhuma URL válida encontrada na query.").
+4.  Se URLs válidas forem encontradas, sua SEGUNDA e ÚNICA ação subsequente é invocar a ferramenta `process_provided_urls_for_leads`.
+5.  Ao chamar `process_provided_urls_for_leads`:
+    a.  Passe a lista de URLs extraídas como o parâmetro `urls`.
+    b.  Não é necessário fornecer o parâmetro `lead_analysis_instruction`; a ferramenta utilizará uma instrução padrão adequada.
+6.  Após a ferramenta ser executada, retorne a saída da ferramenta DIRETAMENTE, sem adicionar nenhum texto, comentário ou formatação.
+
+EXEMPLO DE COMPORTAMENTO ESPERADO:
+Se o Input do Usuário for: "Por favor, analise https://example.com/about e também www.another.org/contact"
+
+Sua Ação DEVE SER a chamada da ferramenta:
+`process_provided_urls_for_leads(urls=["https://example.com/about", "https://www.another.org/contact"])`
+
+Se o Input do Usuário for: "Nenhuma URL aqui, apenas texto."
+Sua Resposta poderá ser: "Nenhuma URL válida encontrada na query."
+
+Sua resposta deve ser apenas a chamada da ferramenta ou o resultado dela, ou a mensagem de nenhuma URL encontrada.
+""",
     tools=[process_provided_urls_for_leads]
 )
