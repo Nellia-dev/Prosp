@@ -280,11 +280,11 @@ export const prospectApi = {
 export const userApi = {
   getPlanStatus: async (): Promise<UserPlanStatusResponse> => {
     try {
-      const response = await apiClient.get<ApiResponse<UserPlanStatusResponse>>('/users/me/plan-status');
-      if (response.data && response.data.data) {
-        return response.data.data;
+      const response = await apiClient.get<UserPlanStatusResponse>('/users/plan-status');
+      if (response.data) {
+        return response.data;
       }
-      console.warn('userApi.getPlanStatus: response.data.data was null or undefined. Returning default plan status.');
+      console.warn('userApi.getPlanStatus: response.data was null or undefined. Returning default plan status.');
     } catch (error) {
       console.error('Error fetching user plan status from API:', error);
       // Fallthrough to return default plan status on error
@@ -296,7 +296,6 @@ export const userApi = {
         name: 'Free',
         quota: 10,
         period: 'week',
-        price: 0,
       },
       quota: {
         total: 10,
@@ -306,7 +305,9 @@ export const userApi = {
       },
       canStartProspecting: true,
       hasActiveJob: false,
-      activeJobId: null,
+      cooldown: {
+        isActive: false,
+      },
     };
   },
 };

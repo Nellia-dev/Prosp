@@ -105,11 +105,46 @@ export class QuotaService {
   }
 
   /**
-   * Check if user can start prospecting (has remaining quota)
+   * Check if user can start prospecting (has remaining quota and not in cooldown)
    */
   async canStartProspecting(userId: string): Promise<boolean> {
     const remainingQuota = await this.getRemainingQuota(userId);
     return remainingQuota > 0;
+  }
+
+  /**
+   * Check if user can start prospecting considering both quota and cooldown
+   */
+  async canStartProspectingWithCooldown(userId: string, usersService: any): Promise<{
+    canStart: boolean;
+    reason?: string;
+    cooldownUntil?: Date;
+    remainingCooldownMs?: number;
+  }> {
+    // Check quota first
+    const remainingQuota = await this.getRemainingQuota(userId);
+    if (remainingQuota <= 0) {
+      return {
+        canStart: false,
+        reason: 'quota_exhausted'
+      };
+    }
+
+    // Check cooldown
+    const isInCooldown = await usersService.isInProspectCooldown(userId);
+    if (isInCooldown) {
+      const remainingCooldownMs = await usersService.getRemainingCooldownTime(userId);
+      const cooldownUntil = new Date(Date.now() + remainingCooldownMs);
+      
+      return {
+        canStart: false,
+        reason: 'cooldown_active',
+        cooldownUntil,
+        remainingCooldownMs
+      };
+    }
+
+    return { canStart: true };
   }
 
   /**

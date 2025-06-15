@@ -65,6 +65,13 @@ export class User {
   @Column({ type: 'varchar', nullable: true, unique: true })
   prospectingJobId: string;
 
+  // Prospect cooldown tracking fields
+  @Column({ type: 'timestamp', nullable: true })
+  lastProspectCompletedAt: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
+  prospectCooldownUntil: Date;
+
   // Relations
   @OneToMany(() => Lead, (lead) => lead.user)
   leads: Lead[];

@@ -6,6 +6,7 @@ Defines structured event types that are yielded during the execution of the agen
 from typing import Dict, Any, Optional, List, Union
 from dataclasses import dataclass
 from datetime import datetime
+from pydantic import HttpUrl
 import json
 
 
@@ -209,12 +210,39 @@ class LeadEnrichmentEndEvent(BaseEvent):
     error_message: Optional[str] = None
 
 
+    def _convert_value(self, value: Any) -> Any:
+        """
+        Recursively converts values for JSON serialization.
+        - Converts HttpUrl to string.
+        - Converts Pydantic models to dict using model_dump(mode='json').
+        - Recursively processes lists and dicts.
+        """
+        if isinstance(value, HttpUrl):
+            return str(value)
+        if hasattr(value, 'model_dump'): # Check for Pydantic model
+            return value.model_dump(mode='json')
+        if isinstance(value, list):
+            return [self._convert_value(item) for item in value]
+        if isinstance(value, dict):
+            return {k: self._convert_value(v) for k, v in value.items()}
+        return value
+
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
+
+        processed_final_package = None
+        if self.final_package is not None:
+            if hasattr(self.final_package, 'model_dump'):
+                # If final_package itself is a Pydantic model
+                processed_final_package = self.final_package.model_dump(mode='json')
+            else:
+                # Otherwise, process it using the helper (handles dicts, lists, HttpUrl etc.)
+                processed_final_package = self._convert_value(self.final_package)
+
         data.update({
             "lead_id": self.lead_id,
             "success": self.success,
-            "final_package": self.final_package,
+            "final_package": processed_final_package,
             "error_message": self.error_message,
         })
         return data

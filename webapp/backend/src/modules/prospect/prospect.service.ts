@@ -59,7 +59,7 @@ export class ProspectService {
       );
     }
 
-    // Step 2: Check User Quota & Concurrent Jobs
+    // Step 2: Check User Quota & Concurrent Jobs & Cooldown
     const user = await this.usersService.getUserById(userId);
     if (user.prospectingJobId) {
       // Check if a job is already running for this user
@@ -69,6 +69,19 @@ export class ProspectService {
       } else {
         // Clear stale job ID
         await this.usersService.clearProspectingJob(userId);
+      }
+    }
+
+    // Check quota and cooldown
+    const prospectingStatus = await this.quotaService.canStartProspectingWithCooldown(userId, this.usersService);
+    if (!prospectingStatus.canStart) {
+      if (prospectingStatus.reason === 'quota_exhausted') {
+        throw new ForbiddenException('Lead generation quota exceeded or no quota remaining for this request.');
+      } else if (prospectingStatus.reason === 'cooldown_active') {
+        const remainingHours = Math.ceil(prospectingStatus.remainingCooldownMs / (1000 * 60 * 60));
+        throw new ForbiddenException(
+          `Prospecting is temporarily disabled. Please wait ${remainingHours} hours before starting a new prospecting session. Enterprise users can prospect without cooldowns.`
+        );
       }
     }
 
