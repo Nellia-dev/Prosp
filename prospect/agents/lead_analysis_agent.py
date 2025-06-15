@@ -52,22 +52,21 @@ class LeadAnalysisAgent(BaseAgent[ValidatedLead, AnalyzedLead]):
         """
         logger.info(f"Analyzing lead: {input_data.site_data.url}")
         
-        # Check if we have sufficient content for full analysis
-        has_content = (
-            input_data.extraction_successful and
-            (input_data.cleaned_text_content or input_data.site_data.extracted_text_content)
-        ) or (
-            input_data.site_data.google_search_data and
-            input_data.site_data.google_search_data.snippet
-        )
-        
-        if not has_content:
-            logger.warning(f"Lead has insufficient data for full analysis, generating limited analysis")
-            analysis = self._generate_limited_analysis(input_data)
-        else:
-            logger.info(f"Lead has sufficient data for full analysis")
-            # Generate full analysis using LLM
+        # Prioritize text content for full analysis, even if extraction_successful is false
+        has_text_content = bool(input_data.cleaned_text_content or input_data.site_data.extracted_text_content)
+        has_google_snippet = bool(input_data.site_data.google_search_data and input_data.site_data.google_search_data.snippet)
+
+        # Attempt full analysis if significant text content is available,
+        # or if google snippet is available and extraction was marked successful (original primary condition)
+        if has_text_content:
+            logger.info("Sufficient text content found, proceeding with full analysis despite extraction_successful flag.")
             analysis = self._generate_full_analysis(input_data)
+        elif input_data.extraction_successful and has_google_snippet:
+            logger.info("Extraction successful and Google snippet found, proceeding with full analysis.")
+            analysis = self._generate_full_analysis(input_data)
+        else:
+            logger.warning(f"Lead has insufficient data for full analysis, generating limited analysis. Has text: {has_text_content}, Has snippet: {has_google_snippet}, Extraction successful: {input_data.extraction_successful}")
+            analysis = self._generate_limited_analysis(input_data)
         
         # Create and return analyzed lead
         return AnalyzedLead(
@@ -176,6 +175,8 @@ Analise os dados e forneça uma resposta ESTRUTURADA com as seguintes informaç�
 9. **Fit de Oportunidade**: Como "{self.product_service_context}" pode ajudar esta empresa
 
 Se o texto mencionar "ANÁLISE DA IMAGEM PELA IA", extraia os pontos principais dessa análise.
+
+Responda exclusivamente em Português.
 
 Formate sua resposta como um JSON válido com as seguintes chaves:
 {{
