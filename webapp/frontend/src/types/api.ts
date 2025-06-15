@@ -224,11 +224,27 @@ export interface QuotaStatus {
 }
 
 export interface UserPlanStatusResponse {
-  plan: PlanDetails;
-  quota: QuotaStatus;
+  plan: {
+    id: string;
+    name: string;
+    quota: number;
+    period: string;
+  };
+  quota: {
+    total: number;
+    used: number;
+    remaining: number;
+    nextResetAt: string;
+  };
   canStartProspecting: boolean;
   hasActiveJob: boolean;
-  activeJobId: string | null;
+  activeJobId?: string;
+  cooldown?: {
+    isActive: boolean;
+    cooldownUntil?: string;
+    remainingMs?: number;
+    remainingHours?: number;
+  };
 }
 
 // Prospecting API types

@@ -330,3 +330,28 @@ export interface PaginatedResponse<T> {
   page: number;
   limit: number;
 }
+
+// Enhanced User Plan Status Response with cooldown information
+export interface UserPlanStatusResponse {
+  plan: {
+    id: string;
+    name: string;
+    quota: number;
+    period: string;
+  };
+  quota: {
+    total: number;
+    used: number;
+    remaining: number;
+    nextResetAt: string;
+  };
+  canStartProspecting: boolean;
+  hasActiveJob: boolean;
+  activeJobId?: string;
+  cooldown?: {
+    isActive: boolean;
+    cooldownUntil?: string;
+    remainingMs?: number;
+    remainingHours?: number;
+  };
+}

@@ -582,17 +582,27 @@ export const usePlanInfo = (
   const isQuotaExhausted = data?.quota ? data.quota.remaining <= 0 : true;
   const quotaDisplay = data?.quota ? `${data.quota.used} / ${data.quota.total === Infinity ? '∞' : data.quota.total}` : 'N/A';
   const nextResetFormatted = data?.quota?.nextResetAt ? new Date(data.quota.nextResetAt).toLocaleDateString() : 'N/A';
+  
+  // Cooldown information
+  const isInCooldown = data?.cooldown?.isActive || false;
+  const cooldownUntil = data?.cooldown?.cooldownUntil ? new Date(data.cooldown.cooldownUntil) : null;
+  const remainingCooldownHours = data?.cooldown?.remainingHours || 0;
+  const cooldownReason = isInCooldown ? `Prospecting disabled for ${remainingCooldownHours} more hours` : null;
 
   return {
     plan: data?.plan,
     quota: data?.quota,
-    canStartProspecting: data?.canStartProspecting,
+    canStartProspecting: data?.canStartProspecting && !isInCooldown,
     hasActiveJob: data?.hasActiveJob,
     activeJobId: data?.activeJobId,
     quotaUsagePercentage,
     isQuotaExhausted,
     quotaDisplay,
     nextResetFormatted,
+    isInCooldown,
+    cooldownUntil,
+    remainingCooldownHours,
+    cooldownReason,
     isLoading,
     error,
   };

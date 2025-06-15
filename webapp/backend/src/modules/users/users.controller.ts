@@ -1,90 +1,60 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
-import { Request } from 'express';
+import { Controller, Get, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { QuotaService } from '../quota/quota.service';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-
-interface AuthenticatedRequest extends Request {
-  user: {
-    id: string;
-    email: string;
-  };
-}
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { UserId } from '../auth/user-id.decorator';
+import { UserPlanStatusResponse } from '../../shared/types/nellia.types';
+import { PLANS } from '../../config/plans.config';
 
 @ApiBearerAuth()
 @ApiTags('Users')
 @Controller('users')
+@UseGuards(JwtAuthGuard)
 export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly quotaService: QuotaService,
   ) {}
 
-  /**
-   * Get current user's plan status and quota information
-   */
-  @Get('me/plan-status')
-  async getPlanStatus(@Req() request: AuthenticatedRequest) {
-    // For now, we'll use a mock user ID - replace with real auth when available
-    const userId = request.user?.id || 'mock-user-id';
+  @Get('plan-status')
+  @ApiOperation({ summary: 'Get user plan status with cooldown information' })
+  @ApiResponse({ status: 200, description: 'User plan status retrieved successfully' })
+  async getPlanStatus(@UserId() userId: string): Promise<UserPlanStatusResponse> {
+    const user = await this.usersService.getUserById(userId);
+    const quotaUsage = await this.quotaService.getQuotaUsage(userId);
+    const prospectingStatus = await this.quotaService.canStartProspectingWithCooldown(userId, this.usersService);
     
-    try {
-      const user = await this.usersService.getUserById(userId);
-      const planDetails = this.quotaService.getPlanDetails(user.plan);
-      const remainingQuota = await this.quotaService.getRemainingQuota(userId);
-      const canStartProspecting = await this.quotaService.canStartProspecting(userId);
-      
-      // Calculate next reset date based on plan period
-      const nextResetDate = this.calculateNextResetDate(user.lastQuotaResetAt, planDetails.period);
-      
-      return {
-        success: true,
-        data: {
-          plan: {
-            id: user.plan,
-            name: planDetails.name,
-            quota: planDetails.quota,
-            period: planDetails.period,
-            price: planDetails.price,
-          },
-          quota: {
-            total: planDetails.quota,
-            used: user.currentLeadQuotaUsed,
-            remaining: remainingQuota,
-            nextResetAt: nextResetDate,
-          },
-          canStartProspecting,
-          hasActiveJob: !!user.prospectingJobId,
-          activeJobId: user.prospectingJobId,
-        },
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-  }
+    // Get cooldown information
+    const isInCooldown = await this.usersService.isInProspectCooldown(userId);
+    const remainingCooldownMs = await this.usersService.getRemainingCooldownTime(userId);
+    
+    const cooldownInfo = isInCooldown ? {
+      isActive: true,
+      cooldownUntil: user.prospectCooldownUntil?.toISOString(),
+      remainingMs: remainingCooldownMs,
+      remainingHours: Math.ceil(remainingCooldownMs / (1000 * 60 * 60)),
+    } : {
+      isActive: false,
+    };
 
-  private calculateNextResetDate(lastResetAt: Date, period: 'day' | 'week' | 'month'): Date {
-    if (!lastResetAt) {
-      return new Date();
-    }
-
-    const nextReset = new Date(lastResetAt);
-    
-    switch (period) {
-      case 'day':
-        nextReset.setDate(nextReset.getDate() + 1);
-        break;
-      case 'week':
-        nextReset.setDate(nextReset.getDate() + 7);
-        break;
-      case 'month':
-        nextReset.setMonth(nextReset.getMonth() + 1);
-        break;
-    }
-    
-    return nextReset;
+    return {
+      plan: {
+        id: user.plan,
+        name: PLANS[user.plan].name,
+        quota: PLANS[user.plan].quota,
+        period: PLANS[user.plan].period,
+      },
+      quota: {
+        total: quotaUsage.totalQuota,
+        used: quotaUsage.usedQuota,
+        remaining: quotaUsage.remainingQuota,
+        nextResetAt: quotaUsage.nextResetAt.toISOString(),
+      },
+      canStartProspecting: prospectingStatus.canStart,
+      hasActiveJob: !!user.prospectingJobId,
+      activeJobId: user.prospectingJobId || undefined,
+      cooldown: cooldownInfo,
+    };
   }
 }

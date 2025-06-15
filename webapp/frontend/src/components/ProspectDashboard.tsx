@@ -277,7 +277,15 @@ import React, { useState } from 'react';
     const { data: jobsData = [], isLoading: jobsLoading, error: jobsError, refetch: refetchJobs } = useProspectJobs();
     const { mutate: startProspectingJob, isPending: startProspectingLoading } = useStartProspectingJob();
     const { data: businessContext, isLoading: businessContextLoading } = useBusinessContext();
-    const { canStartProspecting, hasActiveJob, isQuotaExhausted, isLoading: planLoading } = usePlanInfo();
+    const {
+      canStartProspecting,
+      hasActiveJob,
+      isQuotaExhausted,
+      isInCooldown,
+      remainingCooldownHours,
+      cooldownReason,
+      isLoading: planLoading
+    } = usePlanInfo();
     const [liveLeadsCount, setLiveLeadsCount] = useState(0);
 
     // Listen for new leads being generated in real-time
@@ -340,6 +348,7 @@ import React, { useState } from 'react';
     const isProspectingDisabled = () => {
       if (planLoading || businessContextLoading) return true;
       if (activeJobs.length > 0 || hasActiveJob) return true;
+      if (isInCooldown) return true;
       if (!canStartProspecting || isQuotaExhausted) return true;
       if (startProspectingLoading) return true;
       if (!businessContext) return true;
@@ -351,6 +360,9 @@ import React, { useState } from 'react';
       if (activeJobs.length > 0 || hasActiveJob) {
         return t('prospectDashboard.processRunningButton');
       }
+      if (isInCooldown) {
+        return `Cooldown Active (${remainingCooldownHours}h remaining)`;
+      }
       if (isQuotaExhausted) {
         return t('prospectDashboard.quotaExhaustedButton');
       }
@@ -358,6 +370,17 @@ import React, { useState } from 'react';
         return t('prospectDashboard.cannotStartButton');
       }
       return t('prospectDashboard.startProspectingButton');
+    };
+
+    // Get button color based on state
+    const getButtonColor = () => {
+      if (isInCooldown) {
+        return 'bg-orange-600 hover:bg-orange-700';
+      }
+      if (isQuotaExhausted) {
+        return 'bg-red-600 hover:bg-red-700';
+      }
+      return 'bg-green-600 hover:bg-green-700';
     };
     
     if (jobsLoading || businessContextLoading) {
@@ -378,14 +401,11 @@ import React, { useState } from 'react';
           <CardHeader>
             <CardTitle className="flex items-center justify-between text-slate-100">
               {t('prospectDashboard.title')}
-              <Button 
+              <Button
                 onClick={handleStartProspecting}
                 disabled={isProspectingDisabled()}
-                className={`${
-                  isQuotaExhausted 
-                    ? 'bg-red-600 hover:bg-red-700' 
-                    : 'bg-green-600 hover:bg-green-700'
-                }`}
+                className={getButtonColor()}
+                title={isInCooldown ? cooldownReason || 'Prospecting is in cooldown' : undefined}
               >
                 {getButtonText()}
               </Button>
