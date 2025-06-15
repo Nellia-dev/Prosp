@@ -6,6 +6,7 @@ Defines structured event types that are yielded during the execution of the agen
 from typing import Dict, Any, Optional, List, Union
 from dataclasses import dataclass
 from datetime import datetime
+from pydantic import HttpUrl
 import json
 
 
@@ -211,10 +212,24 @@ class LeadEnrichmentEndEvent(BaseEvent):
 
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
+
+        def convert_httpurl_to_str(item: Any) -> Any:
+            if isinstance(item, HttpUrl):
+                return str(item)
+            if isinstance(item, dict):
+                return {k: convert_httpurl_to_str(v) for k, v in item.items()}
+            if isinstance(item, list):
+                return [convert_httpurl_to_str(i) for i in item]
+            return item
+
+        processed_final_package = None
+        if self.final_package:
+            processed_final_package = convert_httpurl_to_str(self.final_package)
+
         data.update({
             "lead_id": self.lead_id,
             "success": self.success,
-            "final_package": self.final_package,
+            "final_package": processed_final_package,
             "error_message": self.error_message,
         })
         return data
