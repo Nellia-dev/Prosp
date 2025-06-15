@@ -137,12 +137,12 @@ class PipelineOrchestrator:
     configura o ambiente RAG e enriquece cada lead em tempo real.
     """
 
-    def __init__(self, business_context: Dict[str, Any], user_id: str, job_id: str, use_hybrid: bool = True):
+    def __init__(self, business_context: Dict[str, Any], user_id: str, job_id: str, *_, **__):
         self.business_context = business_context
         self.user_id = user_id
         self.job_id = job_id
         self.product_service_context = business_context.get("product_service_description", "")
-        self.use_hybrid = use_hybrid
+
         
         if not CORE_LIBRARIES_AVAILABLE:
             raise ImportError("Dependências críticas ( Sentence-Transformers, etc.) não estão instaladas.")
@@ -188,16 +188,7 @@ class PipelineOrchestrator:
                 llm_client=self.llm_client
             )
             
-            # Initialize Hybrid Pipeline Orchestrator if enabled
-            if self.use_hybrid:
-                logger.info("[PIPELINE_STEP] Initializing HybridPipelineOrchestrator")
-                from hybrid_pipeline_orchestrator import HybridPipelineOrchestrator
-                self.hybrid_orchestrator = HybridPipelineOrchestrator(
-                    business_context=business_context,
-                    user_id=user_id,
-                    job_id=job_id
-                )
-                logger.info("Hybrid Pipeline Orchestrator initialized for intelligent agent selection.")
+
             
         else: # Usa placeholders se os módulos não estiverem disponíveis
             self.lead_intake_agent = BaseAgent(name="PlaceholderLeadIntakeAgent", description="Placeholder for LeadIntakeAgent")
@@ -206,7 +197,7 @@ class PipelineOrchestrator:
             self.lead_analysis_generation_agent = None
             self.b2b_persona_creation_agent = None
             
-        logger.info(f"PipelineOrchestrator inicializado para o job {self.job_id} (Hybrid: {self.use_hybrid})")
+        logger.info(f"PipelineOrchestrator inicializado para o job {self.job_id}")
 
 
     # --- Métodos de Configuração do RAG (do código anterior) ---
@@ -335,10 +326,14 @@ class PipelineOrchestrator:
                     'qualification_summary': result.get('qualification_summary')
                 }
                 
+                # Captura a URL de origem original do resultado da busca
+                source_url = result.get('source_url') or result.get('url', '')
+
                 lead_data = {
                     "company_name": company_name,
                     "website": website,
                     "description": description,
+                    "source_url": source_url,  # Adiciona a URL de origem
                     "adk1_enrichment": additional_data  # Dados extras do ADK1
                 }
                 
@@ -410,64 +405,28 @@ class PipelineOrchestrator:
         ).to_dict()
         
         try:
-            # Use hybrid orchestrator if enabled and available
-            if self.use_hybrid and hasattr(self, 'hybrid_orchestrator') and PROJECT_MODULES_AVAILABLE:
-                logger.info(f"[{self.job_id}-{lead_id}] Using Hybrid Pipeline Orchestrator for intelligent agent selection")
-                
-                # Pass RAG context and vector store to hybrid orchestrator
-                if hasattr(self, 'rag_context_text'):
-                    self.hybrid_orchestrator.rag_context_text = self.rag_context_text
-                if hasattr(self, 'job_vector_stores'):
-                    self.hybrid_orchestrator.job_vector_stores = self.job_vector_stores
-                
-                # Delegate COMPLETELY to hybrid orchestrator which handles everything
-                async for event in self.hybrid_orchestrator._enrich_lead(lead_data, lead_id):
-                    yield event
-                return
-            
-            # Fallback to standard enrichment pipeline (only if hybrid is disabled)
-            logger.info(f"[{self.job_id}-{lead_id}] Using standard enrichment pipeline")
-            
-            # 1. Análise inicial e RAG
-            site_data = SiteData(
-                url=lead_data.get("website", "http://example.com/unknown"),
-                extracted_text_content=lead_data.get("description", ""),
-                extraction_status_message="Initial data from ADK1 harvester; full extraction status TBD."
-            )
-            validated_lead = self.lead_intake_agent.execute(site_data)
-            analyzed_lead = self.lead_analysis_agent.execute(validated_lead)
+            # --- Step 1: Intake and Initial Analysis ---
+            logger.info(f"[{self.job_id}-{lead_id}] Iniciando enriquecimento do lead.")
 
-            # Ponto de integração do RAG
-            rag_store = self.job_vector_stores.get(self.job_id)
-            context_dict = json.loads(self.rag_context_text) if hasattr(self, "rag_context_text") else {}
-            
-            ai_profile = self.prospect_profiler.create_advanced_prospect_profile(
-                lead_data=lead_data,
-                enriched_context=context_dict,
-                rag_vector_store=rag_store
+            # Manually construct the SiteData input model to match its definition
+            adk1_enrichment = lead_data.get("adk1_enrichment", {})
+            site_data_input = SiteData(
+                url=lead_data.get("website"),
+                extracted_text_content=adk1_enrichment.get("full_content"),
+                extraction_status_message="Extração bem-sucedida via ADK1" # Assume success from harvester
             )
-            analyzed_lead.ai_intelligence = ai_profile # Anexa os insights
-            
-            # 2. Pipeline de enriquecimento subsequente
+            intake_result = self.lead_intake_agent.execute(site_data_input)
+            analyzed_lead = self.lead_analysis_agent.execute(intake_result)
+
+            # --- Step 2: Delegate to the Enhanced Lead Processor ---
+            logger.info(f"[{self.job_id}-{lead_id}] Delegating to EnhancedLeadProcessor for full enrichment.")
+            # The processor now handles its own start/end/error events. We just stream them.
             async for event in self.enhanced_lead_processor.execute_enrichment_pipeline(
                 analyzed_lead=analyzed_lead,
                 job_id=self.job_id,
                 user_id=self.user_id
             ):
-                event["lead_id"] = lead_id
                 yield event
-            
-            final_package = event.get("data") if 'event' in locals() else None
-
-            yield LeadEnrichmentEndEvent(
-                event_type="lead_enrichment_end",
-                timestamp=datetime.now().isoformat(),
-                job_id=self.job_id,
-                user_id=self.user_id,
-                lead_id=lead_id,
-                success=True,
-                final_package=final_package
-            ).to_dict()
 
         except Exception as e:
             # Log the error safely, converting e to string explicitly for the message part
@@ -591,8 +550,8 @@ class PipelineOrchestrator:
                 user_id=self.user_id,
                 lead_id=lead_id,
                 lead_data=lead_data,
-                source_url=lead_data.get("website", "N/A"),
-                agent_name="ADK1HarvesterAgent" # Or a more generic harvester name
+                source_url=lead_data.get("source_url", "N/A"),
+                agent_name="ADK1HarvesterAgent"
             ).to_dict()
 
             # Aguarda a conclusão do setup do RAG se ainda não terminou

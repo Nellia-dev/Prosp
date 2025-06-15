@@ -258,6 +258,7 @@ class LeadQualification(BaseModel):
     readiness_score: float = Field(default=0.0, ge=0, le=1, description="Purchase readiness score")
     authority_score: float = Field(default=0.0, ge=0, le=1, description="Decision-making authority score")
     budget_likelihood: str = Field(default="unknown", description="Budget availability likelihood")
+    confidence_score: Optional[float] = Field(None, ge=0, le=1, description="Confidence score of the qualification analysis")
     error_message: Optional[str] = None # Added for consistency
 
 # --- Schemas mapping to Agent Outputs ---
@@ -501,9 +502,12 @@ class ComprehensiveProspectPackage(BaseModel):
         ..., description="Enhanced personalized messaging"
     )
     internal_briefing: InternalBriefing = Field(..., description="Internal sales briefing")
+    analysis_report: Optional[str] = Field(None, description="Extended analysis report from the generation agent")
+    persona_profile: Optional[Dict[str, Any]] = Field(None, description="B2B Persona Profile")
+    ai_intelligence: Optional[Dict[str, Any]] = Field(None, description="AI prospect intelligence profile from RAG")
     processing_metadata: Dict[str, Any] = Field(
         default_factory=dict, 
-        description="Processing metadata and metrics"
+        description="Metadata about the processing run"
     )
     confidence_score: float = Field(..., ge=0, le=1, description="Overall confidence in analysis")
     roi_potential_score: float = Field(

@@ -47,10 +47,10 @@ const STAGE_CONFIGS = PROCESSING_STAGES.map(stage => ({
   style: { borderLeftColor: STAGE_COLORS[stage] || '#6b7280' }
 }));
 
-export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardProps) => {
+export const CRMBoard = ({ leads: initialLeads, onLeadUpdate, isLoading = false }: CRMBoardProps) => {
   const { t } = useTranslation();
   useRealTimeUpdates();
-  const [liveLeads, setLiveLeads] = useState<LeadData[]>([]);
+  const [leads, setLeads] = useState<LeadData[]>(initialLeads);
   const [enrichmentEvents, setEnrichmentEvents] = useState<Record<string, EnrichmentEvent>>({});
   const [draggedLead, setDraggedLead] = useState<LeadData | null>(null);
   const [selectedLead, setSelectedLead] = useState<LeadData | null>(null);
@@ -66,18 +66,15 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
   const updateLeadStageMutation = useUpdateLeadStage();
 
   useEffect(() => {
-    if (leads.length > 0) {
-      const latestLead = leads.reduce((a, b) => new Date(a.updated_at) > new Date(b.updated_at) ? a : b);
-      setRecentlyUpdated(prev => ({ ...prev, [latestLead.id]: true }));
-      const timer = setTimeout(() => {
-        setRecentlyUpdated(prev => ({ ...prev, [latestLead.id]: false }));
-      }, 5000); // Glow for 5 seconds
-      return () => clearTimeout(timer);
-    }
-  }, [leads]);
+    setLeads(initialLeads);
+  }, [initialLeads]);
 
   useRealTimeEvent<LeadCreatedEvent>('lead-created', (event) => {
-    setLiveLeads(prev => [...prev, event.lead]);
+    setLeads(prev => {
+      // Avoid duplicates
+      if (prev.find(l => l.id === event.lead.id)) return prev;
+      return [...prev, event.lead];
+    });
   });
 
   useRealTimeEvent<ProspectPipelineEvent>('enrichment-update', (event) => {
@@ -95,8 +92,12 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
   });
 
   useRealTimeEvent<LeadEnrichedEvent>('lead-enriched', (event) => {
-    setLiveLeads(prev => prev.filter(l => l.id !== event.lead.id));
-    onLeadUpdate?.(event.lead); // This should trigger a refetch in the parent
+    setLeads(prev => prev.map(l => l.id === event.lead.id ? event.lead : l));
+    setRecentlyUpdated(prev => ({ ...prev, [event.lead.id]: true }));
+    const timer = setTimeout(() => {
+      setRecentlyUpdated(prev => ({ ...prev, [event.lead.id]: false }));
+    }, 5000); // Glow for 5 seconds
+    return () => clearTimeout(timer);
   });
 
   // Filter leads based on current filters
@@ -133,6 +134,13 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
     });
     return grouped;
   }, [filteredLeads]);
+
+  const liveLeads = useMemo(() => {
+    return leads.filter(lead => 
+      lead.processing_stage === 'prospecting' || 
+      lead.processing_stage === 'analyzing_refining'
+    );
+  }, [leads]);
 
   // Get unique sectors and qualifications for filter options
   const sectors = [...new Set(leads.map(lead => lead.company_sector).filter(Boolean))];
