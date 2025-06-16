@@ -26,6 +26,13 @@ class GoogleSearchData(BaseModel):
     snippet: str = Field(..., description="Page snippet from Google search")
 
 
+class LeadIntakeInput(BaseModel):
+    """Input structure for the LeadIntakeAgent, combining SiteData with lead_id."""
+    lead_id: str = Field(..., description="Unique identifier for the lead")
+    company_name: str = Field(..., description="Company name for the lead")
+    site_data: "SiteData" = Field(..., description="The actual site data to be processed")
+
+
 class SiteData(BaseModel):
     """Individual lead data from harvester"""
     url: HttpUrl = Field(..., description="Website URL")
@@ -52,6 +59,8 @@ class HarvesterOutput(BaseModel):
 
 class ValidatedLead(BaseModel):
     """Validated lead after intake processing"""
+    lead_id: str = Field(..., description="Unique identifier for the lead")
+    company_name: str = Field(..., description="Company name for the lead")
     site_data: SiteData = Field(..., description="Original site data")
     validation_timestamp: datetime = Field(default_factory=datetime.now)
     is_valid: bool = Field(..., description="Whether the lead passed validation")
@@ -258,6 +267,7 @@ class LeadQualification(BaseModel):
     readiness_score: float = Field(default=0.0, ge=0, le=1, description="Purchase readiness score")
     authority_score: float = Field(default=0.0, ge=0, le=1, description="Decision-making authority score")
     budget_likelihood: str = Field(default="unknown", description="Budget availability likelihood")
+    confidence_score: Optional[float] = Field(None, ge=0, le=1, description="Confidence score of the qualification analysis")
     error_message: Optional[str] = None # Added for consistency
 
 # --- Schemas mapping to Agent Outputs ---
@@ -501,9 +511,12 @@ class ComprehensiveProspectPackage(BaseModel):
         ..., description="Enhanced personalized messaging"
     )
     internal_briefing: InternalBriefing = Field(..., description="Internal sales briefing")
+    analysis_report: Optional[str] = Field(None, description="Extended analysis report from the generation agent")
+    persona_profile: Optional[Dict[str, Any]] = Field(None, description="B2B Persona Profile")
+    ai_intelligence: Optional[Dict[str, Any]] = Field(None, description="AI prospect intelligence profile from RAG")
     processing_metadata: Dict[str, Any] = Field(
         default_factory=dict, 
-        description="Processing metadata and metrics"
+        description="Metadata about the processing run"
     )
     confidence_score: float = Field(..., ge=0, le=1, description="Overall confidence in analysis")
     roi_potential_score: float = Field(

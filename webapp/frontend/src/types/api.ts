@@ -79,7 +79,7 @@ import type {
   LeadData,
   QualificationTier,
   ProcessingStage,
-  LeadStatus
+  LeadStatus,
 } from './unified';
 
 // Lead API types - perfectly aligned with backend

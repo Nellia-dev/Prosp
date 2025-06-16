@@ -39,18 +39,12 @@ interface EnrichmentEvent {
   agent_name?: string;
 }
 
-const STAGE_CONFIGS = PROCESSING_STAGES.map(stage => ({
-  id: stage,
-  label: STAGE_DISPLAY_NAMES[stage],
-  color: STAGE_COLORS[stage] || '#6b7280', // Fallback to gray
-  bgClass: 'border-l-4',
-  style: { borderLeftColor: STAGE_COLORS[stage] || '#6b7280' }
-}));
 
-export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardProps) => {
+
+export const CRMBoard = ({ leads: initialLeads, onLeadUpdate, isLoading = false }: CRMBoardProps) => {
   const { t } = useTranslation();
   useRealTimeUpdates();
-  const [liveLeads, setLiveLeads] = useState<LeadData[]>([]);
+  const [leads, setLeads] = useState<LeadData[]>(initialLeads);
   const [enrichmentEvents, setEnrichmentEvents] = useState<Record<string, EnrichmentEvent>>({});
   const [draggedLead, setDraggedLead] = useState<LeadData | null>(null);
   const [selectedLead, setSelectedLead] = useState<LeadData | null>(null);
@@ -66,18 +60,15 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
   const updateLeadStageMutation = useUpdateLeadStage();
 
   useEffect(() => {
-    if (leads.length > 0) {
-      const latestLead = leads.reduce((a, b) => new Date(a.updated_at) > new Date(b.updated_at) ? a : b);
-      setRecentlyUpdated(prev => ({ ...prev, [latestLead.id]: true }));
-      const timer = setTimeout(() => {
-        setRecentlyUpdated(prev => ({ ...prev, [latestLead.id]: false }));
-      }, 5000); // Glow for 5 seconds
-      return () => clearTimeout(timer);
-    }
-  }, [leads]);
+    setLeads(initialLeads);
+  }, [initialLeads]);
 
   useRealTimeEvent<LeadCreatedEvent>('lead-created', (event) => {
-    setLiveLeads(prev => [...prev, event.lead]);
+    setLeads(prev => {
+      // Avoid duplicates
+      if (prev.find(l => l.id === event.lead.id)) return prev;
+      return [...prev, event.lead];
+    });
   });
 
   useRealTimeEvent<ProspectPipelineEvent>('enrichment-update', (event) => {
@@ -95,8 +86,12 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
   });
 
   useRealTimeEvent<LeadEnrichedEvent>('lead-enriched', (event) => {
-    setLiveLeads(prev => prev.filter(l => l.id !== event.lead.id));
-    onLeadUpdate?.(event.lead); // This should trigger a refetch in the parent
+    setLeads(prev => prev.map(l => l.id === event.lead.id ? event.lead : l));
+    setRecentlyUpdated(prev => ({ ...prev, [event.lead.id]: true }));
+    const timer = setTimeout(() => {
+      setRecentlyUpdated(prev => ({ ...prev, [event.lead.id]: false }));
+    }, 5000); // Glow for 5 seconds
+    return () => clearTimeout(timer);
   });
 
   // Filter leads based on current filters
@@ -133,6 +128,12 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
     });
     return grouped;
   }, [filteredLeads]);
+
+  const liveLeads = useMemo(() => {
+    // A lead is considered "live" if it's being processed but not yet in a main display stage.
+    const mainStages = new Set(PROCESSING_STAGES);
+    return leads.filter(lead => !mainStages.has(lead.processing_stage));
+  }, [leads]);
 
   // Get unique sectors and qualifications for filter options
   const sectors = [...new Set(leads.map(lead => lead.company_sector).filter(Boolean))];
@@ -183,7 +184,7 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
     return {
       count: stageLeads.length,
       avgScore: stageLeads.length > 0 ? (totalValue / stageLeads.length).toFixed(1) : '0',
-      highPotential: stageLeads.filter(lead => lead.qualification_tier === 'High Potential').length,
+      highPotential: stageLeads.filter(lead => lead.qualification_tier === 'Alto Potencial').length,
       avgRelevance: stageLeads.length > 0 ? 
         (stageLeads.reduce((sum, lead) => sum + (lead.relevance_score * 100), 0) / stageLeads.length).toFixed(1) : '0'
     };
@@ -232,7 +233,7 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
             </div>
             <div className="space-y-2">
               <div className="text-2xl font-bold text-blue-400">
-                {filteredLeads.filter(l => l.qualification_tier === 'High Potential').length}
+                {filteredLeads.filter(l => l.qualification_tier === 'Alto Potencial').length}
               </div>
               <div className="text-sm text-slate-400">{t('high_potential')}</div>
             </div>
@@ -279,7 +280,7 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
               <SelectContent className="bg-slate-800 border-slate-700">
                 <SelectItem value="all">{t('all_levels')}</SelectItem>
                 {qualifications.map(qual => (
-                  <SelectItem key={qual} value={qual}>{qual.split(' ')[0]}</SelectItem>
+                  <SelectItem key={qual} value={qual}>{qual}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -346,27 +347,29 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
           </div>
         </div>
 
-        {/* Existing Stage Columns */}
-        {STAGE_CONFIGS.map(stage => {
-          const stats = getStageStats(stage.id);
-          
+        {/* Dynamically Generated Stage Columns */}
+        {PROCESSING_STAGES.map(stageId => {
+          const stats = getStageStats(stageId);
+          const label = STAGE_DISPLAY_NAMES[stageId];
+          const color = STAGE_COLORS[stageId] || '#6b7280';
+
           return (
             <div
-              key={stage.id}
+              key={stageId}
               className={`flex-shrink-0 w-80 bg-slate-900/50 rounded-lg border border-slate-700 ${
                 draggedLead ? 'hover:border-green-500/50' : ''
               }`}
               onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, stage.id)}
-              style={stage.style}
+              onDrop={(e) => handleDrop(e, stageId)}
+              style={{ borderLeftColor: color, borderLeftWidth: '4px' }}
             >
               <div className="p-4 border-b border-slate-700">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center space-x-2">
-                    <div style={{ color: stage.color }}>
-                      {getStageIcon(stage.id)}
+                    <div style={{ color }}>
+                      {getStageIcon(stageId)}
                     </div>
-                    <h3 className="font-medium text-white text-sm">{stage.label}</h3>
+                    <h3 className="font-medium text-white text-sm">{label}</h3>
                   </div>
                   <Badge variant="secondary" className="text-xs bg-slate-700 text-white">
                     {stats.count}
@@ -378,7 +381,7 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
                 </div>
               </div>
               <div className="p-3 space-y-2 min-h-96 max-h-96 overflow-y-auto">
-                {leadsByStage[stage.id]?.map(lead => (
+                {leadsByStage[stageId]?.map(lead => (
                   <div
                     key={lead.id}
                     draggable
@@ -394,7 +397,7 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
                     />
                   </div>
                 ))}
-                {leadsByStage[stage.id]?.length === 0 && (
+                {leadsByStage[stageId]?.length === 0 && (
                   <div className="text-center text-slate-500 py-8">
                     <div className="text-sm">{t('no_leads_in_stage')}</div>
                     {draggedLead && (
@@ -412,17 +415,19 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
       <Card className="bg-slate-900 border-slate-700">
         <CardContent className="p-4">
           <div className="grid grid-cols-3 md:grid-cols-9 gap-4 text-center">
-            {STAGE_CONFIGS.map(stage => {
-              const stats = getStageStats(stage.id);
+            {PROCESSING_STAGES.map(stageId => {
+              const stats = getStageStats(stageId);
+              const label = STAGE_DISPLAY_NAMES[stageId];
+              const color = STAGE_COLORS[stageId] || '#6b7280';
               return (
-                <div key={stage.id} className="space-y-2">
+                <div key={stageId} className="space-y-2">
                   <div 
                     className="w-6 h-6 rounded-full mx-auto flex items-center justify-center text-white text-xs"
-                    style={{ backgroundColor: stage.color }}
+                    style={{ backgroundColor: color }}
                   >
                     {stats.count}
                   </div>
-                  <div className="text-xs font-medium text-white truncate">{stage.label}</div>
+                  <div className="text-xs font-medium text-white truncate">{label}</div>
                   <div className="text-xs text-slate-400">
                     <div>ROI: {stats.avgScore}%</div>
                     <div>High: {stats.highPotential}</div>

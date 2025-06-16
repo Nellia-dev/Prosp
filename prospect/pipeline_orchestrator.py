@@ -14,7 +14,8 @@ from urllib.parse import urlparse
 
 # --- Imports para o Pipeline RAG e Harvester ---
 from dotenv import load_dotenv
-from loguru import logger
+import uuid # Added for fallback lead_id
+from loguru import logger # Ensure loguru logger is the one being used
 import os # Ensure os is imported for environment variable manipulation
 
 # Attempt to set a writable cache directory for Hugging Face models
@@ -33,11 +34,6 @@ app_base_dir = os.path.dirname(os.path.abspath(__file__))
 # then app_base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 # Given the traceback "/app/pipeline_orchestrator.py", app_base_dir should be /app.
 # Let's assume /app is the project root and is writable or a subdir like /app/.cache is.
-
-# If mcp_server.py is at /app/mcp_server.py and imports pipeline_orchestrator.py from /app/pipeline_orchestrator.py
-# then __file__ in pipeline_orchestrator.py is /app/pipeline_orchestrator.py
-# os.path.dirname(__file__) is /app
-# This seems correct for setting a cache within /app
 
 # Define the target cache directory components
 cache_parent_dir_name = ".cache"
@@ -95,7 +91,13 @@ try:
     from agents.lead_intake_agent import LeadIntakeAgent
     from agents.lead_analysis_agent import LeadAnalysisAgent
     from agents.enhanced_lead_processor import EnhancedLeadProcessor
-    from data_models.lead_structures import GoogleSearchData, SiteData, AnalyzedLead # Added AnalyzedLead
+    from data_models.lead_structures import (
+        SiteData,
+        GoogleSearchData,
+        AnalyzedLead,
+        ValidatedLead,
+        LeadIntakeInput # Added
+    )
     from core_logic.llm_client import LLMClientFactory
     from ai_prospect_intelligence import AdvancedProspectProfiler # Changed from prospect.ai_prospect_intelligence
     from adk1.agent import find_and_extract_structured_leads, search_and_qualify_leads
@@ -137,12 +139,12 @@ class PipelineOrchestrator:
     configura o ambiente RAG e enriquece cada lead em tempo real.
     """
 
-    def __init__(self, business_context: Dict[str, Any], user_id: str, job_id: str, use_hybrid: bool = True):
+    def __init__(self, business_context: Dict[str, Any], user_id: str, job_id: str, *_, **__):
         self.business_context = business_context
         self.user_id = user_id
         self.job_id = job_id
         self.product_service_context = business_context.get("product_service_description", "")
-        self.use_hybrid = use_hybrid
+
         
         if not CORE_LIBRARIES_AVAILABLE:
             raise ImportError("Dependências críticas ( Sentence-Transformers, etc.) não estão instaladas.")
@@ -188,16 +190,7 @@ class PipelineOrchestrator:
                 llm_client=self.llm_client
             )
             
-            # Initialize Hybrid Pipeline Orchestrator if enabled
-            if self.use_hybrid:
-                logger.info("[PIPELINE_STEP] Initializing HybridPipelineOrchestrator")
-                from hybrid_pipeline_orchestrator import HybridPipelineOrchestrator
-                self.hybrid_orchestrator = HybridPipelineOrchestrator(
-                    business_context=business_context,
-                    user_id=user_id,
-                    job_id=job_id
-                )
-                logger.info("Hybrid Pipeline Orchestrator initialized for intelligent agent selection.")
+
             
         else: # Usa placeholders se os módulos não estiverem disponíveis
             self.lead_intake_agent = BaseAgent(name="PlaceholderLeadIntakeAgent", description="Placeholder for LeadIntakeAgent")
@@ -206,7 +199,7 @@ class PipelineOrchestrator:
             self.lead_analysis_generation_agent = None
             self.b2b_persona_creation_agent = None
             
-        logger.info(f"PipelineOrchestrator inicializado para o job {self.job_id} (Hybrid: {self.use_hybrid})")
+        logger.info(f"PipelineOrchestrator inicializado para o job {self.job_id}")
 
 
     # --- Métodos de Configuração do RAG (do código anterior) ---
@@ -338,10 +331,14 @@ class PipelineOrchestrator:
                     'qualification_summary': result.get('qualification_summary')
                 }
                 
+                # Captura a URL de origem original do resultado da busca
+                source_url = result.get('source_url') or result.get('url', '')
+
                 lead_data = {
                     "company_name": company_name,
                     "website": website,
                     "description": description,
+                    "source_url": source_url,  # Adiciona a URL de origem
                     "adk1_enrichment": additional_data  # Dados extras do ADK1
                 }
                 
@@ -413,64 +410,47 @@ class PipelineOrchestrator:
         ).to_dict()
         
         try:
-            # Use hybrid orchestrator if enabled and available
-            if self.use_hybrid and hasattr(self, 'hybrid_orchestrator') and PROJECT_MODULES_AVAILABLE:
-                logger.info(f"[{self.job_id}-{lead_id}] Using Hybrid Pipeline Orchestrator for intelligent agent selection")
-                
-                # Pass RAG context and vector store to hybrid orchestrator
-                if hasattr(self, 'rag_context_text'):
-                    self.hybrid_orchestrator.rag_context_text = self.rag_context_text
-                if hasattr(self, 'job_vector_stores'):
-                    self.hybrid_orchestrator.job_vector_stores = self.job_vector_stores
-                
-                # Delegate COMPLETELY to hybrid orchestrator which handles everything
-                async for event in self.hybrid_orchestrator._enrich_lead(lead_data, lead_id):
-                    yield event
-                return
-            
-            # Fallback to standard enrichment pipeline (only if hybrid is disabled)
-            logger.info(f"[{self.job_id}-{lead_id}] Using standard enrichment pipeline")
-            
-            # 1. Análise inicial e RAG
-            site_data = SiteData(
-                url=lead_data.get("website", "http://example.com/unknown"),
-                extracted_text_content=lead_data.get("description", ""),
-                extraction_status_message="Initial data from ADK1 harvester; full extraction status TBD."
-            )
-            validated_lead = self.lead_intake_agent.execute(site_data)
-            analyzed_lead = self.lead_analysis_agent.execute(validated_lead)
+            # --- Step 1: Intake and Initial Analysis ---
+            logger.info(f"[{self.job_id}-{lead_id}] Iniciando enriquecimento do lead.")
 
-            # Ponto de integração do RAG
-            rag_store = self.job_vector_stores.get(self.job_id)
-            context_dict = json.loads(self.rag_context_text) if hasattr(self, "rag_context_text") else {}
-            
-            ai_profile = self.prospect_profiler.create_advanced_prospect_profile(
-                lead_data=lead_data,
-                enriched_context=context_dict,
-                rag_vector_store=rag_store
+            # Manually construct the SiteData input model to match its definition
+            adk1_enrichment = lead_data.get("adk1_enrichment", {})
+            google_search_info = GoogleSearchData(
+                title=lead_data.get("company_name", "N/A"),
+                snippet=lead_data.get("description", "")
             )
-            analyzed_lead.ai_intelligence = ai_profile # Anexa os insights
+
+            site_data_for_intake = SiteData(
+                url=lead_data.get("website"),
+                google_search_data=google_search_info,
+                extracted_text_content=adk1_enrichment.get("full_content"),
+                extraction_status_message="Extração bem-sucedida via ADK1" # Assume success from harvester
+            )
             
-            # 2. Pipeline de enriquecimento subsequente
+            # Create the input for LeadIntakeAgent, including lead_id
+            current_lead_id = lead_data.get("lead_id")
+            if not current_lead_id:
+                # This should ideally not happen if harvester always provides lead_id
+                logger.error(f"[{self.job_id}] Critical: lead_id missing in lead_data for website {lead_data.get('website')}. Using a placeholder.")
+                current_lead_id = f"missing_id_{uuid.uuid4()}"
+
+            lead_intake_input = LeadIntakeInput(
+                lead_id=current_lead_id,
+                company_name=lead_data.get("company_name", "N/A"),
+                site_data=site_data_for_intake
+            )
+            intake_result = self.lead_intake_agent.execute(lead_intake_input)
+            analyzed_lead = self.lead_analysis_agent.execute(intake_result)
+
+            # --- Step 2: Delegate to the Enhanced Lead Processor ---
+            logger.info(f"[{self.job_id}-{lead_id}] Delegating to EnhancedLeadProcessor for full enrichment.")
+            # The processor now handles its own start/end/error events. We just stream them.
             async for event in self.enhanced_lead_processor.execute_enrichment_pipeline(
                 analyzed_lead=analyzed_lead,
                 job_id=self.job_id,
                 user_id=self.user_id
             ):
-                event["lead_id"] = lead_id
                 yield event
-            
-            final_package = event.get("data") if 'event' in locals() else None
-
-            yield LeadEnrichmentEndEvent(
-                event_type="lead_enrichment_end",
-                timestamp=datetime.now().isoformat(),
-                job_id=self.job_id,
-                user_id=self.user_id,
-                lead_id=lead_id,
-                success=True,
-                final_package=final_package
-            ).to_dict()
 
         except Exception as e:
             # Log the error safely, converting e to string explicitly for the message part
@@ -584,8 +564,16 @@ class PipelineOrchestrator:
                 
             leads_found_count += 1
             lead_id = str(uuid.uuid4())
-            
-            logger.info(f"[PIPELINE_STEP] Processing lead #{leads_found_count}: {lead_data.get('company_name', 'Unknown')} - {lead_data.get('website', 'No website')}")
+            lead_data['lead_id'] = lead_id # Persist lead_id in the dictionary
+
+            # FIX: Robust extraction of company_name
+            # If the top-level company_name is 'N/A', try to find a better one in the nested data.
+            if lead_data.get('company_name') == 'N/A' and 'adk1_enrichment' in lead_data:
+                nested_name = lead_data['adk1_enrichment'].get('company_name')
+                if nested_name:
+                    lead_data['company_name'] = nested_name
+
+            logger.info(f"[PIPELINE_STEP] Processing lead #{leads_found_count} ({lead_id}): {lead_data.get('company_name', 'Unknown')} - {lead_data.get('website', 'No website')}")
             
             yield LeadGeneratedEvent(
                 event_type="lead_generated",
@@ -594,8 +582,8 @@ class PipelineOrchestrator:
                 user_id=self.user_id,
                 lead_id=lead_id,
                 lead_data=lead_data,
-                source_url=lead_data.get("website", "N/A"),
-                agent_name="ADK1HarvesterAgent" # Or a more generic harvester name
+                source_url=lead_data.get("source_url", "N/A"),
+                agent_name="ADK1HarvesterAgent"
             ).to_dict()
 
             # Aguarda a conclusão do setup do RAG se ainda não terminou
