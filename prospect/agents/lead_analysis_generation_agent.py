@@ -10,19 +10,20 @@ GEMINI_TEXT_INPUT_TRUNCATE_CHARS = 180000  # Max input tokens for Gemini Flash i
 
 
 class LeadAnalysisGenerationInput(BaseModel):
-    lead_data_str: str  # JSON string of lead data
-    enriched_data: str
-    product_service_offered: str
+    lead_data_str: str = Field(..., description="JSON string representing structured lead data.")
+    enriched_data: str = Field(..., description="Text string of enriched data from web searches, news, etc.")
+    product_service_offered: str = Field(..., description="Description of the user's product/service for context.")
 
 
 class LeadAnalysisGenerationOutput(BaseModel):
-    analysis_report: str
-    error_message: Optional[str] = None
+    analysis_report: str = Field(..., description="The generated textual analysis report for the lead.")
+    error_message: Optional[str] = Field(default=None, description="Error message if the process failed.")
 
 
 class LeadAnalysisGenerationAgent(BaseAgent[LeadAnalysisGenerationInput, LeadAnalysisGenerationOutput]):
-    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs): # Added **kwargs
-        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs) # Pass **kwargs
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, output_language: str = "en-US", **kwargs):
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
+        self.output_language = output_language
 
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
@@ -46,63 +47,62 @@ class LeadAnalysisGenerationAgent(BaseAgent[LeadAnalysisGenerationInput, LeadAna
             truncated_lead_data = self._truncate_text(input_data.lead_data_str, available_for_dynamic // 2)
             truncated_enriched_data = self._truncate_text(input_data.enriched_data, available_for_dynamic // 2)
             
-            # Refined prompt_template
+            # Refined prompt_template, now in English
             prompt_template = """
-                Você é um Analista de Inteligência de Negócios Sênior, especializado em destilar informações complexas de leads em relatórios executivos claros, concisos e acionáveis.
-                Sua tarefa é gerar uma análise textual perspicaz do lead, contextualizada pelo nosso produto/serviço: "{product_service_offered}".
+                You are a Senior Business Intelligence Analyst, specializing in distilling complex lead information into clear, concise, and actionable executive reports.
+                Your task is to generate an insightful textual analysis of the lead, contextualized by our product/service: "{product_service_offered}".
 
-                DADOS DO LEAD (origem: JSON estruturado internamente):
+                LEAD DATA (source: internally structured JSON):
                 \"\"\"
                 {lead_data_str}
                 \"\"\"
 
-                DADOS ENRIQUECIDOS (origem: pesquisa web adicional, notícias, etc.):
+                ENRICHED DATA (source: additional web research, news, etc.):
                 \"\"\"
                 {enriched_data}
                 \"\"\"
 
-                INSTRUÇÕES PARA O RELATÓRIO DE ANÁLISE:
-                Com base em TODOS os dados fornecidos (Dados do Lead e Dados Enriquecidos), elabore um relatório textual que cubra os seguintes pontos de forma integrada e fluida:
+                INSTRUCTIONS FOR THE ANALYSIS REPORT:
+                Based on ALL provided data (Lead Data and Enriched Data), draft a textual report covering the following points in an integrated and fluid manner:
 
-                1.  **Visão Geral da Empresa:** Identifique claramente o setor de atuação da empresa e seu principal produto ou serviço.
-                2.  **Porte e Estrutura Estimados:** Avalie o tamanho estimado da empresa (pequena, média, grande) e, se possível, infira aspectos de sua estrutura organizacional que possam ser relevantes.
-                3.  **Desafios e Necessidades Chave:** Identifique os principais desafios e necessidades que a empresa parece enfrentar. Dê ênfase especial àqueles que podem ser diretamente endereçados ou aliviados pelo nosso produto/serviço: "{product_service_offered}".
-                4.  **Cultura e Valores (se discernível):** Descreva brevemente quaisquer aspectos da cultura da empresa ou seus valores que se destacarem nas informações.
-                5.  **Diagnóstico Geral e Potencial de Conversão:** Forneça um diagnóstico resumido da situação do lead e uma avaliação do seu potencial de conversão, considerando o fit com "{product_service_offered}".
+                1.  **Company Overview:** Clearly identify the company's industry sector and its main product or service.
+                2.  **Estimated Size and Structure:** Assess the estimated company size (small, medium, large) and, if possible, infer relevant aspects of its organizational structure.
+                3.  **Key Challenges and Needs:** Identify the main challenges and needs the company appears to face. Place special emphasis on those that can be directly addressed or alleviated by our product/service: "{product_service_offered}".
+                4.  **Culture and Values (if discernible):** Briefly describe any aspects of the company's culture or values that stand out from the information.
+                5.  **General Diagnosis and Conversion Potential:** Provide a summarized diagnosis of the lead's situation and an assessment of its conversion potential, considering the fit with "{product_service_offered}".
 
-                DIRETRIZES ADICIONAIS:
-                - **Objetividade:** Baseie-se estritamente nas informações disponíveis. Se alguma informação crucial não estiver clara ou disponível, mencione isso de forma explícita (ex: "Não foi possível determinar o tamanho exato da empresa com os dados fornecidos.").
-                - **Formato:** A análise deve ser um texto corrido e bem articulado. NÃO use formato JSON.
-                - **Estilo:** Mantenha um tom profissional, analítico e perspicaz.
-                - **Tamanho:** O relatório final deve ser conciso, idealmente com um máximo de 300-350 palavras.
+                ADDITIONAL GUIDELINES:
+                - **Objectivity:** Base your analysis strictly on the available information. If crucial information is unclear or unavailable, mention this explicitly (e.g., "The exact company size could not be determined from the provided data.").
+                - **Format:** The analysis should be a well-articulated running text. DO NOT use JSON format.
+                - **Style:** Maintain a professional, analytical, and insightful tone.
+                - **Length:** The final report should be concise, ideally with a maximum of 300-350 words.
 
-                Comece o relatório diretamente com a análise.
+                Begin the report directly with the analysis.
 
-                RELATÓRIO DE ANÁLISE DO LEAD:
+                LEAD ANALYSIS REPORT:
             """
             
-            formatted_prompt = prompt_template.format(
+            final_prompt = prompt_template.format(
                 product_service_offered=input_data.product_service_offered,
                 lead_data_str=truncated_lead_data,
                 enriched_data=truncated_enriched_data
-            )
-            self.logger.debug(f"Prompt for {self.name} (length: {len(formatted_prompt)}):\n{formatted_prompt[:500]}...")
+            ) + f"\n\nImportant: Generate your entire response, including all textual content and string values within any JSON structure, strictly in the following language: {self.output_language}. Do not include any English text unless it is part of the original input data that should be preserved as is."
 
-            llm_response = self.generate_llm_response(formatted_prompt)
+            self.logger.debug(f"Prompt for {self.name} (length: {len(final_prompt)}):\n{final_prompt[:500]}...")
+
+            llm_response = self.generate_llm_response(final_prompt, output_language=self.output_language)
 
             if llm_response:
                 analysis_report = llm_response.strip()
                 self.logger.info(f"✅ Report generated by {self.name}, length: {len(analysis_report)}")
             else:
-                error_message = "LLM call returned no response or an empty response."
+                error_message = "LLM call returned no response or an empty response." # Already English
                 self.logger.warning(f"⚠️ {self.name} received empty response from LLM.")
                 # analysis_report remains empty
 
         except Exception as e:
             self.logger.error(f"❌ An unexpected error occurred in {self.name}: {e}", exc_info=True)
-            # import traceback # Handled by exc_info=True
-            # traceback.print_exc()
-            error_message = f"An unexpected error occurred in {self.name}: {str(e)}"
+            error_message = f"An unexpected error occurred in {self.name}: {str(e)}" # Already English
             # analysis_report remains empty
 
         return LeadAnalysisGenerationOutput(
@@ -111,46 +111,51 @@ class LeadAnalysisGenerationAgent(BaseAgent[LeadAnalysisGenerationInput, LeadAna
         )
 
 if __name__ == '__main__':
-    from loguru import logger # Ensure logger is available
+    from loguru import logger
     import sys
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")
 
-    class MockLLMClient(LLMClientBase):
-        def __init__(self, api_key: str = "mock_key"):
-            super().__init__(api_key)
+    class MockLLMClient(LLMClientBase): # Assuming LLMClientBase is correctly imported/defined
+        def __init__(self, api_key: str = "mock_key", **kwargs):
+            # super().__init__(api_key) # Depends on LLMClientBase
+            self.api_key = api_key
 
-        def generate_text_response(self, prompt: str) -> Optional[str]:
-            logger.debug(f"MockLLMClient received prompt snippet:\n{prompt[:600]}...")
-            if "RELATÓRIO DE ANÁLISE DO LEAD:" in prompt: # Matches the end of the refined prompt
-                # Simulate a more structured narrative based on the refined prompt's points
+        def generate_text_response(self, prompt: str, output_language: str = "en-US") -> Optional[str]:
+            logger.debug(f"MockLLMClient received prompt (lang: {output_language}):\n{prompt[:700]}...")
+            if f"strictly in the following language: {output_language}" not in prompt:
+                 logger.error(f"Language instruction for '{output_language}' missing in prompt!")
+
+            if "LEAD ANALYSIS REPORT:" in prompt:
+                # Example in English
                 return (
-                    "A Empresa Exemplo opera predominantemente no setor de Tecnologia da Informação, com foco em soluções de software como serviço (SaaS) para gestão de projetos e colaboração.\n\n"
-                    "Considerando os dados e a menção a 150 funcionários, a Empresa Exemplo classifica-se como de médio porte. Sua estrutura organizacional provavelmente inclui departamentos dedicados de TI, vendas, marketing e desenvolvimento de produto, típicos de uma empresa SaaS em crescimento.\n\n"
-                    "Os principais desafios identificados, especialmente relevantes para Nossas Soluções Incríveis de Otimização de Vendas, incluem a necessidade de escalar suas operações de vendas de forma eficiente para suportar a expansão de mercado mencionada nos dados enriquecidos. A menção a 'modernizar sua pilha de tecnologia' também sugere uma abertura para novas ferramentas que possam otimizar o funil de vendas e a gestão de leads.\n\n"
-                    "A cultura da empresa parece ser focada em inovação, evidenciado pelos prêmios recebidos em 2023. Isso sugere uma receptividade a soluções tecnológicas avançadas que demonstrem claro valor agregado.\n\n"
-                    "Diagnóstico Geral: A Empresa Exemplo é um lead com bom potencial. A fase de expansão e a busca por modernização tecnológica criam uma janela de oportunidade para Nossas Soluções Incríveis, que podem auxiliar diretamente na otimização dos processos de vendas e gestão de clientes, cruciais para o sucesso da expansão. O potencial de conversão é moderado a alto, dependendo da urgência interna para resolver os desafios de escalabilidade de vendas."
+                    "Example Inc. primarily operates in the Information Technology sector, focusing on Software as a Service (SaaS) solutions for project management and collaboration.\n\n"
+                    "Considering the data and mention of 150 employees, Example Inc. is classified as a medium-sized enterprise. Its organizational structure likely includes dedicated IT, sales, marketing, and product development departments, typical of a growing SaaS company.\n\n"
+                    "Key challenges identified, particularly relevant for Our Incredible Sales Optimization Solutions, include the need to efficiently scale its sales operations to support the mentioned market expansion. The mention of 'modernizing its technology stack' also suggests an openness to new tools that can optimize the sales funnel and lead management.\n\n"
+                    "The company culture appears to be innovation-focused, evidenced by awards received in 2023. This suggests receptiveness to advanced technological solutions that demonstrate clear added value.\n\n"
+                    "General Diagnosis: Example Inc. is a lead with good potential. The expansion phase and the quest for technological modernization create a window of opportunity for Our Incredible Solutions, which can directly assist in optimizing sales processes and customer management, crucial for successful expansion. Conversion potential is moderate to high, depending on the internal urgency to address sales scalability challenges."
                 ).strip()
-            return "Resposta padrão do mock para teste."
+            return "Default mock response for testing."
 
     logger.info("Running mock test for LeadAnalysisGenerationAgent...")
     mock_llm = MockLLMClient()
-    # Provide name and description as required by BaseAgent
     agent = LeadAnalysisGenerationAgent(
         name="TestLeadAnalysisGenerationAgent",
         description="Test Agent for Lead Analysis Generation",
-        llm_client=mock_llm
+        llm_client=mock_llm,
+        output_language="en-US" # Testing with English
     )
 
-    test_lead_data = json.dumps({ # Ensure lead_data_str is a JSON string
-        "company_name": "Empresa Exemplo",
-        "url": "http://www.empresaexemplo.com",
-        "description": "Líder em soluções inovadoras de TI para gestão de projetos.",
+    # Test data in English
+    test_lead_data = json.dumps({
+        "company_name": "Example Inc.",
+        "url": "http://www.exampleinc.com",
+        "description": "Leader in innovative IT solutions for project management.",
         "employees": "150",
-        "sector": "Tecnologia da Informação (SaaS)"
+        "sector": "Information Technology (SaaS)"
     })
-    test_enriched_data = "A Empresa Exemplo ganhou prêmios de inovação em 2023. Artigos recentes mencionam expansão de mercado para LATAM e busca por modernizar sua pilha de tecnologia."
-    test_product_service = "Nossas Soluções Incríveis de Otimização de Vendas"
+    test_enriched_data = "Example Inc. won innovation awards in 2023. Recent articles mention market expansion to LATAM and a quest to modernize its technology stack."
+    test_product_service = "Our Incredible Sales Optimization Solutions"
 
     input_data = LeadAnalysisGenerationInput(
         lead_data_str=test_lead_data,
@@ -167,11 +172,11 @@ if __name__ == '__main__':
         logger.success("Analysis report generated successfully.")
 
 
-    assert "Empresa Exemplo" in output.analysis_report
-    assert "Nossas Soluções Incríveis de Otimização de Vendas" in output.analysis_report
-    assert "Tecnologia da Informação" in output.analysis_report
-    assert "médio porte" in output.analysis_report
-    assert "expansão de mercado" in output.analysis_report
+    assert "Example Inc." in output.analysis_report # English
+    assert "Our Incredible Sales Optimization Solutions" in output.analysis_report
+    assert "Information Technology" in output.analysis_report # English
+    assert "medium-sized enterprise" in output.analysis_report # English
+    assert "market expansion" in output.analysis_report # English
     assert output.error_message is None
     logger.info("Mock test for LeadAnalysisGenerationAgent completed successfully.")
 

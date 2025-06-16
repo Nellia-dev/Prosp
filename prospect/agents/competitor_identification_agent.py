@@ -14,19 +14,20 @@ class CompetitorIdentificationInput(BaseModel):
     known_competitors_list_str: str = "" # Optional, comma-separated string of USER's competitors
 
 class CompetitorDetail(BaseModel):
-    name: str
-    description: Optional[str] = None # Brief description of why they are a competitor
-    perceived_strength: Optional[str] = None # e.g., "High", "Medium", "Low"
-    perceived_weakness: Optional[str] = None
+    name: str = Field(..., description="Name of the identified competitor.")
+    description: Optional[str] = Field(default=None, description="Brief description of why they are a competitor to the analyzed company.")
+    perceived_strength: Optional[str] = Field(default=None, description="Perceived strength of the competitor (e.g., 'High market share', 'Strong brand recognition').")
+    perceived_weakness: Optional[str] = Field(default=None, description="Perceived weakness of the competitor (e.g., 'Higher price point', 'Less flexible solution').")
 
 class CompetitorIdentificationOutput(BaseModel):
-    identified_competitors: List[CompetitorDetail] = Field(default_factory=list)
-    other_notes: Optional[str] = None # For any general observations from the text
-    error_message: Optional[str] = None
+    identified_competitors: List[CompetitorDetail] = Field(default_factory=list, description="List of identified competitors of the analyzed company.")
+    other_notes: Optional[str] = Field(default=None, description="General observations about the competitive landscape of the analyzed company.")
+    error_message: Optional[str] = Field(default=None)
 
 class CompetitorIdentificationAgent(BaseAgent[CompetitorIdentificationInput, CompetitorIdentificationOutput]):
-    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, output_language: str = "en-US", **kwargs):
         super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
+        self.output_language = output_language
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -46,56 +47,56 @@ class CompetitorIdentificationAgent(BaseAgent[CompetitorIdentificationInput, Com
 
             known_competitors_prompt_segment = ""
             if input_data.known_competitors_list_str and input_data.known_competitors_list_str.strip():
-                known_competitors_prompt_segment = f"LISTA DE CONCORRENTES CONHECIDOS (da nossa empresa, para referência contextual):\n\"{input_data.known_competitors_list_str}\""
+                known_competitors_prompt_segment = f"KNOWN COMPETITORS LIST (of our company, for contextual reference only):\n\"{input_data.known_competitors_list_str}\""
 
-            # Refined prompt
+            # Refined prompt, now in English
             prompt_template = """
-                Você é um Analista de Inteligência Competitiva Sênior. Sua tarefa é identificar os concorrentes (diretos e indiretos) da EMPRESA ANALISADA, com base no conteúdo do site dela e na descrição de seus produtos/serviços.
-                O foco é exclusivamente nos concorrentes da EMPRESA ANALISADA, não nos concorrentes da empresa que está utilizando esta ferramenta.
+                You are a Senior Competitive Intelligence Analyst. Your task is to identify the competitors (direct and indirect) of THE ANALYZED COMPANY, based on its website content and the description of its products/services.
+                The focus is exclusively on the competitors of THE ANALYZED COMPANY, not the competitors of the company using this tool.
 
-                TEXTO EXTRAÍDO DO SITE DA EMPRESA ANALISADA:
+                EXTRACTED TEXT FROM THE ANALYZED COMPANY'S WEBSITE:
                 \"\"\"
                 {initial_extracted_text}
                 \"\"\"
 
-                PRODUTO/SERVIÇO PRINCIPAL OFERECIDO PELA EMPRESA ANALISADA (para contextualizar a identificação de seus concorrentes):
+                PRIMARY PRODUCT/SERVICE OFFERED BY THE ANALYZED COMPANY (to contextualize the identification of its competitors):
                 "{product_service_offered_by_lead}"
 
                 {known_competitors_prompt_segment}
-                (O segmento acima, se presente, lista concorrentes da NOSSA EMPRESA. Apenas os mencione como concorrentes da EMPRESA ANALISADA se o "TEXTO EXTRAÍDO" sugerir explicitamente essa competição.)
+                (The segment above, if present, lists competitors of OUR COMPANY. Only mention them as competitors of THE ANALYZED COMPANY if the "EXTRACTED TEXT" explicitly suggests this competition.)
 
-                INSTRUÇÕES PARA IDENTIFICAÇÃO DE CONCORRENTES:
-                1.  Analise o "TEXTO EXTRAÍDO" para identificar nomes de empresas ou produtos que ofereçam soluções similares ou alternativas ao "{product_service_offered_by_lead}" da EMPRESA ANALISADA.
-                2.  Distinga parceiros de concorrentes: se uma empresa é mencionada como parceira de integração, não a liste como concorrente, a menos que o texto também sugira que ela compete em outras áreas.
-                3.  Se o "{known_competitors_prompt_segment}" for fornecido, verifique se algum desses nomes é mencionado no "TEXTO EXTRAÍDO" como um competidor da EMPRESA ANALISADA. Não assuma que são concorrentes da EMPRESA ANALISADA apenas por estarem nessa lista.
-                4.  Se nenhuma empresa concorrente for explicitamente mencionada ou claramente identificável a partir do texto, o campo "identified_competitors" deve ser uma lista vazia `[]`.
+                INSTRUCTIONS FOR COMPETITOR IDENTIFICATION:
+                1.  Analyze the "EXTRACTED TEXT" to identify names of companies or products that offer solutions similar or alternative to THE ANALYZED COMPANY's "{product_service_offered_by_lead}".
+                2.  Distinguish partners from competitors: if a company is mentioned as an integration partner, do not list it as a competitor unless the text also suggests it competes in other areas.
+                3.  If the "{known_competitors_prompt_segment}" is provided, check if any of these names are mentioned in the "EXTRACTED TEXT" as a competitor of THE ANALYZED COMPANY. Do not assume they are competitors of THE ANALYZED COMPANY just because they are on this list.
+                4.  If no competing companies are explicitly mentioned or clearly identifiable from the text, the "identified_competitors" field should be an empty list `[]`.
 
-                FORMATO DA RESPOSTA:
-                Responda EXCLUSIVAMENTE com um objeto JSON válido, seguindo o schema e as descrições de campo abaixo. Não inclua NENHUM texto, explicação, ou markdown (como ```json) antes ou depois do objeto JSON.
+                RESPONSE FORMAT:
+                Respond EXCLUSIVELY with a valid JSON object, following the schema and field descriptions below. Do NOT include ANY text, explanation, or markdown (like ```json) before or after the JSON object.
 
-                SCHEMA JSON ESPERADO:
+                EXPECTED JSON SCHEMA:
                 {{
-                    "identified_competitors": [ // Lista de objetos, um para cada concorrente identificado da EMPRESA ANALISADA.
+                    "identified_competitors": [ // List of objects, one for each identified competitor of THE ANALYZED COMPANY.
                         {{
-                            "name": "string - O nome do concorrente identificado.",
-                            "description": "string | null - Breve descrição (1-2 frases) do porquê é considerado um concorrente da EMPRESA ANALISADA, com base no texto. Ex: 'Oferece produto X similar', 'Focado no mesmo nicho de mercado Y'.",
-                            "perceived_strength": "string | null - Um ponto forte percebido do concorrente, se mencionado ou inferível do texto (ex: 'Líder de mercado estabelecido', 'Forte em inovação tecnológica'). Se não disponível, use null.",
-                            "perceived_weakness": "string | null - Um ponto fraco percebido do concorrente, se mencionado ou inferível do texto (ex: 'Preço mais elevado', 'Menor flexibilidade de customização'). Se não disponível, use null."
+                            "name": "string - The name of the identified competitor.",
+                            "description": "string | null - Brief description (1-2 sentences) of why it is considered a competitor to THE ANALYZED COMPANY, based on the text. E.g., 'Offers similar product X', 'Focused on the same niche market Y'.",
+                            "perceived_strength": "string | null - A perceived strength of the competitor, if mentioned or inferable from the text (e.g., 'Established market leader', 'Strong in technological innovation'). If not available, use null.",
+                            "perceived_weakness": "string | null - A perceived weakness of the competitor, if mentioned or inferable from the text (e.g., 'Higher price point', 'Less customization flexibility'). If not available, use null."
                         }}
                     ],
-                    "other_notes": "string | null - Observações gerais sobre o cenário competitivo da EMPRESA ANALISADA (ex: 'Mercado parece fragmentado com muitos players de nicho', 'Competição intensa em preço', 'Texto não forneceu dados suficientes para análise competitiva profunda'). Se não houver, use null."
+                    "other_notes": "string | null - General observations about THE ANALYZED COMPANY's competitive landscape (e.g., 'Market seems fragmented with many niche players', 'Intense price competition', 'Text did not provide enough data for deep competitive analysis'). If none, use null."
                 }}
             """
             
-            formatted_prompt = prompt_template.format(
+            final_prompt = prompt_template.format(
                 initial_extracted_text=truncated_text,
                 product_service_offered_by_lead=input_data.product_service_offered,
                 known_competitors_prompt_segment=known_competitors_prompt_segment
-            )
+            ) + f"\n\nImportant: Generate your entire response, including all textual content and string values within any JSON structure, strictly in the following language: {self.output_language}. Do not include any English text unless it is part of the original input data that should be preserved as is."
 
-            llm_response_str = self.generate_llm_response(formatted_prompt)
+            llm_response_str = self.generate_llm_response(final_prompt, output_language=self.output_language)
 
-            if not llm_response_str:
+            if not llm_response_str: # Already in English
                 return CompetitorIdentificationOutput(error_message="LLM call returned no response.")
 
             parsed_output = self.parse_llm_json_response(llm_response_str, CompetitorIdentificationOutput)
@@ -115,35 +116,38 @@ if __name__ == '__main__':
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")
 
-    class MockLLMClient(LLMClientBase):
-        def __init__(self, api_key: str = "mock_key"):
-            super().__init__(api_key)
+    class MockLLMClient(LLMClientBase): # Assuming LLMClientBase is correctly imported/defined
+        def __init__(self, api_key: str = "mock_key", **kwargs):
+            # super().__init__(api_key) # Depends on LLMClientBase
+            self.api_key = api_key
 
-        def generate_text_response(self, prompt: str) -> Optional[str]:
-            logger.debug(f"MockLLMClient received prompt snippet:\n{prompt[:600]}...")
+        def generate_text_response(self, prompt: str, output_language: str = "en-US") -> Optional[str]:
+            logger.debug(f"MockLLMClient received prompt (lang: {output_language}):\n{prompt[:700]}...")
+            if f"strictly in the following language: {output_language}" not in prompt:
+                 logger.error(f"Language instruction for '{output_language}' missing in prompt!")
 
             competitors = []
-            other_notes = "O mercado parece competitivo com players estabelecidos e novos entrantes."
+            # Example in English
+            other_notes = "The market appears competitive with established players and new entrants."
 
-            if "Soluções Alfa" in prompt: # Based on initial_extracted_text
+            if "Alpha Solutions" in prompt:
                 competitors.append({
-                    "name": "Soluções Alfa",
-                    "description": "Mencionada diretamente no texto como uma alternativa, indicando competição na área de Software de Gestão Personalizado.",
-                    "perceived_strength": "Estabelecida (implícito pela comparação)",
-                    "perceived_weakness": "Menos flexível que a Empresa Exemplo (declarado no texto)"
+                    "name": "Alpha Solutions",
+                    "description": "Mentioned directly in the text as an alternative, indicating competition in the Custom Management Software area.",
+                    "perceived_strength": "Established (implied by comparison)",
+                    "perceived_weakness": "Less flexible than Example Inc. (stated in text)"
                 })
 
-            if "CompetiMaster" in prompt and "Avaliamos CompetiMaster no passado" in prompt: # Based on known_competitors and text
+            if "CompetiMaster" in prompt and "We evaluated CompetiMaster in the past" in prompt:
                  competitors.append({
                     "name": "CompetiMaster",
-                    "description": "Considerado no passado pela Empresa Exemplo, sugerindo que atua no mesmo segmento de Software de Gestão Personalizado.",
-                    "perceived_strength": None, # Não inferível do texto mock
+                    "description": "Considered in the past by Example Inc., suggesting it operates in the same Custom Management Software segment.",
+                    "perceived_strength": None,
                     "perceived_weakness": None
                 })
 
             if not competitors:
-                other_notes = "Nenhum concorrente direto claramente identificado no texto fornecido. Ferramentas Beta parece ser um parceiro."
-
+                other_notes = "No direct competitors clearly identified in the provided text. Beta Tools seems to be a partner."
 
             return json.dumps({
                 "identified_competitors": competitors,
@@ -155,24 +159,25 @@ if __name__ == '__main__':
     agent = CompetitorIdentificationAgent(
         name="CompetitorIdentificationAgent",
         description="Identifies competitors of the analyzed company.",
-        llm_client=mock_llm
+        llm_client=mock_llm,
+        output_language="en-US" # Testing with English
     )
 
+    # Test data in English
     test_extracted_text = (
-        "A Empresa Exemplo é líder em Software de Gestão Personalizado. Nossos diferenciais incluem X e Y. "
-        "Soluções Alfa são boas, mas a Empresa Exemplo oferece mais flexibilidade. "
-        "Nossa integração com Ferramentas Beta é robusta. Avaliamos CompetiMaster no passado."
+        "Example Inc. is a leader in Custom Management Software. Our differentiators include X and Y. "
+        "Alpha Solutions are good, but Example Inc. offers more flexibility. "
+        "Our integration with Beta Tools is robust. We evaluated CompetiMaster in the past."
     )
-    test_product_service_of_lead = "Software de Gestão Personalizado"
+    test_product_service_of_lead = "Custom Management Software"
 
-    # Test Case 1: No known competitors list (for user's company)
     input_data_1 = CompetitorIdentificationInput(
         initial_extracted_text=test_extracted_text,
         product_service_offered=test_product_service_of_lead,
-        known_competitors_list_str="" # Empty
+        known_competitors_list_str=""
     )
     output_1 = agent.process(input_data_1)
-    logger.info("\nTest Case 1 (No known US-based competitors list for user):")
+    logger.info("\nTest Case 1 (No known competitors list for user):") # Log in English
     if output_1.error_message:
         logger.error(f"Error: {output_1.error_message}")
     else:
@@ -181,19 +186,16 @@ if __name__ == '__main__':
         logger.info(f"Other Notes: {output_1.other_notes}")
 
     assert output_1.error_message is None
-    assert len(output_1.identified_competitors) >= 1 # Should find Soluções Alfa
-    assert any(c.name == "Soluções Alfa" for c in output_1.identified_competitors)
-    # CompetiMaster might be found if LLM infers from "Avaliamos CompetiMaster" even without it being in known_competitors_list_str
-    # Depending on LLM strictness, this assertion might need adjustment or prompt refinement if we ONLY want it from known_competitors_list_str
+    assert len(output_1.identified_competitors) >= 1
+    assert any(c.name == "Alpha Solutions" for c in output_1.identified_competitors)
 
-    # Test Case 2: With known competitors list (for user's company)
     input_data_2 = CompetitorIdentificationInput(
         initial_extracted_text=test_extracted_text,
         product_service_offered=test_product_service_of_lead,
-        known_competitors_list_str="CompetiMaster, RivalTech" # User's competitors
+        known_competitors_list_str="CompetiMaster, RivalTech"
     )
     output_2 = agent.process(input_data_2)
-    logger.info("\nTest Case 2 (With known US-based competitors list for user):")
+    logger.info("\nTest Case 2 (With known competitors list for user):") # Log in English
     if output_2.error_message:
         logger.error(f"Error: {output_2.error_message}")
     else:
@@ -202,10 +204,10 @@ if __name__ == '__main__':
         logger.info(f"Other Notes: {output_2.other_notes}")
 
     assert output_2.error_message is None
-    assert len(output_2.identified_competitors) >= 1 # Soluções Alfa definitely
-    assert any(c.name == "Soluções Alfa" for c in output_2.identified_competitors)
-    assert any(c.name == "CompetiMaster" for c in output_2.identified_competitors) # Should be picked up due to text and list
-    assert not any(c.name == "RivalTech" for c in output_2.identified_competitors) # Not in text
+    assert len(output_2.identified_competitors) >= 1
+    assert any(c.name == "Alpha Solutions" for c in output_2.identified_competitors)
+    assert any(c.name == "CompetiMaster" for c in output_2.identified_competitors)
+    assert not any(c.name == "RivalTech" for c in output_2.identified_competitors)
     
     logger.info("\nMock tests completed successfully.")
 

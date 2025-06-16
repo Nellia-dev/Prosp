@@ -18,13 +18,13 @@ class DetailedApproachPlanInput(BaseModel):
 
 # Sub-models for structured output
 class ContactStepDetail(BaseModel):
-    step_number: int
-    channel: str # E.g., "Email Personalizado", "LinkedIn (Nota de Conexão)", "Telefone"
-    objective: str # Specific goal for this step
-    key_topics_arguments: List[str] = Field(default_factory=list) # Main points to convey
-    key_questions: List[str] = Field(default_factory=list) # Key questions to ask (if any)
-    cta: str # Specific call to action for this step
-    supporting_materials: Optional[str] = None # E.g., link to case study, article
+    step_number: int = Field(..., description="The step number in the sequence (1, 2, 3, ...).")
+    channel: str = Field(..., description="Contact channel for this step (e.g., 'Personalized Email', 'LinkedIn (Connection Note)', 'Brief Follow-up Phone Call').")
+    objective: str = Field(..., description="Specific and measurable objective for this step.")
+    key_topics_arguments: List[str] = Field(default_factory=list, description="List of 2-3 key topics or arguments to address in this step.")
+    key_questions: List[str] = Field(default_factory=list, description="Optional list of 1-2 key questions to ask in this step.")
+    cta: str = Field(..., description="Specific and clear Call to Action for this step.")
+    supporting_materials: Optional[str] = Field(default=None, description="Optional: Supporting resource/material to use or mention (e.g., link to case study, article).")
     
     @validator('key_questions', 'key_topics_arguments', pre=True, always=True)
     def ensure_list_of_strings(cls, v_list, field):
@@ -51,13 +51,13 @@ class ContactStepDetail(BaseModel):
         return [] # Default to empty list if input is not easily convertible
 
 class DetailedApproachPlanOutput(BaseModel):
-    main_objective: str = "Objetivo principal da abordagem não especificado."
-    adapted_elevator_pitch: str = "Elevator pitch adaptado não especificado."
-    contact_sequence: List[ContactStepDetail] = Field(default_factory=list)
-    engagement_indicators_to_monitor: List[str] = Field(default_factory=list)
-    potential_obstacles_attention_points: List[str] = Field(default_factory=list)
-    suggested_next_steps_if_successful: List[str] = Field(default_factory=list)
-    error_message: Optional[str] = None
+    main_objective: str = Field(default="Main objective of the approach not specified.", description="The primary strategic objective of this comprehensive approach plan.")
+    adapted_elevator_pitch: str = Field(default="Adapted elevator pitch not specified.", description="A 2-3 sentence elevator pitch, highly personalized for THIS lead and persona.")
+    contact_sequence: List[ContactStepDetail] = Field(default_factory=list, description="List detailing the first 3-4 steps of the contact sequence.")
+    engagement_indicators_to_monitor: List[str] = Field(default_factory=list, description="List of 2-3 key indicators to monitor lead engagement.")
+    potential_obstacles_attention_points: List[str] = Field(default_factory=list, description="List of 2-3 potential obstacles or attention points for the sales team.")
+    suggested_next_steps_if_successful: List[str] = Field(default_factory=list, description="List of 1-2 suggested next steps if the initial contact sequence is successful.")
+    error_message: Optional[str] = Field(default=None)
 
     @validator('contact_sequence', pre=True, always=True)
     def ensure_contact_sequence_is_list(cls, v):
@@ -65,13 +65,14 @@ class DetailedApproachPlanOutput(BaseModel):
         return v if isinstance(v, list) else []
 
     @validator('engagement_indicators_to_monitor', 'potential_obstacles_attention_points', 'suggested_next_steps_if_successful', pre=True, always=True)
-    def ensure_string_list_fields(cls, v_list, field):
+    def ensure_string_list_fields(cls, v_list, field): # Already using the robust validator from ContactStepDetail
         return ContactStepDetail.ensure_list_of_strings(v_list, field)
 
 
 class DetailedApproachPlanAgent(BaseAgent[DetailedApproachPlanInput, DetailedApproachPlanOutput]):
-    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, output_language: str = "en-US", **kwargs):
         super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
+        self.output_language = output_language
         # Logger is already initialized in BaseAgent as self.logger
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
@@ -94,66 +95,66 @@ class DetailedApproachPlanAgent(BaseAgent[DetailedApproachPlanInput, DetailedApp
             tr_lead_analysis = self._truncate_text(input_data.lead_analysis, int(available_chars_for_inputs * 0.20))
             tr_persona_profile = self._truncate_text(input_data.persona_profile, int(available_chars_for_inputs * 0.20))
 
-            # Refined prompt
+            # Refined prompt, now in English
             prompt_template = """
-                Você é um Estrategista de Contas Sênior e Coach de Vendas B2B, especializado em criar planos de engajamento multi-etapa acionáveis e eficazes, com foco no mercado brasileiro.
-                Sua tarefa é expandir o "Plano de Ação Final Sintetizado" fornecido em um "Plano de Abordagem Detalhado" que uma equipe de vendas possa executar.
+                You are a Senior Account Strategist and B2B Sales Coach, specializing in creating actionable and effective multi-step engagement plans, with a focus on the target market (e.g., Brazilian market).
+                Your task is to expand the provided "Synthesized Final Action Plan" into a "Detailed Approach Plan" that a sales team can execute.
 
-                PLANO DE AÇÃO FINAL SINTETIZADO (Estratégia de Alto Nível):
+                SYNTHESIZED FINAL ACTION PLAN (High-Level Strategy):
                 \"\"\"
                 {final_action_plan_text}
                 \"\"\"
 
-                INFORMAÇÕES DE CONTEXTO ADICIONAIS SOBRE O LEAD:
-                - Análise do Lead: {lead_analysis}
-                - Perfil da Persona Alvo: {persona_profile}
-                - Pontos de Dor Aprofundados (incluindo perguntas investigativas): {deepened_pain_points}
-                - Produto/Serviço que estamos oferecendo: {product_service_offered}
-                - URL do Lead (para referência): {lead_url}
+                ADDITIONAL CONTEXTUAL INFORMATION ABOUT THE LEAD:
+                - Lead Analysis: {lead_analysis}
+                - Target Persona Profile: {persona_profile}
+                - Deepened Pain Points (including investigative questions): {deepened_pain_points}
+                - Product/Service we are offering: {product_service_offered}
+                - Lead URL (for reference): {lead_url}
 
-                INSTRUÇÕES PARA O PLANO DETALHADO:
-                Com base no "Plano de Ação Final Sintetizado" e em TODAS as informações de contexto, detalhe os seguintes aspectos.
-                O plano deve ser prático, com passos claros e adaptado às nuances de comunicação e negócios no Brasil.
-                Crie uma sequência de contato inicial de 3 a 4 passos.
+                INSTRUCTIONS FOR THE DETAILED PLAN:
+                Based on the "Synthesized Final Action Plan" and ALL contextual information, detail the following aspects.
+                The plan must be practical, with clear steps, and adapted to communication and business nuances of the target market (e.g., Brazil).
+                Create an initial contact sequence of 3 to 4 steps.
 
-                FORMATO DA RESPOSTA:
-                Responda EXCLUSIVAMENTE com um objeto JSON válido, seguindo o schema e as descrições de campo abaixo. Não inclua NENHUM texto, explicação, ou markdown (como ```json) antes ou depois do objeto JSON.
+                RESPONSE FORMAT:
+                Respond EXCLUSIVELY with a valid JSON object, following the schema and field descriptions below. Do NOT include ANY text, explanation, or markdown (like ```json) before or after the JSON object.
 
-                SCHEMA JSON ESPERADO:
+                EXPECTED JSON SCHEMA:
                 {{
-                    "main_objective": "string - Reafirme ou refine o objetivo principal e estratégico desta abordagem completa, derivado do Plano de Ação Final.",
-                    "adapted_elevator_pitch": "string - Crie uma 'mensagem central' ou 'elevator pitch' de 2-3 frases, altamente personalizado para ESTE lead e persona, destacando o benefício mais crucial do '{product_service_offered}'.",
-                    "contact_sequence": [ // Lista detalhando os primeiros 3-4 passos da sequência de contato.
+                    "main_objective": "string - Reaffirm or refine the main strategic objective of this complete approach, derived from the Final Action Plan.",
+                    "adapted_elevator_pitch": "string - Create a 2-3 sentence 'core message' or 'elevator pitch', highly personalized for THIS lead and persona, highlighting the most crucial benefit of '{product_service_offered}'.",
+                    "contact_sequence": [ // List detailing the first 3-4 steps of the contact sequence.
                         {{
-                            "step_number": "integer - O número do passo na sequência (1, 2, 3, ...).",
-                            "channel": "string - Canal de contato para este passo (ex: 'Email Personalizado', 'LinkedIn (Nota de Conexão)', 'Telefone para Follow-up Breve', 'WhatsApp Mensagem Curta').",
-                            "objective": "string - Objetivo específico e mensurável deste passo (ex: 'Obter resposta ao email inicial e validar interesse', 'Agendar uma chamada de descoberta de 15 minutos', 'Confirmar o principal desafio X da persona').",
-                            "key_topics_arguments": ["string", ...], // Lista de 2-3 tópicos ou argumentos chave a serem abordados neste passo, alinhados com o elevator pitch e as dores da persona. Lista vazia [] se não houver tópicos específicos além da mensagem principal.
-                            "key_questions": ["string", ...], // Lista opcional de 1-2 perguntas chave a serem feitas neste passo para engajar, qualificar ou descobrir informações. Lista vazia [] se não aplicável.
-                            "cta": "string - Call to Action (Chamada para Ação) específica e clara para este passo (ex: 'Propor um horário para uma breve conversa de 15 min', 'Pedir para conectar no LinkedIn', 'Perguntar qual o melhor momento para um follow-up rápido').",
-                            "supporting_materials": "string | null" // Opcional: Recurso/material de apoio a ser usado ou mencionado neste passo (ex: 'Link para estudo de caso sobre [problema similar]', 'Artigo do blog sobre [tópico de interesse da persona]', 'Vídeo curto de demonstração'). Use null se não houver.
+                            "step_number": "integer - The step number in the sequence (1, 2, 3, ...).",
+                            "channel": "string - Contact channel for this step (e.g., 'Personalized Email', 'LinkedIn (Connection Note)', 'Brief Follow-up Phone Call', 'Short WhatsApp Message').",
+                            "objective": "string - Specific and measurable objective for this step (e.g., 'Get a response to the initial email and validate interest', 'Schedule a 15-minute discovery call', 'Confirm persona's main challenge X').",
+                            "key_topics_arguments": ["string", ...], // List of 2-3 key topics or arguments to be addressed in this step, aligned with the elevator pitch and persona's pains. Empty list [] if no specific topics beyond the main message.
+                            "key_questions": ["string", ...], // Optional list of 1-2 key questions to ask in this step to engage, qualify, or discover information. Empty list [] if not applicable.
+                            "cta": "string - Specific and clear Call to Action for this step (e.g., 'Propose a time for a brief 15-min conversation', 'Ask to connect on LinkedIn', 'Ask for the best time for a quick follow-up').",
+                            "supporting_materials": "string | null" // Optional: Supporting resource/material to use or mentioned in this step (e.g., 'Link to case study on [similar problem]', 'Blog article on [persona's topic of interest]', 'Short demo video'). Use null if none.
                         }}
                     ],
-                    "engagement_indicators_to_monitor": ["string", ...], // Lista de 2-3 indicadores chave para monitorar o engajamento do lead ao longo da sequência (ex: 'Taxa de abertura e cliques em emails', 'Aceitação de convite no LinkedIn', 'Respostas às mensagens diretas', 'Visitas ao site provenientes de links enviados'). Lista vazia [] se não houver indicadores específicos além de respostas diretas.
-                    "potential_obstacles_attention_points": ["string", ...], // Lista de 2-3 potenciais obstáculos, desafios ou pontos de atenção que a equipe de vendas deve considerar ao executar este plano (ex: 'Lead pode estar extremamente ocupado devido a [evento recente]', 'Possível ceticismo inicial sobre [aspecto da solução]', 'Necessidade de contornar gatekeeper para primeiro contato'). Lista vazia [] se não houver pontos específicos.
-                    "suggested_next_steps_if_successful": ["string", ...] // Lista de 1-2 próximos passos sugeridos caso a sequência inicial de contato seja bem-sucedida e o objetivo principal seja alcançado (ex: 'Agendar demonstração detalhada do produto', 'Preparar proposta personalizada com base na chamada de descoberta', 'Introduzir especialista técnico da nossa equipe'). Lista vazia [] se o plano já cobre isso."
+                    "engagement_indicators_to_monitor": ["string", ...], // List of 2-3 key indicators to monitor lead engagement throughout the sequence (e.g., 'Email open and click-through rates', 'LinkedIn connection acceptance', 'Responses to direct messages', 'Website visits from sent links'). Empty list [] if no specific indicators beyond direct responses.
+                    "potential_obstacles_attention_points": ["string", ...], // List of 2-3 potential obstacles, challenges, or attention points the sales team should consider when executing this plan (e.g., 'Lead might be extremely busy due to [recent event]', 'Possible initial skepticism about [aspect of the solution]', 'Need to bypass gatekeeper for first contact'). Empty list [] if no specific points.
+                    "suggested_next_steps_if_successful": ["string", ...] // List of 1-2 suggested next steps if the initial contact sequence is successful and the main objective is achieved (e.g., 'Schedule detailed product demo', 'Prepare personalized proposal based on discovery call', 'Introduce technical specialist from our team'). Empty list [] if the plan already covers this."
                 }}
             """
 
-            formatted_prompt = prompt_template.format(
+            final_prompt = prompt_template.format(
                 final_action_plan_text=tr_final_action_plan,
                 lead_analysis=tr_lead_analysis,
                 persona_profile=tr_persona_profile,
                 deepened_pain_points=tr_deepened_pain_points,
                 product_service_offered=input_data.product_service_offered,
                 lead_url=input_data.lead_url
-            )
-            self.logger.debug(f"Prompt for {self.name} (length: {len(formatted_prompt)}):\n{formatted_prompt[:1000]}...")
+            ) + f"\n\nImportant: Generate your entire response, including all textual content and string values within any JSON structure, strictly in the following language: {self.output_language}. Do not include any English text unless it is part of the original input data that should be preserved as is."
 
+            self.logger.debug(f"Prompt for {self.name} (length: {len(final_prompt)}):\n{final_prompt[:1000]}...")
 
-            llm_response_str = self.generate_llm_response(formatted_prompt)
+            llm_response_str = self.generate_llm_response(final_prompt, output_language=self.output_language)
 
-            if not llm_response_str:
+            if not llm_response_str: # Already in English
                 self.logger.error(f"LLM call returned no response for {self.name} on lead {input_data.lead_url}")
                 return DetailedApproachPlanOutput(error_message="LLM call returned no response.")
 
@@ -178,74 +179,78 @@ if __name__ == '__main__':
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")
 
-    class MockLLMClient(LLMClientBase):
-        def __init__(self, api_key: str = "mock_key"):
-            super().__init__(api_key)
+    class MockLLMClient(LLMClientBase): # Assuming LLMClientBase is correctly imported/defined
+        def __init__(self, api_key: str = "mock_key", **kwargs):
+            # super().__init__(api_key) # Depends on LLMClientBase
+            self.api_key = api_key
 
-        def generate_text_response(self, prompt: str) -> Optional[str]:
-            logger.debug(f"MockLLMClient received prompt snippet:\n{prompt[:600]}...")
-            # Simulate LLM returning valid JSON based on the refined prompt
+        def generate_text_response(self, prompt: str, output_language: str = "en-US") -> Optional[str]:
+            logger.debug(f"MockLLMClient received prompt (lang: {output_language}):\n{prompt[:700]}...")
+            if f"strictly in the following language: {output_language}" not in prompt:
+                 logger.error(f"Language instruction for '{output_language}' missing in prompt!")
+
+            # Example in English
             return json.dumps({
-                "main_objective": "Iniciar um diálogo consultivo com Carlos Mendes sobre otimização de eficiência na expansão da Empresa Exemplo, visando agendar uma call exploratória de 20 minutos.",
-                "adapted_elevator_pitch": "Com a expansão da Empresa Exemplo, escalar operações eficientemente é vital. Nossas Soluções Incríveis de IA auxiliam empresas de TI como a sua a automatizar processos chave e otimizar recursos, garantindo crescimento sem gargalos operacionais e liberando sua equipe para inovação.",
+                "main_objective": "Initiate a consultative dialogue with Carlos Mendes about optimizing efficiency in Example Inc.'s expansion, aiming to schedule a 20-minute exploratory call.",
+                "adapted_elevator_pitch": "With Example Inc.'s expansion, scaling operations efficiently is vital. Our Incredible AI Solutions help IT companies like yours automate key processes and optimize resources, ensuring growth without operational bottlenecks and freeing up your team for innovation.",
                 "contact_sequence": [
                     {
                         "step_number": 1,
-                        "channel": "Email Personalizado Inicial",
-                        "objective": "Obter uma resposta inicial e demonstrar entendimento dos desafios da Empresa Exemplo.",
+                        "channel": "Personalized Initial Email",
+                        "objective": "Get an initial response and demonstrate understanding of Example Inc.'s challenges.",
                         "key_topics_arguments": [
-                            "Reconhecer a expansão da empresa e seus desafios de escalabilidade.",
-                            "Conectar expansão com desafios de escalabilidade operacional.",
-                            "Mencionar como IA pode otimizar processos (ex: automatizar X, Y, Z)."
+                            "Acknowledge the company's expansion and its scalability challenges.",
+                            "Connect expansion with operational scalability challenges.",
+                            "Mention how AI can optimize processes (e.g., automate X, Y, Z)."
                         ],
                         "key_questions": [
-                            "Carlos, com a recente expansão, como vocês estão priorizando a otimização de processos internos para sustentar esse crescimento?"
+                            "Carlos, with the recent expansion, how are you prioritizing internal process optimization to sustain this growth?"
                         ],
-                        "cta": "Você teria 15-20 minutos na próxima semana para uma breve conversa sobre como podemos ajudar a Empresa Exemplo a navegar por esses desafios de crescimento com mais eficiência?",
-                        "supporting_materials": "Link para um estudo de caso conciso sobre IA para otimização em empresas de TI em expansão."
+                        "cta": "Would you have 15-20 minutes next week for a brief conversation about how we can help Example Inc. navigate these growth challenges more efficiently?",
+                        "supporting_materials": "Link to a concise case study on AI for optimization in expanding IT companies."
                     },
                     {
                         "step_number": 2,
-                        "channel": "LinkedIn (Nota de Conexão)",
-                        "objective": "Estabelecer conexão e reforçar a mensagem inicial de forma mais informal.",
+                        "channel": "LinkedIn (Connection Note)",
+                        "objective": "Establish connection and reinforce the initial message more informally.",
                         "key_topics_arguments": [
-                            "Referência ao email enviado.",
-                            "Breve insight sobre desafios de escalar operações."
+                            "Reference the email sent.",
+                            "Brief insight into challenges of scaling operations."
                         ],
                         "key_questions": [
-                            "Carlos, vi que a Empresa Exemplo está expandindo - parabéns! Muitas empresas nesse estágio encontram desafios em [mencionar um desafio específico de otimização]. Curioso para saber como vocês estão lidando com isso. Enviei um email com algumas ideias, adoraria conectar por aqui também."
+                            "Carlos, I saw Example Inc. is expanding - congratulations! Many companies at this stage face challenges in [mention a specific optimization challenge]. Curious to know how you're handling this. I sent an email with some ideas, would love to connect here too."
                         ],
-                        "cta": "Aceitar o convite de conexão.",
+                        "cta": "Accept the connection request.",
                         "supporting_materials": None
                     },
                     {
                         "step_number": 3,
-                        "channel": "LinkedIn (Mensagem de Follow-up)",
-                        "objective": "Gerar engajamento e oferecer mais valor, caso não haja resposta ao email/convite.",
+                        "channel": "LinkedIn (Follow-up Message)",
+                        "objective": "Generate engagement and offer more value if no response to email/invitation.",
                         "key_topics_arguments": [
-                            "Compartilhar artigo/insight relevante sobre otimização para empresas em expansão.",
-                            "Reiterar a proposta de valor de forma sutil e consultiva."
+                            "Share relevant article/insight on optimization for expanding companies.",
+                            "Subtly reiterate the value proposition in a consultative manner."
                         ],
                         "key_questions": [],
-                        "cta": "Se estiver aberto a uma conversa rápida sobre como Nossas Soluções Incríveis de IA podem endereçar alguns desses pontos, me avise quando seria um bom momento.",
-                        "supporting_materials": "Link para artigo relevante ou insight."
+                        "cta": "If you're open to a quick chat about how Our Incredible AI Solutions can address some of these points, let me know when would be a good time.",
+                        "supporting_materials": "Link to relevant article or insight."
                     }
                 ],
                 "engagement_indicators_to_monitor": [
-                    "Abertura do email inicial e cliques no link do estudo de caso.",
-                    "Aceitação do convite de conexão no LinkedIn.",
-                    "Respostas às mensagens (email ou LinkedIn).",
-                    "Visitas ao site da nossa empresa (se rastreável)."
+                    "Initial email open and click-through rates on case study link.",
+                    "LinkedIn connection acceptance rate.",
+                    "Responses to direct messages (email or LinkedIn).",
+                    "Visits to our company website (if trackable)."
                 ],
                 "potential_obstacles_attention_points": [
-                    "Carlos Mendes pode estar extremamente ocupado devido à expansão.",
-                    "Possível ceticismo em relação ao ROI real da IA ou preocupações com a complexidade da implementação.",
-                    "A empresa pode já ter uma solução interna ou um fornecedor preferido."
+                    "Carlos Mendes might be extremely busy due to the expansion.",
+                    "Possible skepticism regarding the actual ROI of AI or concerns about implementation complexity.",
+                    "The company might already have an in-house solution or a preferred vendor."
                 ],
                 "suggested_next_steps_if_successful": [
-                    "Agendar a call exploratória (15-20 minutos) confirmada.",
-                    "Preparar perguntas específicas para a call com base nas dores e no perfil da persona.",
-                    "Enviar um breve questionário de diagnóstico (1-3 perguntas) antes da call para otimizar o tempo."
+                    "Schedule the confirmed exploratory call (15-20 minutes).",
+                    "Prepare specific questions for the call based on persona pains and profile.",
+                    "Send a brief diagnostic questionnaire (1-3 questions) before the call to optimize time."
                 ]
             })
 
@@ -254,27 +259,29 @@ if __name__ == '__main__':
     agent = DetailedApproachPlanAgent(
         name="TestDetailedApproachPlanAgent",
         description="Test Agent for Detailed Approach Plan",
-        llm_client=mock_llm
+        llm_client=mock_llm,
+        output_language="en-US" # Testing with English
     )
 
-    test_lead_analysis = "Empresa Exemplo (TI, Médio Porte). Foco em otimizar processos de desenvolvimento e QA para suportar expansão LATAM. Recentemente recebeu investimento Série B."
-    test_persona_profile = "Carlos Mendes, Diretor de Operações. Responsável por eficiência operacional e adoção de novas tecnologias. Busca ROI claro e integração facilitada. Comunicação preferencial: email formal, LinkedIn para networking."
+    # Test data in English
+    test_lead_analysis = "Example Inc. (IT, Medium Size). Focus on optimizing development and QA processes to support LATAM expansion. Recently received Series B funding."
+    test_persona_profile = "Carlos Mendes, COO. Responsible for operational efficiency and adoption of new technologies. Seeks clear ROI and easy integration. Preferred communication: formal email, LinkedIn for networking."
     test_deepened_pain_points = json.dumps({
-        "primary_pain_category": "Eficiência Operacional",
-        "detailed_pain_points": [{"pain": "Processos manuais em QA", "impact": "Atrasos nos lançamentos"}],
+        "primary_pain_category": "Operational Efficiency",
+        "detailed_pain_points": [{"pain": "Manual QA processes", "impact": "Release delays"}],
         "urgency_level": "High"
     })
     test_final_action_plan = json.dumps({
-        "recommended_strategy_name": "Eficiência Consultiva com Foco no Impacto da Expansão LATAM",
-        "primary_angle_hook": "Ajudar Carlos Mendes a garantir que a expansão LATAM da Empresa Exemplo seja suportada por operações de desenvolvimento e QA altamente eficientes e escaláveis, utilizando IA.",
-        "key_talking_points": ["Otimização de QA com IA", "ROI da automação em desenvolvimento", "Suporte à expansão LATAM"],
-        "communication_channel_sequence": ["Email Personalizado", "LinkedIn Connection Note", "LinkedIn Follow-up Message"],
-        "tone_of_voice": "Consultivo, focado em resultados e eficiência, respeitoso ao tempo do executivo.",
-        "main_call_to_action": "Agendar uma conversa exploratória de 20 minutos para discutir otimização de QA e Devops com IA.",
-        "opening_question_suggestion": "Carlos, com a recente expansão para LATAM, como a Empresa Exemplo está adaptando seus ciclos de QA e desenvolvimento para garantir velocidade e qualidade?"
+        "recommended_strategy_name": "Consultative Efficiency with Focus on LATAM Expansion Impact",
+        "primary_angle_hook": "Help Carlos Mendes ensure Example Inc.'s LATAM expansion is supported by highly efficient and scalable development and QA operations using AI.",
+        "key_talking_points": ["QA optimization with AI", "ROI of development automation", "Support for LATAM expansion"],
+        "communication_channel_sequence": ["Personalized Email", "LinkedIn Connection Note", "LinkedIn Follow-up Message"],
+        "tone_of_voice": "Consultative, focused on results and efficiency, respectful of executive's time.",
+        "main_call_to_action": "Schedule a 20-minute exploratory call to discuss QA and DevOps optimization with AI.",
+        "opening_question_suggestion": "Carlos, with the recent LATAM expansion, how is Example Inc. adapting its QA and development cycles to ensure speed and quality?"
     })
-    test_product_service = "Nossas Soluções Incríveis de IA para Automação de QA e DevOps"
-    test_lead_url = "http://www.empresaexemplo.com.br"
+    test_product_service = "Our Incredible AI Solutions for QA and DevOps Automation"
+    test_lead_url = "http://www.exampleinc.com" # English example URL
 
     input_data = DetailedApproachPlanInput(
         lead_analysis=test_lead_analysis,
@@ -306,9 +313,9 @@ if __name__ == '__main__':
 
 
     assert output.error_message is None
-    assert "Carlos Mendes" in output.main_objective or "Empresa Exemplo" in output.main_objective
+    assert "Carlos Mendes" in output.main_objective or "Example Inc." in output.main_objective
     assert len(output.contact_sequence) > 0 and output.contact_sequence[0].step_number == 1
-    assert "Nossas Soluções Incríveis de IA" in output.adapted_elevator_pitch
+    assert "Our Incredible AI Solutions" in output.adapted_elevator_pitch
     assert len(output.engagement_indicators_to_monitor) > 0
     assert len(output.potential_obstacles_attention_points) > 0
 

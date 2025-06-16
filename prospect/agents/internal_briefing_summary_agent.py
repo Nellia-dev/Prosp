@@ -11,40 +11,41 @@ GEMINI_TEXT_INPUT_TRUNCATE_CHARS = 180000
 class InternalBriefingSummaryInput(BaseModel):
     all_lead_data: Dict[str, Any] # Dictionary holding all previously generated data
 
-# --- Updated Pydantic Output Models (as per subtask refinement) ---
+# --- Updated Pydantic Output Models (Translated) ---
 class LeadProfileHighlights(BaseModel):
-    company_overview: str = "Visão geral da empresa não fornecida."
-    key_persona_traits: str = "Traços chave da persona não fornecidos."
-    critical_pain_points: List[str] = Field(default_factory=list)
+    company_overview: str = Field(default="Company overview not provided.", description="Brief overview of the lead's company (sector, approximate size, main business/product).")
+    key_persona_traits: str = Field(default="Key persona traits not provided.", description="Key characteristics of the target persona (likely role, key responsibilities, main motivations, preferred communication style).")
+    critical_pain_points: List[str] = Field(default_factory=list, description="List of 2-3 most critical pain points of the persona/company that our solution can address.")
 
 class StrategicApproachSummary(BaseModel):
-    main_objective: str = "Objetivo principal não fornecido."
-    core_value_proposition: str = "Proposição de valor central não fornecida."
-    suggested_communication_channels: List[str] = Field(default_factory=list)
+    main_objective: str = Field(default="Main objective not provided.", description="The primary strategic objective for this specific approach with the lead.")
+    core_value_proposition: str = Field(default="Core value proposition not provided.", description="The most resonant core value proposition for this lead, concisely connecting our solution to their pains/goals.")
+    suggested_communication_channels: List[str] = Field(default_factory=list, description="List of 1-2 most promising communication channels for this persona (e.g., 'Email', 'LinkedIn').")
 
 class EngagementPlanOverview(BaseModel):
-    first_step_action: str = "Primeiro passo não fornecido."
-    key_talking_points_initial: List[str] = Field(default_factory=list)
+    first_step_action: str = Field(default="First step not provided.", description="Concrete action and description of the recommended first step in the contact plan.")
+    key_talking_points_initial: List[str] = Field(default_factory=list, description="List of 2-3 key talking points for the initial interaction, derived from value proposition and pain points.")
 
 class ObjectionResponsePair(BaseModel):
-    objection: str = "Objeção não especificada."
-    suggested_response: str = "Resposta não sugerida."
+    objection: str = Field(default="Objection not specified.", description="Potential objection (e.g., 'We already have a similar solution', 'We don't have budget right now').")
+    suggested_response: str = Field(default="Response not suggested.", description="Concise and strategic suggested response to the objection.")
 
 class InternalBriefingSummaryOutput(BaseModel):
-    executive_summary: str = "Resumo executivo não fornecido."
-    lead_profile_highlights: LeadProfileHighlights = Field(default_factory=LeadProfileHighlights)
-    strategic_approach_summary: StrategicApproachSummary = Field(default_factory=StrategicApproachSummary)
-    engagement_plan_overview: EngagementPlanOverview = Field(default_factory=EngagementPlanOverview)
-    potential_objections_and_responses: List[ObjectionResponsePair] = Field(default_factory=list)
-    key_discussion_points_for_sales_exec: List[str] = Field(default_factory=list)
-    suggested_next_steps_internal: List[str] = Field(default_factory=list)
-    final_recommendation_notes: Optional[str] = "Nenhuma nota final específica."
-    error_message: Optional[str] = None
+    executive_summary: str = Field(default="Executive summary not provided.", description="An impactful 2-3 sentence executive summary of the lead and opportunity, highlighting the main reason for engagement.")
+    lead_profile_highlights: LeadProfileHighlights = Field(default_factory=LeadProfileHighlights, description="Highlights of the lead's profile.")
+    strategic_approach_summary: StrategicApproachSummary = Field(default_factory=StrategicApproachSummary, description="Summary of the strategic approach.")
+    engagement_plan_overview: EngagementPlanOverview = Field(default_factory=EngagementPlanOverview, description="Overview of the engagement plan.")
+    potential_objections_and_responses: List[ObjectionResponsePair] = Field(default_factory=list, description="List of 1-2 most likely objections and suggested responses.")
+    key_discussion_points_for_sales_exec: List[str] = Field(default_factory=list, description="List of 2-3 crucial questions or points the sales executive should address or investigate during conversations.")
+    suggested_next_steps_internal: List[str] = Field(default_factory=list, description="List of 1-2 internal next steps for the sales team BEFORE contact or as PREPARATION.")
+    final_recommendation_notes: Optional[str] = Field(default="No specific final notes.", description="Any important final notes, additional strategic recommendations, or alerts for the sales team.")
+    error_message: Optional[str] = Field(default=None)
 # --- End of Updated Pydantic Output Models ---
 
 class InternalBriefingSummaryAgent(BaseAgent[InternalBriefingSummaryInput, InternalBriefingSummaryOutput]):
-    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, output_language: str = "en-US", **kwargs):
         super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
+        self.output_language = output_language
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -109,61 +110,62 @@ class InternalBriefingSummaryAgent(BaseAgent[InternalBriefingSummaryInput, Inter
                 GEMINI_TEXT_INPUT_TRUNCATE_CHARS - prompt_instructions_overhead
             )
 
-            # Refined prompt_template based on the new Pydantic models
+            # Refined prompt_template based on the new Pydantic models, now in English
             prompt_template = """
-                Você é um Gerente de Sales Enablement e Estrategista de Contas Sênior, expert em criar briefings internos concisos, estratégicos e acionáveis para preparar executivos de vendas B2B para interações de alto impacto, especialmente no mercado brasileiro.
-                Sua tarefa é analisar o extenso compilado de dados sobre um lead e sintetizá-lo em um "Briefing Interno Estratégico" em formato JSON.
+                You are a Sales Enablement Manager and Senior Account Strategist, an expert in creating concise, strategic, and actionable internal briefings to prepare B2B sales executives for high-impact interactions, especially in the target market (e.g., Brazilian market).
+                Your task is to analyze the extensive compiled data about a lead and synthesize it into a "Strategic Internal Briefing" in JSON format.
 
-                DADOS COMPLETOS DO LEAD (organizados por seção, extraídos de análises anteriores):
+                COMPLETE LEAD DATA (organized by section, extracted from previous analyses):
                 \"\"\"
                 {all_lead_data_formatted_str}
                 \"\"\"
 
-                INSTRUÇÕES PARA CRIAÇÃO DO BRIEFING:
-                Com base em TODOS os dados fornecidos acima, gere um briefing que arme o executivo de vendas com o conhecimento essencial e um plano claro.
-                Seja conciso em cada campo, mas garanta que as informações críticas sejam destacadas.
-                Adapte a linguagem e as sugestões para o contexto de negócios brasileiro, se aplicável com base nos dados.
+                INSTRUCTIONS FOR BRIEFING CREATION:
+                Based on ALL the data provided above, generate a briefing that equips the sales executive with essential knowledge and a clear plan.
+                Be concise in each field, but ensure critical information is highlighted.
+                Adapt language and suggestions for the business context of the target market (e.g., Brazil), if applicable based on the data.
 
-                FORMATO DA RESPOSTA:
-                Responda EXCLUSIVAMENTE com um objeto JSON válido, seguindo o schema e as descrições de campo abaixo. Não inclua NENHUM texto, explicação, ou markdown (como ```json) antes ou depois do objeto JSON.
+                RESPONSE FORMAT:
+                Respond EXCLUSIVELY with a valid JSON object, following the schema and field descriptions below. Do NOT include ANY text, explanation, or markdown (like ```json) before or after the JSON object.
 
-                SCHEMA JSON ESPERADO:
+                EXPECTED JSON SCHEMA:
                 {{
-                  "executive_summary": "string - Um resumo executivo do lead e da oportunidade em 2-3 frases impactantes, destacando a principal razão para o engajamento.",
+                  "executive_summary": "string - An executive summary of the lead and opportunity in 2-3 impactful sentences, highlighting the main reason for engagement.",
                   "lead_profile_highlights": {{
-                    "company_overview": "string - Breve visão geral da empresa do lead (setor, tamanho aproximado, principal negócio/produto).",
-                    "key_persona_traits": "string - Principais características da persona alvo (cargo provável, responsabilidades chave, motivações principais, estilo de comunicação preferido).",
-                    "critical_pain_points": ["string", ...] // Lista dos 2-3 pontos de dor mais críticos da persona/empresa que nossa solução parece poder resolver, com base na análise. Lista vazia [] se não claro.
+                    "company_overview": "string - Brief overview of the lead's company (sector, approximate size, main business/product).",
+                    "key_persona_traits": "string - Key characteristics of the target persona (likely role, key responsibilities, main motivations, preferred communication style).",
+                    "critical_pain_points": ["string", ...] // List of 2-3 most critical pain points of the persona/company that our solution seems able to solve, based on analysis. Empty list [] if not clear.
                   }},
                   "strategic_approach_summary": {{
-                    "main_objective": "string - O objetivo principal e mais estratégico para esta abordagem específica com o lead.",
-                    "core_value_proposition": "string - A proposição de valor central e mais ressonante para este lead, conectando nossa solução às suas dores/objetivos de forma concisa.",
-                    "suggested_communication_channels": ["string", ...] // Lista dos 1-2 canais de comunicação mais promissores para esta persona (ex: 'Email', 'LinkedIn'). Lista vazia [] se não claro.
+                    "main_objective": "string - The main and most strategic objective for this specific approach with the lead.",
+                    "core_value_proposition": "string - The most resonant core value proposition for this lead, concisely connecting our solution to their pains/goals.",
+                    "suggested_communication_channels": ["string", ...] // List of 1-2 most promising communication channels for this persona (e.g., 'Email', 'LinkedIn'). Empty list [] if not clear.
                   }},
                   "engagement_plan_overview": {{
-                     "first_step_action": "string - Ação concreta e descrição do primeiro passo recomendado no plano de contato (ex: 'Enviar email personalizado focando em [dor X] com CTA para call de 15 min').",
-                     "key_talking_points_initial": ["string", ...] // Lista de 2-3 pontos de discussão chave para a interação inicial, derivados da proposta de valor e dores. Lista vazia [] se não houver.
+                     "first_step_action": "string - Concrete action and description of the recommended first step in the contact plan (e.g., 'Send personalized email focusing on [pain X] with CTA for a 15-min call').",
+                     "key_talking_points_initial": ["string", ...] // List of 2-3 key talking points for the initial interaction, derived from value proposition and pain points. Empty list [] if none.
                   }},
-                  "potential_objections_and_responses": [ // Lista de 1-2 objeções mais prováveis e respostas sugeridas. Lista vazia [] se não houver objeções óbvias.
+                  "potential_objections_and_responses": [ // List of 1-2 most likely objections and suggested responses. Empty list [] if no obvious objections.
                     {{
-                      "objection": "string - Objeção potencial (ex: 'Já temos uma solução similar', 'Não temos orçamento no momento').",
-                      "suggested_response": "string - Resposta concisa e estratégica sugerida para a objeção."
+                      "objection": "string - Potential objection (e.g., 'We already have a similar solution', 'We don't have budget right now').",
+                      "suggested_response": "string - Concise and strategic suggested response to the objection."
                     }}
                   ],
-                  "key_discussion_points_for_sales_exec": ["string", ...], // Lista de 2-3 perguntas ou pontos cruciais que o executivo de vendas deve abordar ou investigar durante as conversas para aprofundar o entendimento. Lista vazia [] se não houver.
-                  "suggested_next_steps_internal": ["string", ...], // Lista de 1-2 próximos passos internos para a equipe de vendas ANTES do contato ou como PREPARAÇÃO (ex: 'Pesquisar conexões em comum com o decisor no LinkedIn', 'Revisar o case de sucesso da Empresa Y'). Lista vazia [] se não houver.
-                  "final_recommendation_notes": "string | null" // Quaisquer notas finais importantes, recomendações estratégicas adicionais ou alertas para a equipe de vendas. Use null se não houver.
+                  "key_discussion_points_for_sales_exec": ["string", ...], // List of 2-3 crucial questions or points the sales executive should address or investigate during conversations to deepen understanding. Empty list [] if none.
+                  "suggested_next_steps_internal": ["string", ...], // List of 1-2 internal next steps for the sales team BEFORE contact or as PREPARATION (e.g., 'Research common connections with the decision-maker on LinkedIn', 'Review the Company Y success case'). Empty list [] if none.
+                  "final_recommendation_notes": "string | null" // Any important final notes, additional strategic recommendations, or alerts for the sales team. Use null if none.
                 }}
             """
 
-            formatted_prompt = prompt_template.format(
+            final_prompt = prompt_template.format(
                 all_lead_data_formatted_str=lead_data_for_prompt_str
-            )
-            self.logger.debug(f"Prompt for {self.name} (length: {len(formatted_prompt)}):\n{formatted_prompt[:1000]}...")
+            ) + f"\n\nImportant: Generate your entire response, including all textual content and string values within any JSON structure, strictly in the following language: {self.output_language}. Do not include any English text unless it is part of the original input data that should be preserved as is."
 
-            llm_response_str = self.generate_llm_response(formatted_prompt)
+            self.logger.debug(f"Prompt for {self.name} (length: {len(final_prompt)}):\n{final_prompt[:1000]}...")
 
-            if not llm_response_str:
+            llm_response_str = self.generate_llm_response(final_prompt, output_language=self.output_language)
+
+            if not llm_response_str: # Already in English
                 self.logger.error(f"❌ LLM call returned no response for {self.name}")
                 return InternalBriefingSummaryOutput(error_message="LLM call returned no response.")
 
@@ -187,49 +189,53 @@ if __name__ == '__main__':
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")
 
-    class MockLLMClient(LLMClientBase):
-        def __init__(self, api_key: str = "mock_key"):
-            super().__init__(api_key)
+    class MockLLMClient(LLMClientBase): # Assuming LLMClientBase is correctly imported/defined
+        def __init__(self, api_key: str = "mock_key", **kwargs):
+            # super().__init__(api_key) # Depends on LLMClientBase
+            self.api_key = api_key
 
-        def generate_text_response(self, prompt: str) -> Optional[str]:
-            logger.debug(f"MockLLMClient received prompt snippet:\n{prompt[:600]}...")
-            # Simulate LLM returning valid JSON based on the refined prompt and new model
+        def generate_text_response(self, prompt: str, output_language: str = "en-US") -> Optional[str]:
+            logger.debug(f"MockLLMClient received prompt (lang: {output_language}):\n{prompt[:700]}...")
+            if f"strictly in the following language: {output_language}" not in prompt:
+                 logger.error(f"Language instruction for '{output_language}' missing in prompt!")
+
+            # Example in English
             return json.dumps({
-                "executive_summary": "Empresa Exemplo (TI, Médio Porte) apresenta alta sinergia com Nossas Soluções de IA, especialmente devido à sua expansão LATAM e foco em otimizar operações. O Diretor de Operações, Carlos Mendes, é o contato chave.",
+                "executive_summary": "Example Inc. (IT, Medium Size) shows high synergy with Our AI Solutions, especially due to its LATAM expansion and focus on optimizing operations. The COO, Carlos Mendes, is the key contact.",
                 "lead_profile_highlights": {
-                    "company_overview": "Empresa Exemplo é uma empresa de TI de médio porte, focada em SaaS para gestão de projetos, atualmente expandindo para a América Latina. Busca modernizar sua tecnologia.",
-                    "key_persona_traits": "Carlos Mendes (Dir. Operações) valoriza ROI, eficiência e integração fácil. Comunica-se formalmente via email/LinkedIn.",
-                    "critical_pain_points": ["Escalabilidade de processos manuais de QA durante expansão.", "Necessidade de modernização tecnológica sem disrupção."]
+                    "company_overview": "Example Inc. is a medium-sized IT company, focused on SaaS for project management, currently expanding to Latin America. Seeks to modernize its technology.",
+                    "key_persona_traits": "Carlos Mendes (COO) values ROI, efficiency, and easy integration. Communicates formally via email/LinkedIn.",
+                    "critical_pain_points": ["Scalability of manual QA processes during expansion.", "Need for technological modernization without disruption."]
                 },
                 "strategic_approach_summary": {
-                    "main_objective": "Agendar uma conversa exploratória de 20 minutos com Carlos Mendes para discutir otimização de QA e DevOps com IA no contexto da expansão LATAM.",
-                    "core_value_proposition": "Nossas Soluções de IA para Automação de QA e DevOps podem ajudar a Empresa Exemplo a escalar suas operações LATAM eficientemente, garantindo qualidade e velocidade sem sobrecarregar a equipe.",
-                    "suggested_communication_channels": ["Email Personalizado", "LinkedIn"]
+                    "main_objective": "Schedule a 20-minute exploratory call with Carlos Mendes to discuss QA and DevOps optimization with AI in the context of LATAM expansion.",
+                    "core_value_proposition": "Our AI Solutions for QA and DevOps Automation can help Example Inc. scale its LATAM operations efficiently, ensuring quality and speed without overburdening the team.",
+                    "suggested_communication_channels": ["Personalized Email", "LinkedIn"]
                 },
                 "engagement_plan_overview": {
-                    "first_step_action": "Enviar email personalizado para Carlos Mendes focado nos desafios da expansão e otimização de QA, com CTA para uma call de 20 min.",
-                    "key_talking_points_initial": ["Impacto da expansão LATAM na eficiência de QA", "Benefícios da automação de QA com IA", "Cases de sucesso similares"]
+                    "first_step_action": "Send a personalized email to Carlos Mendes focusing on expansion challenges and QA optimization, with a CTA for a 20-min call.",
+                    "key_talking_points_initial": ["Impact of LATAM expansion on QA efficiency", "Benefits of QA automation with AI", "Similar success cases"]
                 },
                 "potential_objections_and_responses": [
                     {
-                        "objection": "Já temos uma solução de QA ou estamos desenvolvendo internamente.",
-                        "suggested_response": "Entendo. Muitas empresas buscam complementar suas iniciativas atuais para acelerar resultados. Nossa IA pode se integrar ou oferecer uma nova perspectiva para gargalos específicos. Poderíamos explorar como?"
+                        "objection": "We already have a QA solution or are developing one internally.",
+                        "suggested_response": "I understand. Many companies look to complement their current initiatives to accelerate results. Our AI can integrate or offer a new perspective on specific bottlenecks. Could we explore how?"
                     },
                     {
-                        "objection": "Não temos orçamento para novas ferramentas agora.",
-                        "suggested_response": "Compreensível, especialmente durante uma expansão. Nosso foco é justamente em otimizar custos e gerar ROI. Uma conversa rápida poderia nos ajudar a identificar o potencial de economia para a Empresa Exemplo?"
+                        "objection": "We don't have a budget for new tools right now.",
+                        "suggested_response": "Comprehensible, especially during an expansion. Our focus is precisely on optimizing costs and generating ROI. Could a quick conversation help us identify potential savings for Example Inc.?"
                     }
                 ],
                 "key_discussion_points_for_sales_exec": [
-                    "Quais são os maiores gargalos atuais nos ciclos de QA da Empresa Exemplo com a expansão?",
-                    "Como a Empresa Exemplo mede o sucesso da eficiência operacional em DevOps?",
-                    "Quais são as prioridades de Carlos Mendes para os próximos 6 meses em relação à tecnologia e operações?"
+                    "What are the current biggest bottlenecks in Example Inc.'s QA cycles with the expansion?",
+                    "How does Example Inc. measure the success of operational efficiency in DevOps?",
+                    "What are Carlos Mendes's priorities for the next 6 months regarding technology and operations?"
                 ],
                 "suggested_next_steps_internal": [
-                    "Pesquisar conexões de 2º grau com Carlos Mendes no LinkedIn.",
-                    "Revisar o case de sucesso da 'GlobalTech' que teve expansão similar."
+                    "Research 2nd-degree connections with Carlos Mendes on LinkedIn.",
+                    "Review the 'GlobalTech' success case, which had a similar expansion."
                 ],
-                "final_recommendation_notes": "Focar a abordagem no impacto da expansão e na experiência de Carlos com otimização. Ser consultivo e focado em ROI."
+                "final_recommendation_notes": "Focus the approach on the impact of expansion and Carlos's experience with optimization. Be consultative and ROI-focused."
             })
 
     logger.info("Running mock test for InternalBriefingSummaryAgent...")
@@ -237,22 +243,23 @@ if __name__ == '__main__':
     agent = InternalBriefingSummaryAgent(
         name="TestInternalBriefingAgent",
         description="Test Agent for Internal Briefing Summary",
-        llm_client=mock_llm
+        llm_client=mock_llm,
+        output_language="en-US" # Testing with English
     )
 
+    # Test data in English
     test_all_lead_data = {
-        "company_name": "Empresa Exemplo",
-        "lead_url": "http://www.empresaexemplo.com.br",
-        "product_service_context": "Nossas Soluções de IA para Automação de QA e DevOps", # User's product
-        "lead_analysis": {"company_sector": "TI", "company_size_estimate": "Médio Porte", "main_services": ["SaaS para gestão de projetos"], "potential_challenges": ["escalabilidade", "modernização tecnológica"], "general_diagnosis": "Empresa em expansão LATAM."},
-        "persona_profile": {"fictional_name": "Carlos Mendes", "likely_role": "Diretor de Operações", "key_responsibilities": ["eficiência operacional"], "motivations": ["ROI claro", "integração fácil"]},
-        "deepened_pain_points": {"primary_pain_category": "Eficiência Operacional em Expansão", "detailed_pain_points": [{"pain": "Processos manuais em QA", "impact": "Atrasos"}]},
-        "final_action_plan_text": {"recommended_strategy_name": "Eficiência Consultiva", "main_call_to_action": "Agendar call de 20 min"},
-        "customized_value_propositions_text": [{"proposition_title": "Escalabilidade com IA", "detailed_explanation": "Ajuda na expansão LATAM."}],
-        "objection_handling_strategies": [{"objection": "Custo", "response_strategy": "Focar em ROI."}],
-        "detailed_approach_plan": {"main_objective": "Agendar call", "contact_sequence": [{"step_number": 1, "channel": "Email", "objective": "Introdução"}]},
-        "personalized_message_draft": {"crafted_message_channel": "Email", "crafted_message_subject": "Otimizando QA na Empresa Exemplo", "crafted_message_body": "Olá Carlos..."},
-        # Simplified for brevity, a real one would have more fields from EnhancedStrategy
+        "company_name": "Example Inc.",
+        "lead_url": "http://www.exampleinc.com",
+        "product_service_context": "Our AI Solutions for QA and DevOps Automation",
+        "lead_analysis": {"company_sector": "IT", "company_size_estimate": "Medium Size", "main_services": ["SaaS for project management"], "potential_challenges": ["scalability", "technological modernization"], "general_diagnosis": "Company expanding into LATAM."},
+        "persona_profile": {"fictional_name": "Carlos Mendes", "likely_role": "COO", "key_responsibilities": ["operational efficiency"], "motivations": ["clear ROI", "easy integration"]},
+        "deepened_pain_points": {"primary_pain_category": "Operational Efficiency in Expansion", "detailed_pain_points": [{"pain": "Manual QA processes", "impact": "Delays"}]},
+        "final_action_plan_text": {"recommended_strategy_name": "Consultative Efficiency", "main_call_to_action": "Schedule 20-min call"},
+        "customized_value_propositions_text": [{"proposition_title": "Scalability with AI", "detailed_explanation": "Helps with LATAM expansion."}],
+        "objection_handling_strategies": [{"objection": "Cost", "response_strategy": "Focus on ROI."}],
+        "detailed_approach_plan": {"main_objective": "Schedule call", "contact_sequence": [{"step_number": 1, "channel": "Email", "objective": "Introduction"}]},
+        "personalized_message_draft": {"crafted_message_channel": "Email", "crafted_message_subject": "Optimizing QA at Example Inc.", "crafted_message_body": "Hello Carlos..."},
     }
 
     input_data = InternalBriefingSummaryInput(all_lead_data=test_all_lead_data)
@@ -263,12 +270,12 @@ if __name__ == '__main__':
     else:
         logger.success("InternalBriefingSummaryAgent processed successfully.")
         logger.info(f"Executive Summary: {output.executive_summary}")
-        logger.info(f"Lead Overview Title: {output.lead_profile_highlights.company_overview}") # Accessing nested field
+        logger.info(f"Lead Overview Title: {output.lead_profile_highlights.company_overview}")
         logger.info(f"Strategic Approach Objective: {output.strategic_approach_summary.main_objective}")
-        assert "Empresa Exemplo" in output.executive_summary
+        assert "Example Inc." in output.executive_summary # English
         assert "Carlos Mendes" in output.lead_profile_highlights.key_persona_traits
         assert len(output.potential_objections_and_responses) > 0
-        assert output.final_recommendation_notes is not None
+        assert output.final_recommendation_notes is not None and "ROI-focused" in output.final_recommendation_notes
 
     assert output.error_message is None
     logger.info("\nMock test for InternalBriefingSummaryAgent completed successfully.")

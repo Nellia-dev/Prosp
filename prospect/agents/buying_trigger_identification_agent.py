@@ -14,17 +14,18 @@ class BuyingTriggerIdentificationInput(BaseModel):
     product_service_offered: str # The user's product/service for context
 
 class IdentifiedTrigger(BaseModel):
-    trigger_description: str
-    relevance_explanation: str # Why it's a trigger for the product/service
+    trigger_description: str = Field(..., description="Clear and concise description of the identified buying trigger.")
+    relevance_explanation: str = Field(..., description="Explanation of why this trigger is relevant for the offered product/service.")
 
 class BuyingTriggerIdentificationOutput(BaseModel):
-    identified_triggers: List[IdentifiedTrigger] = Field(default_factory=list)
-    other_observations: Optional[str] = None # For any general observations from the text
-    error_message: Optional[str] = None
+    identified_triggers: List[IdentifiedTrigger] = Field(default_factory=list, description="List of identified buying triggers.")
+    other_observations: Optional[str] = Field(default=None, description="General pertinent observations about the company or market not qualifying as direct triggers.")
+    error_message: Optional[str] = Field(default=None)
 
 class BuyingTriggerIdentificationAgent(BaseAgent[BuyingTriggerIdentificationInput, BuyingTriggerIdentificationOutput]):
-    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, output_language: str = "en-US", **kwargs):
         super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
+        self.output_language = output_language
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -42,60 +43,60 @@ class BuyingTriggerIdentificationAgent(BaseAgent[BuyingTriggerIdentificationInpu
             truncated_lead_data = self._truncate_text(input_data.lead_data_str, char_limit_lead_data)
             truncated_enriched_data = self._truncate_text(input_data.enriched_data, char_limit_enriched_data)
 
-            # Refined prompt_template
+            # Refined prompt_template, now in English
             prompt_template = """
-                Você é um Analista de Inteligência de Mercado e Estrategista de Vendas B2B, um detetive corporativo expert em identificar 'janelas de oportunidade' através de sinais de compra.
-                Sua missão é analisar os dados fornecidos sobre um lead e identificar eventos ou circunstâncias (gatilhos de compra) que sugiram que a empresa possa estar receptiva ou necessitando de soluções como a nossa: "{product_service_offered}".
+                You are a Market Intelligence Analyst and B2B Sales Strategist, a corporate detective expert in identifying 'windows of opportunity' through buying signals.
+                Your mission is to analyze the provided data about a lead and identify events or circumstances (buying triggers) that suggest the company might be receptive to or in need of solutions like ours: "{product_service_offered}".
 
-                DADOS DO LEAD (informações estruturadas sobre a empresa):
+                LEAD DATA (structured information about the company):
                 ```json
                 {lead_data_str}
                 ```
 
-                DADOS ENRIQUECIDOS (notícias recentes, comunicados de imprensa, mudanças organizacionais, etc.):
+                ENRICHED DATA (recent news, press releases, organizational changes, etc.):
                 \"\"\"
                 {enriched_data}
                 \"\"\"
 
-                NOSSO PRODUTO/SERVIÇO (para o qual estamos buscando oportunidades):
+                OUR PRODUCT/SERVICE (for which we are seeking opportunities):
                 "{product_service_offered}"
 
-                INSTRUÇÕES DETALHADAS:
-                1.  Analise CUIDADOSAMENTE todas as informações (Dados do Lead e Dados Enriquecidos).
-                2.  Identifique gatilhos de compra. Gatilhos são eventos, mudanças, ou declarações que indicam uma potencial necessidade, problema a ser resolvido, ou uma nova iniciativa onde nosso produto/serviço seria relevante. Exemplos comuns incluem:
-                    -   Mudanças recentes na liderança executiva (novos C-levels, VPs, Diretores em áreas chave).
-                    -   Anúncios de expansão de negócios, lançamento de novos produtos/serviços, ou entrada em novos mercados geográficos.
-                    -   Rodadas de investimento significativas (Seed, Série A, B, C, etc.) ou aquisições.
-                    -   Menções explícitas nos dados a desafios, problemas ou objetivos que nosso "{product_service_offered}" pode endereçar (ex: "buscando otimizar processos de vendas", "precisamos melhorar a eficiência da equipe de marketing digital", "foco em transformação digital").
-                    -   Aumento significativo de contratações em áreas específicas que se beneficiariam do nosso produto/serviço.
-                    -   Fusões ou aquisições (tanto da empresa alvo quanto de seus concorrentes).
-                    -   Menções a problemas com soluções atuais, contratos expirando, ou um desejo claro de modernização tecnológica ou processual.
-                3.  Para cada gatilho identificado, forneça uma descrição clara e uma explicação concisa de sua relevância. A `relevance_explanation` deve conectar sucintamente o gatilho a uma possível necessidade ou problema que nosso "{product_service_offered}" pode resolver para esta empresa específica.
+                DETAILED INSTRUCTIONS:
+                1.  CAREFULLY analyze all information (Lead Data and Enriched Data).
+                2.  Identify buying triggers. Triggers are events, changes, or statements indicating a potential need, problem to be solved, or a new initiative where our product/service would be relevant. Common examples include:
+                    -   Recent changes in executive leadership (new C-levels, VPs, Directors in key areas).
+                    -   Announcements of business expansion, new product/service launches, or entry into new geographic markets.
+                    -   Significant investment rounds (Seed, Series A, B, C, etc.) or acquisitions.
+                    -   Explicit mentions in the data of challenges, problems, or objectives that our "{product_service_offered}" can address (e.g., "seeking to optimize sales processes," "need to improve digital marketing team efficiency," "focus on digital transformation").
+                    -   Significant increase in hiring in specific areas that would benefit from our product/service.
+                    -   Mergers or acquisitions (of both the target company and its competitors).
+                    -   Mentions of problems with current solutions, expiring contracts, or a clear desire for technological or procedural modernization.
+                3.  For each identified trigger, provide a clear description and a concise explanation of its relevance. The `relevance_explanation` should succinctly connect the trigger to a possible need or problem that our "{product_service_offered}" can solve for this specific company.
 
-                FORMATO DA RESPOSTA:
-                Responda EXCLUSIVAMENTE com um objeto JSON válido, seguindo o schema abaixo. Não inclua NENHUM texto, explicação, ou markdown (como ```json) antes ou depois do objeto JSON.
+                RESPONSE FORMAT:
+                Respond EXCLUSIVELY with a valid JSON object, following the schema below. Do NOT include ANY text, explanation, or markdown (like ```json) before or after the JSON object.
 
-                SCHEMA JSON ESPERADO:
+                EXPECTED JSON SCHEMA:
                 {{
-                    "identified_triggers": [  // Lista de objetos, um para cada gatilho. Se nenhum gatilho for encontrado, retorne uma lista vazia [].
+                    "identified_triggers": [  // List of objects, one for each trigger. If no triggers are found, return an empty list [].
                         {{
-                            "trigger_description": "string - Descrição clara e concisa do gatilho identificado (ex: 'Nova rodada de investimento Série B anunciada em [data]', 'Contratação de novo VP de Marketing com foco em crescimento digital', 'Menção no relatório anual sobre foco em otimização de custos operacionais').",
-                            "relevance_explanation": "string - Explicação concisa (1-2 frases) de por que este gatilho específico é relevante para o nosso '{product_service_offered}', indicando uma possível necessidade ou oportunidade."
+                            "trigger_description": "string - Clear and concise description of the identified trigger (e.g., 'New Series B investment round announced on [date]', 'Hiring of new VP of Marketing focused on digital growth', 'Mention in annual report about focus on optimizing operational costs').",
+                            "relevance_explanation": "string - Concise explanation (1-2 sentences) of why this specific trigger is relevant for our '{product_service_offered}', indicating a possible need or opportunity."
                         }}
                     ],
-                    "other_observations": "string | null - Observações gerais pertinentes sobre a empresa ou o mercado que não se qualificam como gatilhos diretos, mas podem ser úteis. Se não houver, use null ou uma string como 'Nenhuma observação adicional relevante.'."
+                    "other_observations": "string | null - General pertinent observations about the company or market that do not qualify as direct triggers but might be useful. If none, use null or a string like 'No additional relevant observations.'."
                 }}
             """
 
-            formatted_prompt = prompt_template.format(
+            final_prompt = prompt_template.format(
                 lead_data_str=truncated_lead_data,
                 enriched_data=truncated_enriched_data,
                 product_service_offered=input_data.product_service_offered
-            )
+            ) + f"\n\nImportant: Generate your entire response, including all textual content and string values within any JSON structure, strictly in the following language: {self.output_language}. Do not include any English text unless it is part of the original input data that should be preserved as is."
 
-            llm_response_str = self.generate_llm_response(formatted_prompt)
+            llm_response_str = self.generate_llm_response(final_prompt, output_language=self.output_language)
 
-            if not llm_response_str:
+            if not llm_response_str: # Already in English
                 return BuyingTriggerIdentificationOutput(error_message="LLM call returned no response.")
 
             # parse_llm_json_response should ideally handle Pydantic validation internally
@@ -135,29 +136,34 @@ if __name__ == '__main__':
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")
 
-    class MockLLMClient(LLMClientBase):
-        def __init__(self, api_key: str = "mock_key"):
-            super().__init__(api_key)
+    class MockLLMClient(LLMClientBase): # Assuming LLMClientBase is correctly imported/defined
+        def __init__(self, api_key: str = "mock_key", **kwargs):
+            # super().__init__(api_key) # Depends on LLMClientBase
+            self.api_key = api_key
 
-        def generate_text_response(self, prompt: str) -> Optional[str]:
-            logger.debug(f"MockLLMClient received prompt snippet:\n{prompt[:500]}...")
-            # Simulate LLM returning valid JSON based on the refined prompt
+
+        def generate_text_response(self, prompt: str, output_language: str = "en-US") -> Optional[str]:
+            logger.debug(f"MockLLMClient received prompt (lang: {output_language}):\n{prompt[:600]}...")
+            if f"strictly in the following language: {output_language}" not in prompt:
+                 logger.error(f"Language instruction for '{output_language}' missing in prompt!")
+
+            # Simulate LLM returning valid JSON based on the refined prompt (English example)
             return json.dumps({
                 "identified_triggers": [
                     {
-                        "trigger_description": "Anúncio de Expansão de Mercado para LATAM (Dados Enriquecidos)",
-                        "relevance_explanation": "A expansão para novos mercados frequentemente requer otimização de processos e novas ferramentas para escalar operações, o que Nossas Soluções Incríveis podem fornecer."
+                        "trigger_description": "Market Expansion Announcement to LATAM (Enriched Data)",
+                        "relevance_explanation": "Expansion into new markets often requires process optimization and new tools to scale operations, which Our Incredible Solutions can provide."
                     },
                     {
-                        "trigger_description": "Menção a 'otimizar processos internos' e 'modernizar sua pilha de tecnologia' (Dados do Lead e Enriquecidos)",
-                        "relevance_explanation": "Esta é uma declaração direta de necessidade que se alinha perfeitamente com os benefícios de Nossas Soluções Incríveis."
+                        "trigger_description": "Mention of 'optimizing internal processes' and 'modernizing technology stack' (Lead and Enriched Data)",
+                        "relevance_explanation": "This is a direct statement of need that aligns perfectly with the benefits of Our Incredible Solutions."
                     },
                     {
-                        "trigger_description": "Contratação de Novo COO, Carlos Mendes (Dados Enriquecidos)",
-                        "relevance_explanation": "Novos líderes em operações frequentemente revisam sistemas e processos, abrindo oportunidades para Nossas Soluções Incríveis."
+                        "trigger_description": "Hiring of New COO, Carlos Mendes (Enriched Data)",
+                        "relevance_explanation": "New leaders in operations often review systems and processes, opening opportunities for Our Incredible Solutions."
                     }
                 ],
-                "other_observations": "A empresa parece estar em um ciclo de crescimento e modernização, tornando-a um prospect interessante."
+                "other_observations": "The company appears to be in a growth and modernization cycle, making it an interesting prospect."
             })
 
     logger.info("Running mock test for BuyingTriggerIdentificationAgent...")
@@ -165,19 +171,21 @@ if __name__ == '__main__':
     agent = BuyingTriggerIdentificationAgent(
         name="BuyingTriggerIdentificationAgent",
         description="Identifies buying triggers from lead data.",
-        llm_client=mock_llm
+        llm_client=mock_llm,
+        output_language="en-US" # Testing with English
     )
 
+    # Test data in English
     test_lead_data_str = """{
-        "company_name": "Empresa Exemplo",
-        "description": "Focada em crescimento e quer otimizar processos internos."
+        "company_name": "Example Inc.",
+        "description": "Focused on growth and wants to optimize internal processes."
     }"""
     test_enriched_data = (
-        "Empresa Exemplo anunciou expansão para o mercado LATAM. "
-        "Recentemente nomeou um novo COO, Carlos Mendes, vindo da TechCorp. "
-        "Artigo de notícias menciona que a Empresa Exemplo está buscando 'modernizar sua pilha de tecnologia'."
+        "Example Inc. announced expansion into the LATAM market. "
+        "Recently appointed a new COO, Carlos Mendes, from TechCorp. "
+        "News article mentions Example Inc. is looking to 'modernize its technology stack'."
     )
-    test_product_service = "Nossas Soluções Incríveis para Otimização de Processos"
+    test_product_service = "Our Incredible Solutions for Process Optimization"
 
     input_data = BuyingTriggerIdentificationInput(
         lead_data_str=test_lead_data_str,
@@ -199,8 +207,8 @@ if __name__ == '__main__':
 
     assert output.error_message is None
     assert len(output.identified_triggers) == 3
-    assert "Anúncio de Expansão de Mercado para LATAM" in output.identified_triggers[0].trigger_description
-    assert "Nossas Soluções Incríveis" in output.identified_triggers[0].relevance_explanation
+    assert "Market Expansion Announcement to LATAM" in output.identified_triggers[0].trigger_description
+    assert "Our Incredible Solutions" in output.identified_triggers[0].relevance_explanation
     assert output.other_observations is not None
 
     logger.info("Mock test completed successfully.")

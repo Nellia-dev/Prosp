@@ -16,24 +16,21 @@ class ContactExtractionInput(BaseModel):
     product_service_offered: str # Context of what the lead offers, to understand roles
 
 class ContactExtractionOutput(BaseModel):
-    emails_found: List[str] = Field(default_factory=list)
-    instagram_profiles_found: List[str] = Field(default_factory=list)
-    # Added for consistency with subtask example, though prompt needs to request them.
-    # These fields are from the subtask's ideal output, not originally in this agent's output model.
-    # For this refinement, I will focus the prompt on existing fields first.
-    # If these were to be added, the Pydantic model would be the source of truth for the prompt.
-    phone_numbers_found: List[str] = Field(default_factory=list)
-    linkedin_profiles_found: List[str] = Field(default_factory=list)
-    facebook_profiles_found: List[str] = Field(default_factory=list)
-    twitter_x_profiles_found: List[str] = Field(default_factory=list)
-    suggested_search_queries: List[str] = Field(default_factory=list) # Changed from tavily_search_suggestion for multiple queries
-    confidence_score: Optional[float] = None
-    extraction_summary: Optional[str] = None
-    error_message: Optional[str] = None
+    emails_found: List[str] = Field(default_factory=list, description="List of email addresses found.")
+    instagram_profiles_found: List[str] = Field(default_factory=list, description="List of Instagram profile handles (e.g., @username).")
+    phone_numbers_found: List[str] = Field(default_factory=list, description="List of phone numbers found.")
+    linkedin_profiles_found: List[str] = Field(default_factory=list, description="List of LinkedIn profile URLs.")
+    facebook_profiles_found: List[str] = Field(default_factory=list, description="List of Facebook profile URLs.")
+    twitter_x_profiles_found: List[str] = Field(default_factory=list, description="List of Twitter/X handles (e.g., @username).")
+    suggested_search_queries: List[str] = Field(default_factory=list, description="List of suggested search queries to find more contact details or decision-makers.")
+    confidence_score: Optional[float] = Field(default=None, description="Confidence score (0.0 to 1.0) in the quantity and quality of contact information extracted directly from the text.")
+    extraction_summary: Optional[str] = Field(default=None, description="Brief summary of the extraction process, noting ease of finding information and any difficulties.")
+    error_message: Optional[str] = Field(default=None)
 
 class ContactExtractionAgent(BaseAgent[ContactExtractionInput, ContactExtractionOutput]):
-    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, output_language: str = "en-US", **kwargs):
         super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
+        self.output_language = output_language
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -50,56 +47,56 @@ class ContactExtractionAgent(BaseAgent[ContactExtractionInput, ContactExtraction
             char_limit_extracted_text = GEMINI_TEXT_INPUT_TRUNCATE_CHARS - 2500
             truncated_text = self._truncate_text(input_data.extracted_text, char_limit_extracted_text)
 
-            # Refined prompt to match the extended ContactExtractionOutput model
+            # Refined prompt to match the extended ContactExtractionOutput model, now in English
             prompt_template = """
-                Você é um Especialista em Mineração de Dados e OSINT (Open Source Intelligence), altamente qualificado em extrair informações de contato B2B de conteúdo web e textos não estruturados.
-                Sua tarefa é analisar o conteúdo fornecido sobre a empresa '{company_name}' (que oferece '{product_service_offered}') e extrair uma variedade de informações de contato, além de sugerir consultas de busca para encontrar mais detalhes.
+                You are a Data Mining and OSINT (Open Source Intelligence) Specialist, highly skilled in extracting B2B contact information from web content and unstructured texts.
+                Your task is to analyze the provided content about the company '{company_name}' (which offers '{product_service_offered}') and extract a variety of contact information, as well as suggest search queries to find more details.
 
-                CONTEÚDO FORNECIDO (website, notícias, etc.):
+                PROVIDED CONTENT (website, news, etc.):
                 \"\"\"
                 {extracted_text}
                 \"\"\"
 
-                INSTRUÇÕES DETALHADAS PARA EXTRAÇÃO:
-                1.  **E-mails:** Identifique e liste todos os endereços de e-mail válidos. Priorize e-mails genéricos (ex: contato@, vendas@) e, se possível, e-mails que pareçam pertencer a departamentos ou indivíduos (ex: nome.sobrenome@).
-                2.  **Telefones:** Identifique e liste todos os números de telefone. Tente padronizar para um formato que inclua DDI e DDD quando inferível (ex: "+55 11 9XXXX-XXXX").
-                3.  **Perfis do LinkedIn:** Identifique URLs de perfis do LinkedIn, tanto da página da empresa quanto de indivíduos que pareçam ser funcionários ou decisores chave.
-                4.  **Perfis do Instagram:** Identifique nomes de usuário/perfis do Instagram (ex: @nome_da_empresa).
-                5.  **Perfis do Facebook:** Identifique URLs de páginas do Facebook associadas à empresa.
-                6.  **Perfis do Twitter/X:** Identifique handles do Twitter/X (ex: @empresaX).
-                7.  **Sugestões de Busca Adicional:** Com base no texto e no perfil da empresa, formule até 3 strings de busca otimizadas (para Google ou Tavily API). O objetivo destas buscas futuras será encontrar:
-                    a.  Contatos de decisores chave específicos (ex: CEOs, Diretores de Marketing/Vendas, etc.) na '{company_name}'.
-                    b.  Informações de contato mais diretas ou de departamentos específicos, caso o texto atual seja limitado.
-                    Exemplos de sugestões: "Contato comercial {company_name}", "Diretor de Vendas {company_name} LinkedIn", "Telefone {company_name} filial [cidade]".
-                8.  **Score de Confiança:** Forneça um score numérico (float entre 0.0 e 1.0) que represente sua confiança na quantidade e qualidade das informações de contato extraídas diretamente do texto. 0.0 para nenhuma informação encontrada, 1.0 para informações abundantes e claras.
-                9.  **Resumo da Extração:** Um breve resumo (1-2 frases) do processo de extração, mencionando quais tipos de informação foram mais fáceis de encontrar e quaisquer dificuldades ou observações (ex: "Muitos emails genéricos encontrados, mas poucos contatos individuais. URL do LinkedIn da empresa clara. Sugestões de busca focadas em decisores.").
+                DETAILED EXTRACTION INSTRUCTIONS:
+                1.  **Emails:** Identify and list all valid email addresses. Prioritize generic emails (e.g., contact@, sales@) and, if possible, emails that seem to belong to departments or individuals (e.g., name.surname@).
+                2.  **Phones:** Identify and list all phone numbers. Try to standardize to a format that includes country and area codes when inferable (e.g., "+1 415 555-XXXX").
+                3.  **LinkedIn Profiles:** Identify LinkedIn profile URLs, both for the company page and for individuals who appear to be key employees or decision-makers.
+                4.  **Instagram Profiles:** Identify Instagram usernames/profiles (e.g., @company_name).
+                5.  **Facebook Profiles:** Identify Facebook page URLs associated with the company.
+                6.  **Twitter/X Profiles:** Identify Twitter/X handles (e.g., @companyX).
+                7.  **Additional Search Suggestions:** Based on the text and company profile, formulate up to 3 optimized search strings (for Google or Tavily API). The goal of these future searches will be to find:
+                    a.  Contacts of specific key decision-makers (e.g., CEOs, Marketing/Sales Directors, etc.) at '{company_name}'.
+                    b.  More direct contact information or specific department contacts if the current text is limited.
+                    Example suggestions: "Sales contact {company_name}", "VP Sales {company_name} LinkedIn", "Phone {company_name} [city] branch".
+                8.  **Confidence Score:** Provide a numeric score (float between 0.0 and 1.0) representing your confidence in the quantity and quality of contact information extracted directly from the text. 0.0 for no information found, 1.0 for abundant and clear information.
+                9.  **Extraction Summary:** A brief summary (1-2 sentences) of the extraction process, mentioning which types of information were easiest to find and any difficulties or observations (e.g., "Many generic emails found, but few individual contacts. Company LinkedIn URL clear. Search suggestions focused on decision-makers.").
 
-                FORMATO DA RESPOSTA:
-                Responda EXCLUSIVAMENTE com um objeto JSON válido, seguindo o schema e as descrições de campo abaixo. Não inclua NENHUM texto, explicação, ou markdown (como ```json) antes ou depois do objeto JSON.
+                RESPONSE FORMAT:
+                Respond EXCLUSIVELY with a valid JSON object, following the schema and field descriptions below. Do NOT include ANY text, explanation, or markdown (like ```json) before or after the JSON object.
 
-                SCHEMA JSON ESPERADO:
+                EXPECTED JSON SCHEMA:
                 {{
-                    "emails_found": ["string", ...], // Lista de endereços de e-mail. Lista vazia [] se nenhum encontrado.
-                    "phone_numbers_found": ["string", ...], // Lista de números de telefone. Lista vazia [] se nenhum encontrado.
-                    "linkedin_profiles_found": ["string", ...], // Lista de URLs de perfis do LinkedIn. Lista vazia [] se nenhum encontrado.
-                    "instagram_profiles_found": ["string", ...], // Lista de perfis do Instagram (ex: "@username"). Lista vazia [] se nenhum encontrado.
-                    "facebook_profiles_found": ["string", ...], // Lista de URLs de perfis do Facebook. Lista vazia [] se nenhum encontrado.
-                    "twitter_x_profiles_found": ["string", ...], // Lista de handles do Twitter/X (ex: "@username"). Lista vazia [] se nenhum encontrado.
-                    "suggested_search_queries": ["string", ...], // Lista de até 3 sugestões de busca. Lista vazia [] se nenhuma sugestão clara.
-                    "confidence_score": "float | null", // Score de confiança (0.0 a 1.0) ou null se não aplicável.
-                    "extraction_summary": "string | null" // Resumo do processo de extração ou null.
+                    "emails_found": ["string", ...], // List of email addresses. Empty list [] if none found.
+                    "phone_numbers_found": ["string", ...], // List of phone numbers. Empty list [] if none found.
+                    "linkedin_profiles_found": ["string", ...], // List of LinkedIn profile URLs. Empty list [] if none found.
+                    "instagram_profiles_found": ["string", ...], // List of Instagram profiles (e.g., "@username"). Empty list [] if none found.
+                    "facebook_profiles_found": ["string", ...], // List of Facebook profile URLs. Empty list [] if none found.
+                    "twitter_x_profiles_found": ["string", ...], // List of Twitter/X handles (e.g., "@username"). Empty list [] if none found.
+                    "suggested_search_queries": ["string", ...], // List of up to 3 search suggestions. Empty list [] if no clear suggestions.
+                    "confidence_score": "float | null", // Confidence score (0.0 to 1.0) or null if not applicable.
+                    "extraction_summary": "string | null" // Summary of the extraction process or null.
                 }}
             """
             
-            formatted_prompt = prompt_template.format(
+            final_prompt = prompt_template.format(
                 company_name=input_data.company_name,
-                product_service_offered=input_data.product_service_offered, # Context about what the lead company does
+                product_service_offered=input_data.product_service_offered,
                 extracted_text=truncated_text
-            )
+            ) + f"\n\nImportant: Generate your entire response, including all textual content and string values within any JSON structure, strictly in the following language: {self.output_language}. Do not include any English text unless it is part of the original input data that should be preserved as is."
 
-            llm_response_str = self.generate_llm_response(formatted_prompt)
+            llm_response_str = self.generate_llm_response(final_prompt, output_language=self.output_language)
 
-            if not llm_response_str:
+            if not llm_response_str: # Already in English
                 self.logger.error(f"❌ LLM call returned no response for contact extraction for {input_data.company_name}")
                 return ContactExtractionOutput(
                     error_message="LLM call returned no response."
@@ -137,27 +134,32 @@ if __name__ == '__main__':
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")
 
-    class MockLLMClient(LLMClientBase):
-        def __init__(self, api_key: str = "mock_key"):
-            super().__init__(api_key)
+    class MockLLMClient(LLMClientBase): # Assuming LLMClientBase is correctly imported/defined
+        def __init__(self, api_key: str = "mock_key", **kwargs):
+            # super().__init__(api_key) # Depends on LLMClientBase
+            self.api_key = api_key
 
-        def generate_text_response(self, prompt: str) -> Optional[str]:
-            logger.debug(f"MockLLMClient received prompt snippet:\n{prompt[:600]}...")
+        def generate_text_response(self, prompt: str, output_language: str = "en-US") -> Optional[str]:
+            logger.debug(f"MockLLMClient received prompt (lang: {output_language}):\n{prompt[:700]}...")
+            if f"strictly in the following language: {output_language}" not in prompt:
+                 logger.error(f"Language instruction for '{output_language}' missing in prompt!")
+
             if "Test Company Alpha" in prompt:
+                # Example response in English
                 return json.dumps({
                     "emails_found": ["contact@alpha.com", "sales@alpha.com"],
-                    "phone_numbers_found": ["+55 11 2345-6789"],
+                    "phone_numbers_found": ["+1 415 555-0100"],
                     "linkedin_profiles_found": ["linkedin.com/company/alpha-inc", "linkedin.com/in/ceoalpha"],
                     "instagram_profiles_found": ["@alpha_inc_official"],
                     "facebook_profiles_found": ["facebook.com/alphainc"],
                     "twitter_x_profiles_found": ["@AlphaIncGlobal"],
-                    "suggested_search_queries": ["Contato Diretor Vendas Test Company Alpha", "Test Company Alpha vagas marketing"],
+                    "suggested_search_queries": ["Contact Sales Director Test Company Alpha", "Test Company Alpha marketing team jobs"],
                     "confidence_score": 0.9,
-                    "extraction_summary": "Extração bem-sucedida. Encontrados múltiplos contatos e perfis sociais. Texto claro."
+                    "extraction_summary": "Successful extraction. Found multiple contacts and social profiles. Clear text."
                 })
-            elif "Test Company Beta" in prompt: # Simulate malformed JSON (missing quote)
-                return '{"emails_found": ["info@beta.com"], "instagram_profiles_found": ["@beta_co"], "confidence_score": 0.5, "extraction_summary": "Parcial." "suggested_search_queries": []}'
-            elif "Test Company Gamma" in prompt: # Simulate no contacts found
+            elif "Test Company Beta" in prompt:
+                return '{"emails_found": ["info@beta.com"], "instagram_profiles_found": ["@beta_co"], "confidence_score": 0.5, "extraction_summary": "Partial.", "suggested_search_queries": []}' # Malformed on purpose (missing quote before suggested)
+            elif "Test Company Gamma" in prompt:
                 return json.dumps({
                     "emails_found": [],
                     "phone_numbers_found": [],
@@ -165,26 +167,30 @@ if __name__ == '__main__':
                     "instagram_profiles_found": [],
                     "facebook_profiles_found": [],
                     "twitter_x_profiles_found": [],
-                    "suggested_search_queries": ["Investimento Test Company Gamma", "Notícias Test Company Gamma"],
+                    "suggested_search_queries": ["Investment Test Company Gamma", "News Test Company Gamma"],
                     "confidence_score": 0.2,
-                    "extraction_summary": "Nenhum contato direto encontrado no texto. Sugestões de busca para aprofundar."
+                    "extraction_summary": "No direct contacts found in text. Search suggestions for further investigation."
                 })
             return json.dumps({
                     "emails_found": [], "phone_numbers_found": [], "linkedin_profiles_found": [],
                     "instagram_profiles_found": [], "facebook_profiles_found": [], "twitter_x_profiles_found": [],
-                    "suggested_search_queries": ["Contato {company_name}"], "confidence_score": 0.1, "extraction_summary": "Informação muito limitada."
+                    "suggested_search_queries": ["Contact {company_name}"], "confidence_score": 0.1, "extraction_summary": "Very limited information."
             })
     
     logger.info("Running mock tests for ContactExtractionAgent...")
     mock_llm = MockLLMClient(api_key="mock_llm_key")
-    # Provide name and description as required by BaseAgent
-    agent = ContactExtractionAgent(name="TestContactExtractionAgent", description="Test Agent", llm_client=mock_llm)
+    agent = ContactExtractionAgent(
+        name="TestContactExtractionAgent",
+        description="Test Agent for Contact Extraction",
+        llm_client=mock_llm,
+        output_language="en-US" # Testing with English
+        )
 
     # Test Case 1: Valid JSON response
     input_alpha = ContactExtractionInput(
-        extracted_text="Test Company Alpha is a leader in AI. Contact us at contact@alpha.com or sales@alpha.com. Call +551123456789. Follow us on Instagram @alpha_inc_official, LinkedIn /company/alpha-inc and /in/ceoalpha, FB facebook.com/alphainc, X @AlphaIncGlobal.",
+        extracted_text="Test Company Alpha is a leader in AI. Contact us at contact@alpha.com or sales@alpha.com. Call +1 (415) 555-0100. Follow us on Instagram @alpha_inc_official, LinkedIn /company/alpha-inc and /in/ceoalpha, FB facebook.com/alphainc, X @AlphaIncGlobal.",
         company_name="Test Company Alpha",
-        product_service_offered="AI Solutions for B2B"
+        product_service_offered="AI Solutions for B2B" # English
     )
     output_alpha = agent.process(input_alpha)
     logger.info(f"\nTest Case 1 (Alpha - Valid JSON):")
@@ -194,24 +200,25 @@ if __name__ == '__main__':
     assert output_alpha.instagram_profiles_found == ["@alpha_inc_official"]
     assert output_alpha.linkedin_profiles_found == ["linkedin.com/company/alpha-inc", "linkedin.com/in/ceoalpha"]
     assert output_alpha.confidence_score == 0.9
+    assert "Successful extraction" in output_alpha.extraction_summary
 
     # Test Case 2: Malformed JSON response
     input_beta = ContactExtractionInput(
         extracted_text="Info at info@beta.com, Insta @beta_co. Test Company Beta focuses on cloud services.",
         company_name="Test Company Beta",
-        product_service_offered="Cloud Services for SMBs"
+        product_service_offered="Cloud Services for SMBs" # English
     )
     output_beta = agent.process(input_beta)
     logger.info(f"\nTest Case 2 (Beta - Malformed JSON):")
     logger.info(f"  Output: {output_beta.model_dump_json(indent=2)}")
     assert output_beta.error_message is not None
-    assert "JSON parsing failed" in output_beta.error_message or "LLM response was not valid JSON" in output_beta.error_message # Check for parsing error
+    assert "JSON parsing failed" in output_beta.error_message or "LLM response was not valid JSON" in output_beta.error_message
 
     # Test Case 3: Valid JSON, no contacts found
     input_gamma = ContactExtractionInput(
         extracted_text="Test Company Gamma makes widgets. No contact info here.",
         company_name="Test Company Gamma",
-        product_service_offered="High-Quality Widgets"
+        product_service_offered="High-Quality Widgets" # English
     )
     output_gamma = agent.process(input_gamma)
     logger.info(f"\nTest Case 3 (Gamma - No Contacts):")
@@ -221,6 +228,7 @@ if __name__ == '__main__':
     assert output_gamma.instagram_profiles_found == []
     assert output_gamma.confidence_score == 0.2
     assert len(output_gamma.suggested_search_queries) > 0
+    assert "No direct contacts found" in output_gamma.extraction_summary
     
     logger.info("\nAll mock tests for ContactExtractionAgent completed.")
 

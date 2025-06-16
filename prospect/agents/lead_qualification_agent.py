@@ -9,24 +9,25 @@ import json # For mock test
 GEMINI_TEXT_INPUT_TRUNCATE_CHARS = 180000
 
 class LeadQualificationInput(BaseModel):
-    lead_analysis: str # Summary from LeadAnalysisAgent
-    persona_profile: str # Summary from PersonaCreationAgent (or constructed)
-    deepened_pain_points: str # JSON string from PainPointDeepeningAgent
-    product_service_offered: str # User's product/service
+    lead_analysis: str = Field(..., description="Summary from LeadAnalysisAgent.")
+    persona_profile: str = Field(..., description="Summary from PersonaCreationAgent (or constructed).")
+    deepened_pain_points: str = Field(..., description="JSON string from PainPointDeepeningAgent.")
+    product_service_offered: str = Field(..., description="User's product/service being offered.")
 
-# Updated Pydantic Output Model
+# Updated Pydantic Output Model with English descriptions and defaults
 class LeadQualificationOutput(BaseModel):
-    qualification_tier: str = Field(default="Não Qualificado", description="Enum: 'Alto Potencial', 'Potencial Médio', 'Baixo Potencial', 'Não Qualificado'")
-    justification: str = "Justificativa não fornecida."
-    key_positive_signals: List[str] = Field(default_factory=list)
-    key_negative_signals_or_risks: List[str] = Field(default_factory=list)
-    confidence_score: float = 0.5 # Made non-optional, default to 0.5
-    suggested_next_steps_for_sales: List[str] = Field(default_factory=list)
-    error_message: Optional[str] = None
+    qualification_tier: str = Field(default="Not Qualified", description="Enum: 'High Potential', 'Medium Potential', 'Low Potential', 'Not Qualified'")
+    justification: str = Field(default="Justification not provided.", description="Detailed justification for the qualification tier, based on provided data.")
+    key_positive_signals: List[str] = Field(default_factory=list, description="List of 2-3 main positive signals supporting the qualification.")
+    key_negative_signals_or_risks: List[str] = Field(default_factory=list, description="List of 2-3 main negative signals or risks.")
+    confidence_score: float = Field(default=0.5, description="Confidence in the qualification assessment (0.0 to 1.0).")
+    suggested_next_steps_for_sales: List[str] = Field(default_factory=list, description="List of 1-2 practical next steps for the sales team.")
+    error_message: Optional[str] = Field(default=None)
 
 class LeadQualificationAgent(BaseAgent[LeadQualificationInput, LeadQualificationOutput]):
-    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, output_language: str = "en-US", **kwargs):
         super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
+        self.output_language = output_language
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -46,71 +47,72 @@ class LeadQualificationAgent(BaseAgent[LeadQualificationInput, LeadQualification
             tr_deepened_pain_points = self._truncate_text(input_data.deepened_pain_points, int(available_for_dynamic * 0.30))
             # product_service_offered is usually short, direct use. Other 20% for safety/other small inputs.
 
-            # Refined prompt_template
+            # Refined prompt_template, now in English
             prompt_template = """
-                Você é um Diretor de Vendas B2B experiente e criterioso, com especialização em qualificar leads no mercado brasileiro, focando em otimizar o tempo da equipe de vendas.
-                Seu objetivo é classificar o potencial do lead com base nas informações estratégicas fornecidas, justificar sua avaliação e sugerir próximos passos concretos.
+                You are an experienced and discerning B2B Sales Director, specializing in qualifying leads in the target market (e.g., Brazilian market), focusing on optimizing the sales team's time.
+                Your objective is to classify the lead's potential based on the provided strategic information, justify your assessment, and suggest concrete next steps.
 
-                DADOS PARA ANÁLISE DE QUALIFICAÇÃO:
+                DATA FOR QUALIFICATION ANALYSIS:
 
-                1. ANÁLISE GERAL DO LEAD:
+                1. GENERAL LEAD ANALYSIS:
                    \"\"\"
                    {lead_analysis}
                    \"\"\"
 
-                2. PERFIL DA PERSONA (Tomador de Decisão Alvo):
+                2. TARGET PERSONA PROFILE (Decision-Maker):
                    \"\"\"
                    {persona_profile}
                    \"\"\"
 
-                3. PONTOS DE DOR APROFUNDADOS E PERGUNTAS INVESTIGATIVAS (Insights sobre necessidades):
+                3. DEEPENED PAIN POINTS AND INVESTIGATIVE QUESTIONS (Insights on needs):
                    \"\"\"
                    {deepened_pain_points}
                    \"\"\"
 
-                4. PRODUTO/SERVIÇO QUE ESTAMOS OFERECENDO:
+                4. PRODUCT/SERVICE WE ARE OFFERING:
                    "{product_service_offered}"
 
-                INSTRUÇÕES PARA QUALIFICAÇÃO:
-                Com base em TODAS as informações fornecidas, realize uma avaliação completa do lead:
-                1.  **Alinhamento de Dor vs. Solução:** Avalie o quão bem os pontos de dor identificados se alinham com os benefícios do nosso "{product_service_offered}".
-                2.  **Adequação da Persona:** Considere se o perfil da persona (cargo, responsabilidades, motivações) representa um cliente ideal e um tomador de decisão acessível.
-                3.  **Urgência/Criticidade:** Analise a urgência ou criticidade implícita nos pontos de dor. Existe uma necessidade imediata ou futura?
-                4.  **Sinais Positivos e Negativos:** Identifique explicitamente os principais fatores que tornam este lead promissor e os que representam riscos ou desalinhamento.
-                5.  **Classificação do Lead:** Classifique o lead em UMA das seguintes categorias:
-                    -   "Alto Potencial": Forte alinhamento com o ICP, dores claras que nossa solução resolve, urgência aparente, persona acessível. Ação imediata recomendada.
-                    -   "Potencial Médio": Bom alinhamento, mas pode faltar urgência, clareza em alguns pontos, ou persona mais difícil de acessar. Requer nutrição ou mais investigação.
-                    -   "Baixo Potencial": Alinhamento fraco, dores não claras ou não resolvidas pela nossa solução, sem urgência. Acompanhar de longe ou descartar.
-                    -   "Desqualificado": Claramente não é um fit para nossa solução ou mercado.
-                6.  **Justificativa:** Forneça uma justificativa concisa (2-3 frases) para a classificação, referenciando os dados.
-                7.  **Score de Confiança:** Atribua um score de confiança (float, 0.0 a 1.0) à sua avaliação geral de qualificação.
-                8.  **Próximos Passos para Vendas:** Sugira 1-2 próximos passos acionáveis e específicos para a equipe de vendas com base na sua qualificação.
+                QUALIFICATION INSTRUCTIONS:
+                Based on ALL provided information, perform a complete lead assessment:
+                1.  **Pain vs. Solution Alignment:** Evaluate how well the identified pain points align with the benefits of our "{product_service_offered}".
+                2.  **Persona Fit:** Consider if the persona profile (role, responsibilities, motivations) represents an ideal customer and an accessible decision-maker.
+                3.  **Urgency/Criticality:** Analyze the implicit urgency or criticality in the pain points. Is there an immediate or future need?
+                4.  **Positive and Negative Signals:** Explicitly identify the main factors that make this lead promising and those that represent risks or misalignment.
+                5.  **Lead Classification:** Classify the lead into ONE of the following categories:
+                    -   "High Potential": Strong alignment with ICP, clear pains our solution resolves, apparent urgency, accessible persona. Immediate action recommended.
+                    -   "Medium Potential": Good alignment, but may lack urgency, clarity on some points, or persona harder to access. Requires nurturing or further investigation.
+                    -   "Low Potential": Weak alignment, unclear pains or not resolved by our solution, no urgency. Monitor from a distance or discard.
+                    -   "Not Qualified": Clearly not a fit for our solution or market.
+                6.  **Justification:** Provide a concise justification (2-3 sentences) for the classification, referencing the data.
+                7.  **Confidence Score:** Assign a confidence score (float, 0.0 to 1.0) to your overall qualification assessment.
+                8.  **Next Steps for Sales:** Suggest 1-2 actionable and specific next steps for the sales team based on your qualification.
 
-                FORMATO DA RESPOSTA:
-                Responda EXCLUSIVAMENTE com um objeto JSON válido, seguindo o schema e as descrições de campo abaixo. Não inclua NENHUM texto, explicação, ou markdown (como ```json) antes ou depois do objeto JSON.
+                RESPONSE FORMAT:
+                Respond EXCLUSIVELY with a valid JSON object, following the schema and field descriptions below. Do NOT include ANY text, explanation, or markdown (like ```json) before or after the JSON object.
 
-                SCHEMA JSON ESPERADO:
+                EXPECTED JSON SCHEMA:
                 {{
-                    "qualification_tier": "string", // Enum: "Alto Potencial", "Potencial Médio", "Baixo Potencial", "Desqualificado"
-                    "justification": "string - Justificativa detalhada para a classificação, baseada nos dados fornecidos (máx. 3-4 frases).",
-                    "key_positive_signals": ["string", ...], // Lista de 2-3 principais sinais positivos que suportam a qualificação (ex: 'Alinhamento claro com ICP', 'Dor X diretamente resolvida pela solução Y'). Lista vazia [] se não houver sinais claros.
-                    "key_negative_signals_or_risks": ["string", ...], // Lista de 2-3 principais sinais negativos ou riscos (ex: 'Orçamento pode ser uma barreira', 'Persona difícil de contatar', 'Solução concorrente já em uso'). Lista vazia [] se não houver.
-                    "confidence_score": "float", // Sua confiança na avaliação de qualificação (0.0 a 1.0). Deve ser sempre um float.
-                    "suggested_next_steps_for_sales": ["string", ...] // Lista de 1-2 próximos passos práticos para a equipe de vendas (ex: 'Priorizar para contato imediato com foco na dor X', 'Incluir em fluxo de nutrição focado em [tema Y]', 'Descartar e focar em outros leads'). Lista vazia [] se não houver sugestão clara.
+                    "qualification_tier": "string", // Enum: "High Potential", "Medium Potential", "Low Potential", "Not Qualified"
+                    "justification": "string - Detailed justification for the classification, based on provided data (max 3-4 sentences).",
+                    "key_positive_signals": ["string", ...], // List of 2-3 main positive signals supporting the qualification (e.g., 'Clear alignment with ICP', 'Pain X directly solved by solution Y'). Empty list [] if no clear signals.
+                    "key_negative_signals_or_risks": ["string", ...], // List of 2-3 main negative signals or risks (e.g., 'Budget might be a barrier', 'Persona difficult to contact', 'Competitor solution already in use'). Empty list [] if none.
+                    "confidence_score": "float", // Your confidence in the qualification assessment (0.0 to 1.0). Must always be a float.
+                    "suggested_next_steps_for_sales": ["string", ...] // List of 1-2 practical next steps for the sales team (e.g., 'Prioritize for immediate contact focusing on pain X', 'Include in nurturing flow focused on [theme Y]', 'Discard and focus on other leads'). Empty list [] if no clear suggestion.
                 }}
             """
 
-            formatted_prompt = prompt_template.format(
+            final_prompt = prompt_template.format(
                 lead_analysis=tr_lead_analysis,
                 persona_profile=tr_persona_profile,
                 deepened_pain_points=tr_deepened_pain_points,
                 product_service_offered=input_data.product_service_offered
-            )
-            self.logger.debug(f"Prompt for {self.name} (length: {len(formatted_prompt)}):\n{formatted_prompt[:500]}...")
+            ) + f"\n\nImportant: Generate your entire response, including all textual content and string values within any JSON structure, strictly in the following language: {self.output_language}. Do not include any English text unless it is part of the original input data that should be preserved as is."
 
-            llm_response_str = self.generate_llm_response(formatted_prompt)
+            self.logger.debug(f"Prompt for {self.name} (length: {len(final_prompt)}):\n{final_prompt[:500]}...")
 
-            if not llm_response_str:
+            llm_response_str = self.generate_llm_response(final_prompt, output_language=self.output_language)
+
+            if not llm_response_str: # Already in English
                 self.logger.error(f"❌ LLM call returned no response for {self.name}")
                 return LeadQualificationOutput(error_message="LLM call returned no response.")
 
@@ -135,29 +137,33 @@ if __name__ == '__main__':
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")
 
-    class MockLLMClient(LLMClientBase):
-        def __init__(self, api_key: str = "mock_key"):
-            super().__init__(api_key)
+    class MockLLMClient(LLMClientBase): # Assuming LLMClientBase is correctly imported/defined
+        def __init__(self, api_key: str = "mock_key", **kwargs):
+            # super().__init__(api_key) # Depends on LLMClientBase
+            self.api_key = api_key
 
-        def generate_text_response(self, prompt: str) -> Optional[str]:
-            logger.debug(f"MockLLMClient received prompt snippet:\n{prompt[:600]}...")
-            # Simulate LLM returning valid JSON based on the refined prompt and new model
+        def generate_text_response(self, prompt: str, output_language: str = "en-US") -> Optional[str]:
+            logger.debug(f"MockLLMClient received prompt (lang: {output_language}):\n{prompt[:700]}...")
+            if f"strictly in the following language: {output_language}" not in prompt:
+                 logger.error(f"Language instruction for '{output_language}' missing in prompt!")
+
+            # Example in English
             return json.dumps({
-                "qualification_tier": "Alto Potencial",
-                "justification": "A Empresa Exemplo demonstra forte alinhamento com Nossas Soluções Incríveis devido à sua recente expansão e necessidade declarada de otimizar processos internos, onde nossa IA se destaca. O Diretor de Operações, Carlos Mendes, focado em ROI e eficiência, é a persona ideal.",
+                "qualification_tier": "High Potential", # English tier
+                "justification": "Example Inc. shows strong alignment with Our Incredible Solutions due to its recent expansion and stated need to optimize internal processes, where our AI excels. The COO, Carlos Mendes, focused on ROI and efficiency, is the ideal persona.",
                 "key_positive_signals": [
-                    "Expansão recente para LATAM (indicando necessidade de escalar).",
-                    "Menção explícita à 'otimização de processos internos'.",
-                    "Persona (Diretor de Operações) com foco em ROI e eficiência."
+                    "Recent LATAM expansion (indicating need to scale).",
+                    "Explicit mention of 'optimizing internal processes'.",
+                    "Persona (COO) focused on ROI and efficiency."
                 ],
                 "key_negative_signals_or_risks": [
-                    "Pode já estar avaliando outras soluções devido à urgência da expansão.",
-                    "Resistência à mudança se a equipe estiver sobrecarregada com a expansão."
+                    "May already be evaluating other solutions due to expansion urgency.",
+                    "Resistance to change if the team is overwhelmed with expansion."
                 ],
                 "confidence_score": 0.85,
                 "suggested_next_steps_for_sales": [
-                    "Priorizar para contato imediato, focando em como a IA pode suportar a expansão LATAM de forma eficiente.",
-                    "Preparar um case de estudo de empresa similar que escalou com nossa solução."
+                    "Prioritize for immediate contact, focusing on how AI can efficiently support LATAM expansion.",
+                    "Prepare a case study of a similar company that scaled with our solution."
                 ]
             })
 
@@ -166,22 +172,24 @@ if __name__ == '__main__':
     agent = LeadQualificationAgent(
         name="TestLeadQualificationAgent",
         description="Test Agent for Lead Qualification",
-        llm_client=mock_llm
+        llm_client=mock_llm,
+        output_language="en-US" # Testing with English
     )
 
-    test_lead_analysis = "A Empresa Exemplo (médio porte, setor de TI) enfrenta desafios na otimização de processos internos, especialmente após anúncio de expansão para o mercado LATAM."
-    test_persona_profile = "Carlos Mendes, Diretor de Operações. Busca ROI claro, eficiência e soluções que se integrem facilmente. Motivado por resultados mensuráveis e reconhecimento."
+    # Test data in English
+    test_lead_analysis = "Example Inc. (medium size, IT sector) faces challenges in optimizing internal processes, especially after announcing expansion to the LATAM market."
+    test_persona_profile = "Carlos Mendes, COO. Seeks clear ROI, efficiency, and solutions that integrate easily. Motivated by measurable results and recognition."
     test_deepened_pain_points = json.dumps({
-        "primary_pain_category": "Eficiência Operacional e Escalabilidade",
+        "primary_pain_category": "Operational Efficiency and Scalability",
         "detailed_pain_points": [
-            {"pain": "Otimização de Processos Manuais durante expansão", "impact": "Atrasos, aumento de custos, dificuldade em manter qualidade.", "urgency": "Alta"},
-            {"pain": "Integração de Novas Tecnologias com sistemas legados", "impact": "Complexidade, tempo de implementação, resistência da equipe.", "urgency": "Média"}
+            {"pain": "Manual process optimization during expansion", "impact": "Delays, increased costs, difficulty maintaining quality.", "urgency": "High"},
+            {"pain": "Integration of new technologies with legacy systems", "impact": "Complexity, implementation time, team resistance.", "urgency": "Medium"}
         ],
         "investigative_questions_answered": [
-            {"question": "Como a expansão impactou a capacidade de entrega?", "answer": "Ainda não totalmente claro, mas há preocupação."},
+            {"question": "How has the expansion impacted delivery capacity?", "answer": "Not yet fully clear, but there is concern."},
         ]
     })
-    test_product_service = "Nossas Soluções Incríveis de Automação com IA"
+    test_product_service = "Our Incredible AI Automation Solutions"
 
     input_data = LeadQualificationInput(
         lead_analysis=test_lead_analysis,
@@ -204,9 +212,9 @@ if __name__ == '__main__':
         logger.info(f"Suggested Next Steps: {output.suggested_next_steps_for_sales}")
 
     assert output.error_message is None
-    assert output.qualification_tier == "Alto Potencial"
-    assert "Empresa Exemplo" in output.justification
-    assert "Nossas Soluções Incríveis" in output.justification
+    assert output.qualification_tier == "High Potential" # English tier
+    assert "Example Inc." in output.justification # English
+    assert "Our Incredible AI Automation Solutions" in output.justification # English
     assert len(output.key_positive_signals) > 0
     assert output.confidence_score == 0.85
     assert len(output.suggested_next_steps_for_sales) > 0

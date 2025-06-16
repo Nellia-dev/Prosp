@@ -57,7 +57,7 @@ class LLMClientBase(ABC):
         }
     
     @abstractmethod
-    def generate(self, prompt: str) -> LLMResponse:
+    def generate(self, prompt: str, output_language: str = "en-US") -> LLMResponse:
         """Generate a response from the LLM"""
         pass
     
@@ -121,8 +121,10 @@ class GeminiClient(LLMClientBase):
         
         logger.info(f"Initialized Gemini client with model: {config.model_name}")
     
-    def generate(self, prompt: str) -> LLMResponse:
+    def generate(self, prompt: str, output_language: str = "en-US") -> LLMResponse:
         """Generate a response from Gemini"""
+        # output_language is available for future use or by agents constructing the prompt.
+        # It's not directly used in this method's logic for now.
         self.usage_stats["total_requests"] += 1
         
         for attempt in range(self.config.max_retries):
@@ -220,8 +222,10 @@ class OpenAIClient(LLMClientBase):
         self.client = openai.OpenAI(api_key=api_key)
         logger.info(f"Initialized OpenAI client with model: {config.model_name}")
     
-    def generate(self, prompt: str) -> LLMResponse:
+    def generate(self, prompt: str, output_language: str = "en-US") -> LLMResponse:
         """Generate a response from OpenAI"""
+        # output_language is available for future use or by agents constructing the prompt.
+        # It's not directly used in this method's logic for now.
         self.usage_stats["total_requests"] += 1
         
         for attempt in range(self.config.max_retries):

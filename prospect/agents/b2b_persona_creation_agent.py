@@ -17,8 +17,9 @@ class B2BPersonaCreationOutput(BaseModel):
     error_message: Optional[str] = None
 
 class B2BPersonaCreationAgent(BaseAgent[B2BPersonaCreationInput, B2BPersonaCreationOutput]):
-    def __init__(self, name: str, description: str, llm_client: LLMClientBase):
+    def __init__(self, name: str, description: str, llm_client: LLMClientBase, output_language: str = "en-US"):
         super().__init__(name=name, description=description, llm_client=llm_client)
+        self.output_language = output_language
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -34,61 +35,63 @@ class B2BPersonaCreationAgent(BaseAgent[B2BPersonaCreationInput, B2BPersonaCreat
             # A more sophisticated approach might budget characters for each section.
             truncated_analysis = self._truncate_text(input_data.lead_analysis, GEMINI_TEXT_INPUT_TRUNCATE_CHARS - 2000) # Reserve ~2k for rest of prompt
             
-            # Refined prompt_template
+            # Refined prompt_template, now in English and with language instruction
             prompt_template = """
-                Você é um Especialista em Marketing B2B e Criação de Personas, com foco no mercado brasileiro. Sua tarefa é criar um perfil de persona detalhado e narrativo para um tomador de decisão chave, com base na análise do lead, no produto/serviço que sua empresa oferece, e na URL do lead.
+                You are a B2B Marketing and Persona Creation Specialist, with a focus on the target market (e.g., Brazilian market - adapt based on context). Your task is to create a detailed narrative persona profile for a key decision-maker, based on lead analysis, the product/service your company offers, and the lead's URL.
 
-                ANÁLISE DO LEAD (fornecida pela nossa equipe de inteligência):
+                LEAD ANALYSIS (provided by our intelligence team):
                 \"\"\"
                 {lead_analysis}
                 \"\"\"
 
-                NOSSO PRODUTO/SERVIÇO (que queremos apresentar a esta persona):
+                OUR PRODUCT/SERVICE (that we want to present to this persona):
                 "{product_service_offered}"
 
-                URL DO LEAD (para sua referência e contexto adicional, se necessário):
+                LEAD URL (for your reference and additional context, if needed):
                 {lead_url}
 
-                INSTRUÇÕES PARA CRIAÇÃO DO PERFIL DA PERSONA:
-                Desenvolva um perfil narrativo coeso e detalhado que traga vida a este tomador de decisão. O perfil deve ser escrito em português do Brasil e especificamente adaptado ao contexto empresarial brasileiro.
+                INSTRUCTIONS FOR CREATING THE PERSONA PROFILE:
+                Develop a cohesive and detailed narrative profile that brings this decision-maker to life. The profile should be written in the specified output language and specifically adapted to the relevant business context (e.g., Brazilian business context if output_language is 'pt-BR').
 
-                O perfil deve cobrir, de forma integrada e fluida, os seguintes aspectos:
-                1.  **Nome Fictício Brasileiro e Cargo Provável:** Atribua um nome comum no Brasil e o cargo mais provável para este tomador de decisão, com base na análise do lead.
-                2.  **Principais Responsabilidades e Desafios Diários:** Descreva suas funções chave e os obstáculos que enfrenta regularmente.
-                3.  **Objetivos Profissionais e Motivações:** O que ele(a) busca alcançar na carreira e o que o(a) impulsiona.
-                4.  **Comportamento de Busca e Decisão B2B:** Como essa persona tipicamente busca soluções para seus desafios de negócios e quais fatores influenciam suas decisões de compra.
-                5.  **Estilo de Comunicação e Canais Preferidos:** Como prefere ser abordado(a) e quais canais de comunicação profissional mais utiliza (ex: LinkedIn, email formal, WhatsApp para contatos próximos).
-                6.  **Proposta de Valor Específica:** Como o NOSSO PRODUTO/SERVIÇO ("{product_service_offered}") pode especificamente ajudar essa persona a superar seus desafios e atingir seus objetivos. Seja claro e direto nesta parte.
+                The profile should cover, in an integrated and fluid manner, the following aspects:
+                1.  **Fictional Name (appropriate for the target market) and Likely Role:** Assign a common name in the target market and the most probable job title for this decision-maker, based on the lead analysis.
+                2.  **Key Responsibilities and Daily Challenges:** Describe their key functions and the obstacles they regularly face.
+                3.  **Professional Goals and Motivations:** What they seek to achieve in their career and what drives them.
+                4.  **B2B Search and Decision Behavior:** How this persona typically seeks solutions for their business challenges and what factors influence their purchasing decisions.
+                5.  **Communication Style and Preferred Channels:** How they prefer to be approached and which professional communication channels they use most (e.g., LinkedIn, formal email, WhatsApp for close contacts).
+                6.  **Specific Value Proposition:** How OUR PRODUCT/SERVICE ("{product_service_offered}") can specifically help this persona overcome their challenges and achieve their goals. Be clear and direct in this part.
 
-                ESTILO E FORMATO DA SAÍDA:
-                - O perfil deve ser um **texto corrido (narrativa)**, descritivo e envolvente.
-                - **Não use formato JSON** ou qualquer outra estrutura de dados formal.
-                - Mantenha o texto conciso, idealmente com um máximo de **350 palavras**, garantindo que todos os 6 pontos acima sejam cobertos.
-                - O tom deve ser profissional, mas perspicaz, fornecendo insights úteis para uma equipe de vendas.
+                OUTPUT STYLE AND FORMAT:
+                - The profile should be a **running text (narrative)**, descriptive and engaging.
+                - **Do not use JSON format** or any other formal data structure.
+                - Keep the text concise, ideally with a maximum of **350 words**, ensuring all 6 points above are covered.
+                - The tone should be professional yet insightful, providing useful insights for a sales team.
 
-                Comece diretamente com o perfil.
+                Start directly with the profile.
 
-                PERFIL DA PERSONA:
+                PERSONA PROFILE:
             """
 
-            formatted_prompt = prompt_template.format(
+            # Add the language instruction
+            language_instruction = f"\n\nImportant: Generate your entire response, including all textual content and string values within any JSON structure, strictly in the following language: {self.output_language}. Do not include any English text unless it is part of the original input data that should be preserved as is."
+            final_prompt = prompt_template.format(
                 lead_analysis=truncated_analysis,
                 product_service_offered=input_data.product_service_offered,
                 lead_url=input_data.lead_url
-            )
+            ) + language_instruction
 
-            llm_response = self.generate_llm_response(formatted_prompt)
+            llm_response = self.generate_llm_response(final_prompt, output_language=self.output_language)
 
             if llm_response:
-                persona_profile = llm_response.strip() # Added strip()
+                persona_profile = llm_response.strip()
             else:
-                error_message = "LLM call returned no response or an empty response."
+                error_message = "LLM call returned no response or an empty response." # Already in English
                 self.logger.warning(f"{self.name} received an empty response from LLM for URL: {input_data.lead_url}")
         
         except Exception as e:
             import traceback
             self.logger.error(f"An unexpected error occurred in {self.name} for URL {input_data.lead_url}: {str(e)}\n{traceback.format_exc()}")
-            error_message = f"An unexpected error occurred in {self.name}: {str(e)}"
+            error_message = f"An unexpected error occurred in {self.name}: {str(e)}" # Already in English
 
         return B2BPersonaCreationOutput(
             persona_profile=persona_profile,
@@ -102,35 +105,48 @@ if __name__ == '__main__':
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")
 
-    class MockLLMClient(LLMClientBase):
-        def __init__(self, api_key: str = "mock_key"):
-            super().__init__(api_key)
+    class MockLLMClient(LLMClientBase): # Assuming LLMClientBase is correctly imported or defined
+        def __init__(self, api_key: str = "mock_key", **kwargs): # Added **kwargs to match potential BaseAgent changes
+            # super().__init__(api_key) # This would depend on LLMClientBase's __init__
+            self.api_key = api_key
 
-        def generate_text_response(self, prompt: str) -> Optional[str]:
-            logger.debug(f"MockLLMClient received prompt:\n{prompt[:500]}...") # Log snippet of prompt
-            if "PERFIL DA PERSONA:" in prompt:
+
+        # Updated signature to include output_language
+        def generate_text_response(self, prompt: str, output_language: str = "en-US") -> Optional[str]:
+            logger.debug(f"MockLLMClient received prompt (lang: {output_language}):\n{prompt[:600]}...") # Log snippet
+            # Simple check if the language instruction is in the prompt
+            if f"strictly in the following language: {output_language}" not in prompt:
+                 logger.error("Language instruction missing or incorrect in prompt!")
+
+            if "PERSONA PROFILE:" in prompt: # English keyword from the new prompt
+                # Example persona in English, as if generated for en-US
                 return (
-                    "  Carlos Mendes, Diretor de Operações da Empresa ExemploTech, sediada em Campinas, SP, enfrenta o desafio constante de otimizar processos e reduzir custos operacionais em um mercado tecnológico competitivo. "
-                    "Suas responsabilidades incluem garantir a eficiência da produção de software e a rápida implementação de novas tecnologias para manter a empresa à frente. "
-                    "Carlos busca soluções que demonstrem um ROI claro e sejam fáceis de integrar com os sistemas legados, minimizando a disrupção. Ele é motivado por reconhecimento profissional e por entregar resultados mensuráveis que impactem positivamente o bottom-line. "
-                    "Para se manter atualizado, Carlos participa de webinars técnicos e lê artigos em portais especializados do setor de TI. Ele valoriza a comunicação direta, baseada em dados, e prefere e-mails formais ou apresentações concisas no LinkedIn para o primeiro contato. "
-                    "Nossas Soluções Incríveis de automação inteligente podem ajudá-lo a automatizar tarefas manuais de desenvolvimento e QA, fornecendo dados em tempo real para decisões mais assertivas e rápidas, alinhando-se com seu objetivo de modernização e eficiência. Isso liberaria sua equipe para focar em inovação, um ponto crucial para a ExemploTech. "
-                ).strip() # Ensure no leading/trailing spaces from mock
-            return "Resposta padrão do mock."
+                    "Carlos Mendes, Operations Director at ExampleTech, based in Campinas, SP, constantly faces the challenge of optimizing processes and reducing operational costs in a competitive tech market. "
+                    "His responsibilities include ensuring software production efficiency and the rapid implementation of new technologies to keep the company ahead. "
+                    "Carlos seeks solutions that demonstrate clear ROI and are easy to integrate with legacy systems, minimizing disruption. He is motivated by professional recognition and delivering measurable results that positively impact the bottom line. "
+                    "To stay updated, Carlos participates in technical webinars and reads articles on specialized IT sector portals. He values direct, data-driven communication and prefers formal emails or concise LinkedIn presentations for initial contact. "
+                    "Our Incredible Solutions for intelligent automation can help him automate manual development and QA tasks, providing real-time data for more assertive and faster decisions, aligning with his goal of modernization and efficiency. This would free up his team to focus on innovation, a crucial point for ExampleTech."
+                ).strip()
+            return "Default mock response."
 
     logger.info("Running mock test for B2BPersonaCreationAgent...")
     mock_llm = MockLLMClient()
-    # Providing name and description as per BaseAgent's __init__
-    agent = B2BPersonaCreationAgent(name="TestB2BPersonaAgent", description="Test Agent", llm_client=mock_llm)
+    # Providing name and description as per BaseAgent's __init__ and the new output_language
+    agent = B2BPersonaCreationAgent(
+        name="TestB2BPersonaAgent",
+        description="Test Agent for B2B Persona Creation",
+        llm_client=mock_llm,
+        output_language="en-US" # Testing with English
+    )
 
     test_lead_analysis = (
-        "A Empresa ExemploTech, localizada em Campinas, São Paulo, atua no setor de Tecnologia da Informação, oferecendo principalmente soluções de software como serviço (SaaS) para gestão de projetos. "
-        "Trata-se de uma empresa de médio porte, com cerca de 150 funcionários, e que recentemente anunciou uma rodada de investimento para expandir suas operações na América Latina. "
-        "Seus principais desafios divulgados incluem a necessidade de escalar suas operações de desenvolvimento de software de forma eficiente e otimizar processos internos para suportar o crescimento acelerado. "
-        "Buscam inovação constante para se manterem competitivos."
+        "ExampleTech, located in Campinas, São Paulo, operates in the Information Technology sector, primarily offering Software as a Service (SaaS) solutions for project management. "
+        "It is a medium-sized company with about 150 employees and recently announced an investment round to expand its operations in Latin America. "
+        "Its main disclosed challenges include the need to scale its software development operations efficiently and optimize internal processes to support accelerated growth. "
+        "They constantly seek innovation to remain competitive."
     )
-    test_product_service = "Nossas Soluções Incríveis de automação inteligente para DEVs e QA"
-    test_lead_url = "http://www.empresaexemplotec.com.br"
+    test_product_service = "Our Incredible Solutions for intelligent automation for DEVs and QA"
+    test_lead_url = "http://www.exampletech.com.br" # Corrected URL for mock
 
     input_data = B2BPersonaCreationInput(
         lead_analysis=test_lead_analysis,
@@ -146,9 +162,9 @@ if __name__ == '__main__':
     else:
         logger.success("Persona profile generated successfully.")
 
-    assert "Carlos Mendes" in output.persona_profile
-    assert "Nossas Soluções Incríveis" in output.persona_profile
-    assert "Campinas" in output.persona_profile # Check if context was used
+    assert "Carlos Mendes" in output.persona_profile # Mock data example
+    assert "Our Incredible Solutions" in output.persona_profile # Check product mention
+    assert "Campinas" in output.persona_profile # Check context use
     assert output.error_message is None
-    logger.info("Mock test completed successfully.")
+    logger.info("Mock test for B2BPersonaCreationAgent completed successfully.")
 ```

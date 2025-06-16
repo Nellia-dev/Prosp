@@ -20,14 +20,15 @@ from core_logic.llm_client import LLMClientBase
 class ApproachStrategyAgent(BaseAgent[LeadWithPersona, LeadWithStrategy]):
     """Agent responsible for creating strategic approach plans for leads"""
     
-    def __init__(self, llm_client: Optional[LLMClientBase] = None, product_service_context: str = ""):
+    def __init__(self, llm_client: Optional[LLMClientBase] = None, product_service_context: str = "", output_language: str = "en-US"):
         super().__init__(
             name="ApproachStrategyAgent",
             description="Develops strategic approach plans for leads with personas",
             llm_client=llm_client,
-            config={"product_service_context": product_service_context}
+            config={"product_service_context": product_service_context, "output_language": output_language}
         )
         self.product_service_context = product_service_context
+        self.output_language = output_language
     
     def process(self, lead_with_persona: LeadWithPersona) -> LeadWithStrategy:
         """
@@ -42,13 +43,13 @@ class ApproachStrategyAgent(BaseAgent[LeadWithPersona, LeadWithStrategy]):
         logger.info(f"Creating strategy for: {lead_with_persona.analyzed_lead.validated_lead.site_data.url}")
         
         # Build the prompt for strategy creation
-        prompt = self._build_strategy_prompt(lead_with_persona)
+        prompt = self._build_strategy_prompt(lead_with_persona, self.output_language)
         
         # Generate LLM response
-        response_text = self.generate_llm_response(prompt)
+        response_text = self.generate_llm_response(prompt, output_language=self.output_language)
         
         # Parse the response
-        strategy_data = self.parse_llm_json_response(response_text, None) # Changed variable name for clarity
+        strategy_data = self.parse_llm_json_response(response_text, None)
         
         # Create ApproachStrategy from parsed data
         strategy = self._create_approach_strategy(strategy_data)
@@ -63,114 +64,118 @@ class ApproachStrategyAgent(BaseAgent[LeadWithPersona, LeadWithStrategy]):
         logger.info(f"Strategy created: {strategy.primary_channel.value if strategy.primary_channel else 'N/A'} approach for {strategy.first_interaction_goal}")
         return result
     
-    def _build_strategy_prompt(self, lead_with_persona: LeadWithPersona) -> str:
-        """Build the prompt for strategy creation - REFINED"""
+    def _build_strategy_prompt(self, lead_with_persona: LeadWithPersona, output_language: str) -> str:
+        """Build the prompt for strategy creation, now in English and language-aware."""
         
         analyzed_lead = lead_with_persona.analyzed_lead
         persona = lead_with_persona.persona
         
-        # Extract Brazilian business culture context
-        brazilian_context_str = self._get_brazilian_business_context(analyzed_lead.analysis.company_sector or "Geral")
+        # Extract Brazilian business culture context (now in English)
+        market_context_str = self._get_brazilian_business_context(analyzed_lead.analysis.company_sector or "General")
         
         # Ensure product_service_context has a default if empty for the prompt
-        product_context_for_prompt = self.product_service_context or "nossas soluções de IA para otimização de processos de vendas e geração de leads B2B"
+        product_context_for_prompt = self.product_service_context or "our AI solutions for sales process optimization and B2B lead generation"
 
         # Constructing context strings carefully to avoid issues with None or empty lists
-        company_services_str = ', '.join(analyzed_lead.analysis.main_services) if analyzed_lead.analysis.main_services else "Não detalhado na análise inicial."
-        company_challenges_str = ', '.join(analyzed_lead.analysis.potential_challenges) if analyzed_lead.analysis.potential_challenges else "Não detalhado na análise inicial."
+        company_services_str = ', '.join(analyzed_lead.analysis.main_services) if analyzed_lead.analysis.main_services else "Not detailed in initial analysis."
+        company_challenges_str = ', '.join(analyzed_lead.analysis.potential_challenges) if analyzed_lead.analysis.potential_challenges else "Not detailed in initial analysis."
 
-        persona_responsibilities_str = ', '.join(persona.key_responsibilities) if persona.key_responsibilities else "Não detalhado."
-        persona_goals_str = ', '.join(persona.professional_goals) if persona.professional_goals else "Não detalhado."
-        persona_challenges_str = ', '.join(persona.main_challenges) if persona.main_challenges else "Não detalhado."
-        persona_motivations_str = ', '.join(persona.motivations) if persona.motivations else "Não detalhado."
+        persona_responsibilities_str = ', '.join(persona.key_responsibilities) if persona.key_responsibilities else "Not detailed."
+        persona_goals_str = ', '.join(persona.professional_goals) if persona.professional_goals else "Not detailed."
+        persona_challenges_str = ', '.join(persona.main_challenges) if persona.main_challenges else "Not detailed."
+        persona_motivations_str = ', '.join(persona.motivations) if persona.motivations else "Not detailed."
 
-        return f"""Você é um Estrategista de Vendas B2B Sênior, altamente experiente e especializado no mercado brasileiro.
-Sua missão é desenvolver um plano de abordagem personalizado e eficaz para o tomador de decisão descrito abaixo, visando maximizar o potencial de conversão e alcançar resultados de alto impacto (ex: um ROI significativo).
+        return f"""You are a Senior B2B Sales Strategist, highly experienced and specialized in the target market (e.g., Brazilian market, adapt as needed based on context).
+Your mission is to develop a personalized and effective approach plan for the decision-maker described below, aiming to maximize conversion potential and achieve high-impact results (e.g., significant ROI).
 
-INFORMAÇÕES DISPONÍVEIS:
+AVAILABLE INFORMATION:
 
-1. CONTEXTO DA EMPRESA ALVO:
+1. TARGET COMPANY CONTEXT:
    - URL: {analyzed_lead.validated_lead.site_data.url}
-   - Setor de Atuação: {analyzed_lead.analysis.company_sector or 'Não Especificado'}
-   - Porte Estimado: {analyzed_lead.analysis.company_size_estimate or 'Não Determinado'}
-   - Principais Serviços/Produtos: {company_services_str}
-   - Desafios Potenciais Identificados: {company_challenges_str}
-   - Cultura e Valores (inferidos): {analyzed_lead.analysis.company_culture_values or 'Não foi possível determinar'}
-   - Diagnóstico Geral da Empresa: {analyzed_lead.analysis.general_diagnosis or 'Não disponível'}
+   - Industry Sector: {analyzed_lead.analysis.company_sector or 'Not Specified'}
+   - Estimated Size: {analyzed_lead.analysis.company_size_estimate or 'Not Determined'}
+   - Main Services/Products: {company_services_str}
+   - Identified Potential Challenges: {company_challenges_str}
+   - Inferred Culture and Values: {analyzed_lead.analysis.company_culture_values or 'Could not determine'}
+   - General Company Diagnosis: {analyzed_lead.analysis.general_diagnosis or 'Not available'}
 
-2. CONTEXTO DA PERSONA (Tomador de Decisão):
-   - Nome Fictício (para referência): {persona.fictional_name or 'N/A'}
-   - Cargo Provável: {persona.likely_role or 'Não Especificado'}
-   - Principais Responsabilidades: {persona_responsibilities_str}
-   - Objetivos Profissionais: {persona_goals_str}
-   - Seus Maiores Desafios Profissionais: {persona_challenges_str}
-   - Fatores de Motivação: {persona_motivations_str}
-   - Estilo de Comunicação Preferido: {persona.communication_style or 'Não Especificado'}
-   - Processo de Tomada de Decisão (inferido): {persona.decision_making_process or 'Não Especificado'}
+2. PERSONA CONTEXT (Decision-Maker):
+   - Fictional Name (for reference): {persona.fictional_name or 'N/A'}
+   - Likely Role: {persona.likely_role or 'Not Specified'}
+   - Key Responsibilities: {persona_responsibilities_str}
+   - Professional Goals: {persona_goals_str}
+   - Main Professional Challenges: {persona_challenges_str}
+   - Motivation Factors: {persona_motivations_str}
+   - Preferred Communication Style: {persona.communication_style or 'Not Specified'}
+   - Inferred Decision-Making Process: {persona.decision_making_process or 'Not Specified'}
 
-3. NOSSO PRODUTO/SERVIÇO:
+3. OUR PRODUCT/SERVICE:
    "{product_context_for_prompt}"
 
-4. CONTEXTO DO MERCADO BRASILEIRO (para o setor da empresa alvo):
-{brazilian_context_str}
+4. TARGET MARKET CONTEXT (e.g., Brazilian market, for the target company's sector):
+{market_context_str}
 
-INSTRUÇÕES PARA A ESTRATÉGIA DE ABORDAGEM:
-Com base em TODAS as informações fornecidas, desenvolva um plano de abordagem estratégico e detalhado.
-O plano deve ser prático, acionável e culturalmente adaptado ao Brasil.
-Conecte as necessidades específicas da persona e os desafios da empresa diretamente aos benefícios do nosso produto/serviço.
-O foco é em criar valor, construir relacionamento e facilitar uma decisão de compra favorável.
+INSTRUCTIONS FOR THE APPROACH STRATEGY:
+Based on ALL the information provided, develop a strategic and detailed approach plan.
+The plan should be practical, actionable, and culturally adapted to the target market (e.g., Brazil).
+Connect the specific needs of the persona and the company's challenges directly to the benefits of our product/service.
+The focus is on creating value, building relationships, and facilitating a favorable purchase decision.
 
-FORMATO DA RESPOSTA:
-Responda EXCLUSIVAMENTE com um objeto JSON válido, seguindo o schema e as descrições de campo abaixo.
-NÃO inclua NENHUM texto, explicação, ou markdown (como ```json) antes ou depois do objeto JSON.
+RESPONSE FORMAT:
+Respond EXCLUSIVELY with a valid JSON object, following the schema and field descriptions below.
+DO NOT include ANY text, explanation, or markdown (like ```json) before or after the JSON object.
 
-SCHEMA JSON ESPERADO:
+EXPECTED JSON SCHEMA:
 {{
-    "primary_channel": "string - O canal de comunicação MAIS recomendado para o primeiro contato. Escolha entre: 'email', 'linkedin', 'whatsapp', 'phone'.",
-    "secondary_channel": "string | null - Um canal alternativo ou de follow-up, se apropriado. Escolha entre: 'email', 'linkedin', 'whatsapp', 'phone', ou use null se não houver um secundário claro.",
-    "tone_of_voice": "string - Descreva o tom de voz recomendado (ex: 'Consultivo e educacional, focado em parceria', 'Formal, direto e respeitoso à hierarquia', 'Amigável, colaborativo e inovador'). Considere a persona e o contexto brasileiro.",
-    "key_value_propositions": ["string", ...] - Lista de 2-3 propostas de valor CHAVE e concisas, destacando como nosso produto/serviço resolve os desafios da persona/empresa ou ajuda a atingir seus objetivos. Ex: 'Redução de custos operacionais em X% através de Y', 'Aumento da eficiência da equipe de vendas com Z'.",
-    "talking_points": ["string", ...] - Lista de 2-3 pontos de conversa principais para usar na interação inicial, derivados das propostas de valor, mas formulados de forma mais conversacional.",
-    "potential_objections": {{ "string": "string", ... }} - Dicionário onde as chaves são objeções comuns previstas (ex: 'Já temos uma solução', 'Não temos orçamento agora', 'Isso não é prioridade') e os valores são respostas consultivas e eficazes, focadas em entender melhor e agregar valor, em vez de serem defensivas.",
-    "opening_questions": ["string", ...] - Lista de 1-2 perguntas abertas, instigantes e específicas para o contexto do lead, para iniciar a conversa, demonstrar pesquisa e descobrir mais sobre suas necessidades atuais.",
-    "first_interaction_goal": "string - O objetivo principal, específico e mensurável do primeiro contato (ex: 'Agendar uma conversa de diagnóstico de 15 minutos para explorar [desafio específico]', 'Obter confirmação de que [desafio X] é relevante e entender o impacto atual', 'Apresentar um case de sucesso similar e colher feedback inicial').",
-    "follow_up_strategy": "string - Descreva uma estratégia de follow-up concisa e lógica, com 2-3 passos, caso o primeiro contato não gere o resultado esperado (ex: '1. Enviar um artigo/case de estudo relevante via LinkedIn após 3 dias, mencionando um ponto da conversa inicial. 2. Se não houver resposta, tentar um contato telefônico breve após 1 semana para oferecer ajuda em um desafio específico. 3. Convidar para um webinar relevante se os passos anteriores não avançarem.')."
+    "primary_channel": "string - The MOST recommended communication channel for the first contact. Choose from: 'email', 'linkedin', 'whatsapp', 'phone'.",
+    "secondary_channel": "string | null - An alternative or follow-up channel, if appropriate. Choose from: 'email', 'linkedin', 'whatsapp', 'phone', or use null if no clear secondary.",
+    "tone_of_voice": "string - Describe the recommended tone of voice (e.g., 'Consultative and educational, focused on partnership', 'Formal, direct, and respectful of hierarchy', 'Friendly, collaborative, and innovative'). Consider the persona and market context.",
+    "key_value_propositions": ["string", ...] - List of 2-3 KEY and concise value propositions, highlighting how our product/service solves the persona/company challenges or helps achieve their goals. E.g., 'Reduce operational costs by X% through Y', 'Increase sales team efficiency with Z'.",
+    "talking_points": ["string", ...] - List of 2-3 main talking points to use in the initial interaction, derived from value propositions but phrased more conversationally.",
+    "potential_objections": {{ "string": "string", ... }} - Dictionary where keys are common anticipated objections (e.g., 'We already have a solution', 'We don't have a budget now', 'This is not a priority') and values are consultative and effective responses, focused on better understanding and adding value, rather than being defensive.",
+    "opening_questions": ["string", ...] - List of 1-2 open-ended, insightful, and context-specific questions for the lead, to start the conversation, demonstrate research, and discover more about their current needs.",
+    "first_interaction_goal": "string - The main, specific, and measurable objective of the first contact (e.g., 'Schedule a 15-minute diagnostic call to explore [specific challenge]', 'Obtain confirmation that [challenge X] is relevant and understand its current impact', 'Present a similar success case and gather initial feedback').",
+    "follow_up_strategy": "string - Describe a concise and logical follow-up strategy, with 2-3 steps, if the first contact does not achieve the expected result (e.g., '1. Send a relevant article/case study via LinkedIn after 3 days, mentioning a point from the initial conversation. 2. If no response, try a brief phone call after 1 week to offer help on a specific challenge. 3. Invite to a relevant webinar if previous steps do not progress.')."
 }}
 
-LEMBRETES FINAIS:
-- Preencha TODOS os campos do JSON conforme o schema.
-- Para campos de lista (arrays), se nenhuma informação específica for gerada, retorne uma lista vazia `[]`.
-- Para `secondary_channel`, se não aplicável, use `null`.
-- Baseie TODA a estratégia estritamente nas informações fornecidas. Não invente detalhes não presentes no contexto.
-- A qualidade e personalização da estratégia são cruciais.
+FINAL REMINDERS:
+- Fill ALL JSON fields according to the schema.
+- For list fields (arrays), if no specific information is generated, return an empty list `[]`.
+- For `secondary_channel`, if not applicable, use `null`.
+- Base ALL strategy strictly on the information provided. Do not invent details not present in the context.
+- The quality and personalization of the strategy are crucial.
+
+Important: Generate your entire response, including all textual content and string values within any JSON structure, strictly in the following language: {output_language}. Do not include any English text unless it is part of the original input data that should be preserved as is.
 """
     
-    def _get_brazilian_business_context(self, sector: Optional[str]) -> str: # sector can be None
-        """Get Brazilian business context based on sector"""
-        sector_lower = (sector or "").lower() # Handle None case for sector
-        
-        context_map = {
-            "tecnologia": """- Setor de Tecnologia: Decisores podem ser técnicos e valorizam dados concretos, ROI claro e inovação. Comunicação pode ser mais direta. LinkedIn é muito utilizado. Cases de sucesso e demonstrações são eficazes.""",
-            "serviços": """- Setor de Serviços: Relacionamento pessoal e confiança são fundamentais. Comunicação consultiva e menos agressiva. Networking e referências são muito valorizados. Processo de decisão pode ser colaborativo e mais longo.""",
-            "indústria": """- Setor Industrial: Tendência a ser mais conservador, focado em ROI tangível, eficiência e confiabilidade. Hierarquia pode ser importante. Casos de sucesso e conhecimento técnico do setor são diferenciais."""
+    def _get_brazilian_business_context(self, sector: Optional[str]) -> str:
+        """Get target market (e.g., Brazilian) business context based on sector, now in English."""
+        sector_lower = (sector or "").lower()
+
+        context_map = { # Keywords for sectors should ideally be in English if sectors in analysis are English
+            "technology": """- Technology Sector: Decision-makers may be technical and value concrete data, clear ROI, and innovation. Communication can be more direct. LinkedIn is widely used. Success cases and demos are effective.""",
+            "services": """- Services Sector: Personal relationships and trust are fundamental. Consultative and less aggressive communication. Networking and referrals are highly valued. Decision-making process can be collaborative and longer.""",
+            "industry": """- Industrial Sector: Tends to be more conservative, focused on tangible ROI, efficiency, and reliability. Hierarchy can be important. Success cases and technical knowledge of the sector are differentiators."""
+            # Add more sectors and their specific contexts as needed
         }
         
         specific_context = ""
         for key, context_text in context_map.items():
-            if key in sector_lower:
+            if key in sector_lower: # Match against English keywords
                 specific_context = context_text
                 break
 
-        general_context = """- Contexto Geral Brasileiro: Relacionamento muitas vezes precede o negócio; invista na conexão pessoal (mesmo virtualmente). A comunicação tende a ser mais indireta e cordial do que em algumas outras culturas; evite ser excessivamente direto ou transacional no primeiro contato. Demonstre conhecimento e interesse genuíno pelo mercado e pela empresa do lead. Flexibilidade e paciência podem ser necessárias."""
+        # General context, adaptable for different markets but initially framed for Brazil
+        general_market_context = """- General Market Context (e.g., Brazil): Relationships often precede business; invest in personal connection (even virtually). Communication tends to be more indirect and cordial than in some other cultures; avoid being overly direct or transactional in the first contact. Demonstrate genuine knowledge and interest in the lead's market and company. Flexibility and patience may be necessary."""
 
-        return f"{specific_context}\n{general_context}".strip()
+        return f"{specific_context}\n{general_market_context}".strip()
     
-    def _create_approach_strategy(self, strategy_data: Optional[Dict[str, Any]]) -> ApproachStrategy: # strategy_data can be None
-        """Create ApproachStrategy from parsed JSON data"""
+    def _create_approach_strategy(self, strategy_data: Optional[Dict[str, Any]]) -> ApproachStrategy:
+        """Create ApproachStrategy from parsed JSON data, with English fallbacks."""
         
-        if not strategy_data: # Handle cases where JSON parsing failed and returned None
+        if not strategy_data:
             logger.warning("Strategy data is None, returning fallback strategy.")
-            strategy_data = {} # Initialize to empty dict to allow .get() to work
+            strategy_data = {}
 
         try:
             primary_channel_str = strategy_data.get('primary_channel', 'email')
@@ -178,65 +183,64 @@ LEMBRETES FINAIS:
             
             secondary_channel_str = strategy_data.get('secondary_channel')
             secondary_channel = None
-            if secondary_channel_str and secondary_channel_str.lower() != 'null':
+            if secondary_channel_str and secondary_channel_str.lower() != 'null': # Check for 'null' string
                 secondary_channel = self._map_channel(secondary_channel_str)
             
-            # Ensure lists and dicts are correctly defaulted if missing or not of expected type
             key_value_propositions = strategy_data.get('key_value_propositions', [])
-            if not isinstance(key_value_propositions, list): key_value_propositions = ['Proposta de valor padrão devido a erro de parsing']
+            if not isinstance(key_value_propositions, list): key_value_propositions = ['Default value proposition due to parsing error']
 
             talking_points = strategy_data.get('talking_points', [])
-            if not isinstance(talking_points, list): talking_points = ['Ponto de conversa padrão devido a erro de parsing']
+            if not isinstance(talking_points, list): talking_points = ['Default talking point due to parsing error']
 
             potential_objections = strategy_data.get('potential_objections', {})
-            if not isinstance(potential_objections, dict): potential_objections = {'objeção_padrão': 'resposta padrão devido a erro de parsing'}
+            if not isinstance(potential_objections, dict): potential_objections = {'default_objection': 'Default response due to parsing error'}
 
             opening_questions = strategy_data.get('opening_questions', [])
-            if not isinstance(opening_questions, list): opening_questions = ['Pergunta padrão devido a erro de parsing']
+            if not isinstance(opening_questions, list): opening_questions = ['Default question due to parsing error']
 
 
             return ApproachStrategy(
                 primary_channel=primary_channel,
                 secondary_channel=secondary_channel,
-                tone_of_voice=strategy_data.get('tone_of_voice', 'Profissional e consultivo'),
+                tone_of_voice=strategy_data.get('tone_of_voice', 'Professional and consultative'),
                 key_value_propositions=key_value_propositions,
                 talking_points=talking_points,
                 potential_objections=potential_objections,
                 opening_questions=opening_questions,
-                first_interaction_goal=strategy_data.get('first_interaction_goal', 'Despertar interesse e compreender necessidades'),
-                follow_up_strategy=strategy_data.get('follow_up_strategy', 'Follow-up educacional em 3-5 dias úteis')
+                first_interaction_goal=strategy_data.get('first_interaction_goal', 'Spark interest and understand needs'),
+                follow_up_strategy=strategy_data.get('follow_up_strategy', 'Educational follow-up in 3-5 business days')
             )
             
-        except Exception as e:
+        except Exception as e: # pylint: disable=broad-except
             logger.warning(f"Failed to create strategy from data due to: {e}. Data: {strategy_data}")
-            # Return fallback strategy
+            # Return fallback strategy with English defaults
             return ApproachStrategy(
                 primary_channel=CommunicationChannel.EMAIL,
                 secondary_channel=CommunicationChannel.LINKEDIN,
-                tone_of_voice="Profissional e consultivo (fallback)",
+                tone_of_voice="Professional and consultative (fallback)",
                 key_value_propositions=[
-                    "Otimização de processos de vendas (fallback)",
-                    "Aumento de ROI (fallback)",
-                    "Personalização de abordagem (fallback)"
+                    "Sales process optimization (fallback)",
+                    "ROI increase (fallback)",
+                    "Personalized approach (fallback)"
                 ],
                 talking_points=[
-                    "Cases de sucesso no mercado brasileiro (fallback)",
-                    "Integração com processos existentes (fallback)",
-                    "Suporte especializado (fallback)"
+                    "Success cases in the target market (fallback)",
+                    "Integration with existing processes (fallback)",
+                    "Specialized support (fallback)"
                 ],
                 potential_objections={
-                    "custo": "Entendo a preocupação com o orçamento. Podemos explorar opções que se encaixem ou demonstrar o ROI que justifica o investimento? (fallback)",
-                    "satisfeito_com_solucao_atual": "Que ótimo que já possuem uma solução! Quais aspectos vocês mais valorizam nela e há algo que poderia ser ainda melhor? (fallback)"
+                    "cost": "I understand budget concerns. Can we explore options that fit or demonstrate the ROI that justifies the investment? (fallback)",
+                    "satisfied_with_current_solution": "That's great you already have a solution! What aspects do you value most in it, and is there anything that could be even better? (fallback)"
                 },
                 opening_questions=[
-                    "Quais são seus maiores desafios atualmente na área de [relacionada ao produto/serviço]? (fallback)",
-                    "Como sua equipe mede o sucesso em relação a [objetivo que o produto/serviço atende]? (fallback)"
+                    "What are your biggest challenges currently in the area of [related to product/service]? (fallback)",
+                    "How does your team measure success regarding [objective product/service addresses]? (fallback)"
                 ],
-                first_interaction_goal="Estabelecer um primeiro contato e avaliar o interesse inicial (fallback)",
-                follow_up_strategy="Enviar material de apoio e agendar conversa se houver interesse (fallback)"
+                first_interaction_goal="Establish initial contact and assess initial interest (fallback)",
+                follow_up_strategy="Send supporting material and schedule a conversation if there's interest (fallback)"
             )
     
-    def _map_channel(self, channel_str: Optional[str]) -> CommunicationChannel: # channel_str can be None
+    def _map_channel(self, channel_str: Optional[str]) -> CommunicationChannel:
         """Map string to CommunicationChannel enum"""
         channel_mapping = {
             'email': CommunicationChannel.EMAIL,
