@@ -14,7 +14,8 @@ from urllib.parse import urlparse
 
 # --- Imports para o Pipeline RAG e Harvester ---
 from dotenv import load_dotenv
-from loguru import logger
+import uuid # Added for fallback lead_id
+from loguru import logger # Ensure loguru logger is the one being used
 import os # Ensure os is imported for environment variable manipulation
 
 # Attempt to set a writable cache directory for Hugging Face models
@@ -33,11 +34,6 @@ app_base_dir = os.path.dirname(os.path.abspath(__file__))
 # then app_base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 # Given the traceback "/app/pipeline_orchestrator.py", app_base_dir should be /app.
 # Let's assume /app is the project root and is writable or a subdir like /app/.cache is.
-
-# If mcp_server.py is at /app/mcp_server.py and imports pipeline_orchestrator.py from /app/pipeline_orchestrator.py
-# then __file__ in pipeline_orchestrator.py is /app/pipeline_orchestrator.py
-# os.path.dirname(__file__) is /app
-# This seems correct for setting a cache within /app
 
 # Define the target cache directory components
 cache_parent_dir_name = ".cache"
@@ -95,7 +91,13 @@ try:
     from agents.lead_intake_agent import LeadIntakeAgent
     from agents.lead_analysis_agent import LeadAnalysisAgent
     from agents.enhanced_lead_processor import EnhancedLeadProcessor
-    from data_models.lead_structures import GoogleSearchData, SiteData, AnalyzedLead # Added AnalyzedLead
+    from data_models.lead_structures import (
+        SiteData,
+        GoogleSearchData,
+        AnalyzedLead,
+        ValidatedLead,
+        LeadIntakeInput # Added
+    )
     from core_logic.llm_client import LLMClientFactory
     from ai_prospect_intelligence import AdvancedProspectProfiler # Changed from prospect.ai_prospect_intelligence
     from adk1.agent import find_and_extract_structured_leads, search_and_qualify_leads
@@ -410,12 +412,31 @@ class PipelineOrchestrator:
 
             # Manually construct the SiteData input model to match its definition
             adk1_enrichment = lead_data.get("adk1_enrichment", {})
-            site_data_input = SiteData(
+            google_search_info = GoogleSearchData(
+                title=lead_data.get("company_name", "N/A"),
+                snippet=lead_data.get("description", "")
+            )
+
+            site_data_for_intake = SiteData(
                 url=lead_data.get("website"),
+                google_search_data=google_search_info,
                 extracted_text_content=adk1_enrichment.get("full_content"),
                 extraction_status_message="Extração bem-sucedida via ADK1" # Assume success from harvester
             )
-            intake_result = self.lead_intake_agent.execute(site_data_input)
+            
+            # Create the input for LeadIntakeAgent, including lead_id
+            current_lead_id = lead_data.get("lead_id")
+            if not current_lead_id:
+                # This should ideally not happen if harvester always provides lead_id
+                logger.error(f"[{self.job_id}] Critical: lead_id missing in lead_data for website {lead_data.get('website')}. Using a placeholder.")
+                current_lead_id = f"missing_id_{uuid.uuid4()}"
+
+            lead_intake_input = LeadIntakeInput(
+                lead_id=current_lead_id,
+                company_name=lead_data.get("company_name", "N/A"),
+                site_data=site_data_for_intake
+            )
+            intake_result = self.lead_intake_agent.execute(lead_intake_input)
             analyzed_lead = self.lead_analysis_agent.execute(intake_result)
 
             # --- Step 2: Delegate to the Enhanced Lead Processor ---
@@ -540,8 +561,16 @@ class PipelineOrchestrator:
                 
             leads_found_count += 1
             lead_id = str(uuid.uuid4())
-            
-            logger.info(f"[PIPELINE_STEP] Processing lead #{leads_found_count}: {lead_data.get('company_name', 'Unknown')} - {lead_data.get('website', 'No website')}")
+            lead_data['lead_id'] = lead_id # Persist lead_id in the dictionary
+
+            # FIX: Robust extraction of company_name
+            # If the top-level company_name is 'N/A', try to find a better one in the nested data.
+            if lead_data.get('company_name') == 'N/A' and 'adk1_enrichment' in lead_data:
+                nested_name = lead_data['adk1_enrichment'].get('company_name')
+                if nested_name:
+                    lead_data['company_name'] = nested_name
+
+            logger.info(f"[PIPELINE_STEP] Processing lead #{leads_found_count} ({lead_id}): {lead_data.get('company_name', 'Unknown')} - {lead_data.get('website', 'No website')}")
             
             yield LeadGeneratedEvent(
                 event_type="lead_generated",

@@ -11,8 +11,10 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import { RealTimeProgress } from "./components/RealTimeProgress";
+// import { UnifiedApiProvider } from "./context/UnifiedApiContext";
 
 const App = () => (
+  // <UnifiedApiProvider>
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <TranslationProvider>
@@ -39,6 +41,7 @@ const App = () => (
       </TranslationProvider>
     </AuthProvider>
   </QueryClientProvider>
+  // </UnifiedApiProvider>
 );
 
 export default App;

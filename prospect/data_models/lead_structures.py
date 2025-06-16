@@ -26,6 +26,13 @@ class GoogleSearchData(BaseModel):
     snippet: str = Field(..., description="Page snippet from Google search")
 
 
+class LeadIntakeInput(BaseModel):
+    """Input structure for the LeadIntakeAgent, combining SiteData with lead_id."""
+    lead_id: str = Field(..., description="Unique identifier for the lead")
+    company_name: str = Field(..., description="Company name for the lead")
+    site_data: "SiteData" = Field(..., description="The actual site data to be processed")
+
+
 class SiteData(BaseModel):
     """Individual lead data from harvester"""
     url: HttpUrl = Field(..., description="Website URL")
@@ -52,6 +59,8 @@ class HarvesterOutput(BaseModel):
 
 class ValidatedLead(BaseModel):
     """Validated lead after intake processing"""
+    lead_id: str = Field(..., description="Unique identifier for the lead")
+    company_name: str = Field(..., description="Company name for the lead")
     site_data: SiteData = Field(..., description="Original site data")
     validation_timestamp: datetime = Field(default_factory=datetime.now)
     is_valid: bool = Field(..., description="Whether the lead passed validation")

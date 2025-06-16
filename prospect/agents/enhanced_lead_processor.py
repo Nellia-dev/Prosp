@@ -10,8 +10,8 @@ import re
 import time
 import requests
 import traceback
-from typing import Optional, Dict, Any, List, AsyncIterator
 from datetime import datetime
+from typing import Optional, Dict, Any, List, AsyncIterator
 from loguru import logger
 
 from data_models.lead_structures import (
@@ -45,7 +45,14 @@ from data_models.lead_structures import (
 )
 from agents.base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
-from event_models import AgentStartEvent, AgentEndEvent, StatusUpdateEvent, PipelineErrorEvent, PipelineEndEvent
+from event_models import (
+    LeadEnrichmentEndEvent,
+    AgentStartEvent, 
+    AgentEndEvent, 
+    StatusUpdateEvent, 
+    PipelineErrorEvent, 
+    PipelineEndEvent
+)
 
 # New Agent Imports
 from .tavily_enrichment_agent import TavilyEnrichmentAgent, TavilyEnrichmentInput, TavilyEnrichmentOutput
@@ -61,7 +68,7 @@ from .tot_action_plan_synthesis_agent import ToTActionPlanSynthesisAgent, ToTAct
 from .detailed_approach_plan_agent import DetailedApproachPlanAgent, DetailedApproachPlanInput, DetailedApproachPlanOutput
 from .objection_handling_agent import ObjectionHandlingAgent, ObjectionHandlingInput, ObjectionHandlingOutput
 from .value_proposition_customization_agent import ValuePropositionCustomizationAgent, ValuePropositionCustomizationInput, ValuePropositionCustomizationOutput
-from .b2b_personalized_message_agent import B2BPersonalizedMessageAgent, B2BPersonalizedMessageInput, B2BPersonalizedMessageOutput, ContactDetailsInput as B2BContactDetailsInput
+from .b2b_personalized_message_agent import B2BPersonalizedMessageAgent, B2BPersonalizedMessageInput, B2BPersonalizedMessageOutput, ContactDetailsInput
 from .internal_briefing_summary_agent import InternalBriefingSummaryAgent, InternalBriefingSummaryInput, InternalBriefingSummaryOutput
 
 
@@ -101,8 +108,8 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         self.competitor_identification_agent = CompetitorIdentificationAgent(llm_client=self.llm_client, name="CompetitorIdentificationAgent", description="Identifies potential competitors of the lead company.")
         self.strategic_question_generation_agent = StrategicQuestionGenerationAgent(llm_client=self.llm_client, name="StrategicQuestionGenerationAgent", description="Generates additional strategic, open-ended questions.")
         self.buying_trigger_identification_agent = BuyingTriggerIdentificationAgent(llm_client=self.llm_client, name="BuyingTriggerIdentificationAgent", description="Identifies events or signals that might indicate the lead is actively looking for solutions.")
-        self.tot_strategy_generation_agent = ToTStrategyGenerationAgent(llm_client=self.llm_client, name="ToTStrategyGenerationAgent", description="Generates multiple distinct strategic approach options for the lead.")
-        self.tot_strategy_evaluation_agent = ToTStrategyEvaluationAgent(llm_client=self.llm_client, name="ToTStrategyEvaluationAgent", description="Evaluates the generated strategic options.")
+        self.tot_strategy_generation_agent = ToTStrategyGenerationAgent(llm_client=self.llm_client, name="ToTStrategyGenerationAgent", description="Generates multiple distinct strategic approach options for the lead.", config={"max_tokens": 4096})
+        self.tot_strategy_evaluation_agent = ToTStrategyEvaluationAgent(llm_client=self.llm_client, name="ToTStrategyEvaluationAgent", description="Evaluates the generated strategic options.", config={"max_tokens": 4096})
         self.tot_action_plan_synthesis_agent = ToTActionPlanSynthesisAgent(llm_client=self.llm_client, name="ToTActionPlanSynthesisAgent", description="Synthesizes the evaluated strategies into a single, refined action plan.")
         self.detailed_approach_plan_agent = DetailedApproachPlanAgent(llm_client=self.llm_client, name="DetailedApproachPlanAgent", description="Develops a detailed, step-by-step approach plan.")
         self.objection_handling_agent = ObjectionHandlingAgent(llm_client=self.llm_client, name="ObjectionHandlingAgent", description="Anticipates potential objections the lead might have.")
@@ -138,7 +145,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
     ) -> AsyncIterator[Dict[str, Any]]:
         start_time = time.time()
         url = str(analyzed_lead.validated_lead.site_data.url)
-        company_name = self._extract_company_name(analyzed_lead)
+        company_name = analyzed_lead.validated_lead.company_name
         
         pipeline_logger = self.logger.bind(job_id=job_id, user_id=user_id, company_url=url, company_name=company_name)
         pipeline_logger.info(f"🚀 ENRICHMENT PIPELINE STARTING for: {company_name}")
@@ -323,7 +330,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 
                 # Generate advanced prospect profile using RAG
                 ai_prospect_profile = prospect_profiler.create_advanced_prospect_profile(
-                    lead_data=analyzed_lead.analysis.model_dump(),
+                    lead_data=analyzed_lead.validated_lead.model_dump(),
                     enriched_context=enriched_context,
                     rag_vector_store=rag_vector_store
                 )
@@ -451,7 +458,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
 
             # Step 14: Personalized Message Generation
             pipeline_logger.info("💌 Step 14/15: Personalized Message Creation")
-            personalized_message_output, events = await get_agent_result(self.b2b_personalized_message_agent, B2BPersonalizedMessageInput(final_action_plan_text=tot_synthesis_output.model_dump_json() if tot_synthesis_output else '{}', customized_value_propositions_text=json.dumps([p.model_dump() for p in value_props_output.custom_propositions]) if value_props_output and value_props_output.custom_propositions else '[]', contact_details=B2BContactDetailsInput(emails_found=contact_info.emails_found if contact_info else [], instagram_profiles_found=contact_info.instagram_profiles_found if contact_info else []), product_service_offered=self.product_service_context, lead_url=url, company_name=company_name, persona_fictional_name=persona_profile_str), "Crafting personalized message")
+            personalized_message_output, events = await get_agent_result(self.b2b_personalized_message_agent, B2BPersonalizedMessageInput(final_action_plan_text=tot_synthesis_output.model_dump_json() if tot_synthesis_output else '{}', customized_value_propositions_text=json.dumps([p.model_dump() for p in value_props_output.custom_propositions]) if value_props_output and value_props_output.custom_propositions else '[]', contact_details=ContactDetailsInput(emails_found=contact_info.emails_found if contact_info else [], instagram_profiles_found=contact_info.instagram_profiles_found if contact_info else []), product_service_offered=self.product_service_context, lead_url=url, company_name=company_name, persona_fictional_name=persona_profile_str), "Crafting personalized message")
             for event in events: yield event
             message_channel = getattr(personalized_message_output, 'crafted_message_channel', 'N/A') if personalized_message_output else 'N/A'
             message_length = len(getattr(personalized_message_output, 'crafted_message_body', '')) if personalized_message_output else 0
@@ -636,9 +643,10 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
 
             yield LeadEnrichmentEndEvent(
                 event_type="pipeline_end",
+                timestamp=datetime.now().isoformat(), # Added
                 job_id=job_id,
                 user_id=user_id,
-                lead_id=analyzed_lead.lead_id,
+                lead_id=analyzed_lead.validated_lead.lead_id,
                 success=True,
                 final_package=final_package.model_dump(mode='json')
             ).to_dict()
@@ -660,9 +668,10 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             # Also yield the definitive end event on failure
             yield LeadEnrichmentEndEvent(
                 event_type="lead_enrichment_end",
+                timestamp=datetime.now().isoformat(), # Added
                 job_id=job_id,
                 user_id=user_id,
-                lead_id=analyzed_lead.lead_id,
+                lead_id=analyzed_lead.validated_lead.lead_id,
                 success=False,
                 error_message=str(e)
             ).to_dict()

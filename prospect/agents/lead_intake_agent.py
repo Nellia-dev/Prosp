@@ -9,13 +9,14 @@ from datetime import datetime
 
 from agents.base_agent import BaseAgent
 from data_models.lead_structures import (
+    LeadIntakeInput, # Added
     SiteData,
     ValidatedLead,
     ExtractionStatus
 )
 
 
-class LeadIntakeAgent(BaseAgent[SiteData, ValidatedLead]):
+class LeadIntakeAgent(BaseAgent[LeadIntakeInput, ValidatedLead]):
     """
     Agent responsible for:
     - Validating lead data structure
@@ -38,7 +39,7 @@ class LeadIntakeAgent(BaseAgent[SiteData, ValidatedLead]):
         super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
         self.skip_failed_extractions = skip_failed_extractions
     
-    def process(self, input_data: SiteData) -> ValidatedLead:
+    def process(self, input_data: LeadIntakeInput) -> ValidatedLead:
         """
         Process and validate lead data.
         
@@ -48,38 +49,38 @@ class LeadIntakeAgent(BaseAgent[SiteData, ValidatedLead]):
         Returns:
             ValidatedLead object with validation results
         """
-        logger.info(f"Validating lead: {input_data.url}")
+        logger.info(f"Validating lead: {input_data.site_data.url}")
         
         validation_errors = []
         is_valid = True
         extraction_successful = False
         
         # Check URL validity
-        if not input_data.url:
+        if not input_data.site_data.url:
             validation_errors.append("URL is missing")
             is_valid = False
         
         # Check extraction status
-        extraction_status = self._determine_extraction_status(input_data.extraction_status_message)
+        extraction_status = self._determine_extraction_status(input_data.site_data.extraction_status_message)
         
         if extraction_status in [ExtractionStatus.SUCCESS, ExtractionStatus.SUCCESS_VIA_IMAGE]:
             extraction_successful = True
         else:
             extraction_successful = False
             if self.skip_failed_extractions:
-                validation_errors.append(f"Extraction failed: {input_data.extraction_status_message}")
+                validation_errors.append(f"Extraction failed: {input_data.site_data.extraction_status_message}")
                 is_valid = False
         
         # Validate extracted content
         if extraction_successful:
-            if not input_data.extracted_text_content or len(input_data.extracted_text_content.strip()) < 10:
+            if not input_data.site_data.extracted_text_content or len(input_data.site_data.extracted_text_content.strip()) < 10:
                 validation_errors.append("Extracted text content is empty or too short")
                 is_valid = False
         
         # Clean text content if available
         cleaned_text = None
-        if input_data.extracted_text_content:
-            cleaned_text = self._clean_text_content(input_data.extracted_text_content)
+        if input_data.site_data.extracted_text_content:
+            cleaned_text = self._clean_text_content(input_data.site_data.extracted_text_content)
             
             # Additional validation on cleaned content
             if extraction_successful and len(cleaned_text) < 50:
@@ -87,13 +88,15 @@ class LeadIntakeAgent(BaseAgent[SiteData, ValidatedLead]):
                 # Don't mark as invalid, just note the issue
         
         # Check Google search data
-        if not input_data.google_search_data:
+        if not input_data.site_data.google_search_data:
             validation_errors.append("Google search data is missing")
             # This is not critical, so don't mark as invalid
         
         # Create validated lead
         validated_lead = ValidatedLead(
-            site_data=input_data,
+            lead_id=input_data.lead_id,
+            company_name=input_data.company_name,
+            site_data=input_data.site_data,
             validation_timestamp=datetime.now(),
             is_valid=is_valid,
             validation_errors=validation_errors,
@@ -103,9 +106,9 @@ class LeadIntakeAgent(BaseAgent[SiteData, ValidatedLead]):
         
         # Log validation results
         if is_valid:
-            logger.info(f"Lead validated successfully: {input_data.url}")
+            logger.info(f"Lead validated successfully: {input_data.site_data.url}")
         else:
-            logger.warning(f"Lead validation failed: {input_data.url}, errors: {validation_errors}")
+            logger.warning(f"Lead validation failed: {input_data.site_data.url}, errors: {validation_errors}")
         
         return validated_lead
     
@@ -166,7 +169,7 @@ class LeadIntakeAgent(BaseAgent[SiteData, ValidatedLead]):
         
         return text
     
-    def validate_batch(self, site_data_list: List[SiteData]) -> List[ValidatedLead]:
+    def validate_batch(self, intake_input_list: List[LeadIntakeInput]) -> List[ValidatedLead]:
         """
         Validate a batch of leads.
         
@@ -178,15 +181,16 @@ class LeadIntakeAgent(BaseAgent[SiteData, ValidatedLead]):
         """
         validated_leads = []
         
-        for site_data in site_data_list:
+        for intake_input_item in intake_input_list:
             try:
-                validated_lead = self.execute(site_data)
+                validated_lead = self.execute(intake_input_item)
                 validated_leads.append(validated_lead)
             except Exception as e:
-                logger.error(f"Error validating lead {site_data.url}: {e}")
+                logger.error(f"Error validating lead {intake_input_item.site_data.url} (ID: {intake_input_item.lead_id}): {e}")
                 # Create a failed validation entry
                 validated_lead = ValidatedLead(
-                    site_data=site_data,
+                    lead_id=intake_input_item.lead_id, # Added
+                    site_data=intake_input_item.site_data, # Changed
                     validation_timestamp=datetime.now(),
                     is_valid=False,
                     validation_errors=[f"Validation process failed: {str(e)}"],

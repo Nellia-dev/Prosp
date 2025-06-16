@@ -77,10 +77,12 @@ export interface ToolCallEndEvent extends BaseEvent {
   error_message?: string;
 }
 
+import { LeadResponse } from './api';
+import type { LeadStatus } from './unified';
+
 export interface LeadGeneratedEvent extends BaseEvent {
   event_type: 'lead_generated';
-  lead_id: string;
-  lead_data: Record<string, unknown>; // This matches prospect CreateLeadDto
+  lead_data: LeadResponse;
   source_url: string;
   agent_name: string;
 }
@@ -101,10 +103,10 @@ export interface LeadEnrichmentEndEvent extends BaseEvent {
 
 export interface StatusUpdateEvent extends BaseEvent {
   event_type: 'status_update';
-  status_message: string;
-  agent_name?: string;
-  progress_percentage?: number;
-  lead_id?: string; // Added for lead-specific status updates
+  lead_id: string;
+  status: LeadStatus; 
+  message: string; 
+  timestamp: string;
 }
 
 export interface PipelineErrorEvent extends BaseEvent {

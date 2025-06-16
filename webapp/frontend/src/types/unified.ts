@@ -13,18 +13,82 @@
 // Core Entity Types (Aligned with Database Schema)
 // ===================================
 
-export type ProcessingStage = 
-  | 'lead_qualification'
-  | 'analyzing_refining' 
-  | 'possibly_qualified'
+export type ProcessingStage =
   | 'prospecting'
+  | 'lead_qualification'
+  | 'analyzing_refining'
+  | 'possibly_qualified'
   | 'revisando'
   | 'primeiras_mensagens'
   | 'negociando'
+  | 'reuniao_agendada'
   | 'desqualificado'
-  | 'reuniao_agendada';
+  // Granular stages for internal tracking
+  | 'intake'
+  | 'analysis'
+  | 'persona'
+  | 'strategy'
+  | 'message'
+  | 'completed';
 
-export type QualificationTier = 'High Potential' | 'Medium Potential' | 'Low Potential';
+// The stages to be displayed as columns on the CRM board
+export const PROCESSING_STAGES: ProcessingStage[] = [
+  'prospecting',
+  'lead_qualification',
+  'analyzing_refining',
+  'possibly_qualified',
+  'revisando',
+  'primeiras_mensagens',
+  'negociando',
+  'reuniao_agendada',
+];
+
+// Display names for each stage
+export const STAGE_DISPLAY_NAMES: Record<ProcessingStage, string> = {
+  prospecting: 'Prospectando',
+  lead_qualification: 'Qualificação',
+  analyzing_refining: 'Análise e Refinamento',
+  possibly_qualified: 'Possivelmente Qualificado',
+  revisando: 'Em Revisão',
+  primeiras_mensagens: 'Primeiro Contato',
+  negociando: 'Em Negociação',
+  reuniao_agendada: 'Reunião Agendada',
+  desqualificado: 'Desqualificado',
+  intake: 'Entrada',
+  analysis: 'Análise',
+  persona: 'Criação de Persona',
+  strategy: 'Definição de Estratégia',
+  message: 'Criação de Mensagem',
+  completed: 'Concluído',
+};
+
+// Color coding for each stage
+export const STAGE_COLORS: Record<ProcessingStage, string> = {
+  prospecting: '#3b82f6', // blue-500
+  lead_qualification: '#8b5cf6', // violet-500
+  analyzing_refining: '#a855f7', // purple-500
+  possibly_qualified: '#d946ef', // fuchsia-500
+  revisando: '#f97316', // orange-500
+  primeiras_mensagens: '#10b981', // emerald-500
+  negociando: '#22c55e', // green-500
+  reuniao_agendada: '#14b8a6', // teal-500
+  desqualificado: '#ef4444', // red-500
+  intake: '#6b7280', // gray-500
+  analysis: '#6b7280',
+  persona: '#6b7280',
+  strategy: '#6b7280',
+  message: '#6b7280',
+  completed: '#6b7280',
+};
+
+export enum LeadStatus {
+  LEAD_GENERATED = 'LEAD_GENERATED',
+  INTAKE_VALIDATED = 'INTAKE_VALIDATED',
+  ANALYSIS_COMPLETE = 'ANALYSIS_COMPLETE',
+  ENRICHMENT_STARTED = 'ENRICHMENT_STARTED',
+  ENRICHMENT_COMPLETE = 'ENRICHMENT_COMPLETE',
+  PIPELINE_FAILED = 'PIPELINE_FAILED',
+}
 
 export type AgentName =
   // Initial Processing Agents
@@ -133,7 +197,7 @@ export interface ComprehensiveProspectPackage {
 }
 
 // Lead Status enum aligned with backend
-export type LeadStatus = 'new' | 'harvested' | 'pending_enrichment' | 'enriching' | 'enriched' | 'enrichment_failed';
+
 
 export interface LeadData {
   id: string;
@@ -151,7 +215,7 @@ export interface LeadData {
   pain_point_analysis?: string[];
   purchase_triggers?: string[];
   processing_stage: ProcessingStage;
-  status: LeadStatus;
+  status: LeadStatus; // <-- This was already correct, ensuring it stays
   enrichment_data?: ComprehensiveProspectPackage;
   created_at: string;
   updated_at: string;
@@ -513,7 +577,7 @@ export const isProcessingStage = (value: string): value is ProcessingStage => {
 };
 
 export const isQualificationTier = (value: string): value is QualificationTier => {
-  return ['High Potential', 'Medium Potential', 'Low Potential'].includes(value as QualificationTier);
+  return ['Alto Potencial', 'Potencial Médio', 'Baixo Potencial', 'Não Qualificado', 'N/A'].includes(value as QualificationTier);
 };
 
 export const isAgentName = (value: string): value is AgentName => {
@@ -528,22 +592,14 @@ export const isUserRole = (value: string): value is UserRole => {
 // Constants
 // ===================================
 
-export const PROCESSING_STAGES: ProcessingStage[] = [
-  'lead_qualification',
-  'analyzing_refining', 
-  'possibly_qualified',
-  'prospecting',
-  'revisando',
-  'primeiras_mensagens',
-  'negociando',
-  'desqualificado',
-  'reuniao_agendada'
-];
+export type QualificationTier = 'Alto Potencial' | 'Potencial Médio' | 'Baixo Potencial' | 'Não Qualificado' | 'N/A';
 
 export const QUALIFICATION_TIERS: QualificationTier[] = [
-  'High Potential',
-  'Medium Potential', 
-  'Low Potential'
+  'Alto Potencial',
+  'Potencial Médio',
+  'Baixo Potencial',
+  'Não Qualificado',
+  'N/A'
 ];
 
 export const AGENT_NAMES: AgentName[] = [
@@ -581,10 +637,6 @@ export const AGENT_NAMES: AgentName[] = [
 
 export const USER_ROLES: UserRole[] = ['admin', 'user'];
 
-// ===================================
-// Stage Display Names and Colors
-// ===================================
-
 export const AGENT_DISPLAY_NAMES: Record<AgentName, string> = {
   // Initial Processing Agents
   'lead_intake_agent': 'Lead Intake Agent',
@@ -618,26 +670,3 @@ export const AGENT_DISPLAY_NAMES: Record<AgentName, string> = {
   'lead_analysis_generation_agent': 'Analysis Generation Agent'
 };
 
-export const STAGE_DISPLAY_NAMES: Record<ProcessingStage, string> = {
-  'lead_qualification': 'Lead Qualification',
-  'analyzing_refining': 'Analyzing & Refining',
-  'possibly_qualified': 'Possibly Qualified',
-  'prospecting': 'Prospecting',
-  'revisando': 'Under Review',
-  'primeiras_mensagens': 'First Messages',
-  'negociando': 'Negotiating',
-  'desqualificado': 'Disqualified',
-  'reuniao_agendada': 'Meeting Scheduled'
-};
-
-export const STAGE_COLORS: Record<ProcessingStage, string> = {
-  'lead_qualification': '#6366f1',
-  'analyzing_refining': '#8b5cf6',
-  'possibly_qualified': '#06b6d4',
-  'prospecting': '#10b981',
-  'revisando': '#f59e0b',
-  'primeiras_mensagens': '#3b82f6',
-  'negociando': '#8b5cf6',
-  'desqualificado': '#ef4444',
-  'reuniao_agendada': '#22c55e'
-};
