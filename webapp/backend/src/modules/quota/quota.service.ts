@@ -41,20 +41,36 @@ export class QuotaService {
     let shouldReset = false;
 
     switch (plan.period) {
-      case 'day':
-        // Reset if more than 24 hours have passed
-        shouldReset = timeSinceReset >= 24 * 60 * 60 * 1000;
+      case 'day': {
+        const lastReset = new Date(user.lastQuotaResetAt);
+        lastReset.setHours(0, 0, 0, 0);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        shouldReset = today.getTime() > lastReset.getTime();
         break;
-      case 'week':
-        // Reset if more than 7 days have passed
-        shouldReset = timeSinceReset >= 7 * 24 * 60 * 60 * 1000;
+      }
+      case 'week': {
+        const lastReset = new Date(user.lastQuotaResetAt);
+        const today = new Date();
+
+        const lastResetWeekStart = new Date(lastReset);
+        lastResetWeekStart.setDate(lastReset.getDate() - lastReset.getDay());
+        lastResetWeekStart.setHours(0, 0, 0, 0);
+
+        const todayWeekStart = new Date(today);
+        todayWeekStart.setDate(today.getDate() - today.getDay());
+        todayWeekStart.setHours(0, 0, 0, 0);
+
+        shouldReset = todayWeekStart.getTime() > lastResetWeekStart.getTime();
         break;
-      case 'month':
+      }
+      case 'month': {
         // Reset if we're in a different month
         const resetDate = new Date(user.lastQuotaResetAt);
         shouldReset = now.getMonth() !== resetDate.getMonth() || 
                      now.getFullYear() !== resetDate.getFullYear();
         break;
+      }
     }
 
     if (shouldReset) {

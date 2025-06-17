@@ -94,10 +94,10 @@ export type AgentName =
   // Initial Processing Agents
   | 'lead_intake_agent'
   | 'lead_analysis_agent'
-  
+
   // Main Orchestrator
   | 'enhanced_lead_processor'
-  
+
   // Specialized Sub-Agents (used by Enhanced Lead Processor)
   | 'tavily_enrichment_agent'
   | 'contact_extraction_agent'
@@ -114,7 +114,7 @@ export type AgentName =
   | 'value_proposition_customization_agent'
   | 'b2b_personalized_message_agent'
   | 'internal_briefing_summary_agent'
-  
+
   // Alternative/Modular Agents
   | 'approach_strategy_agent'
   | 'b2b_persona_creation_agent'
@@ -185,7 +185,7 @@ export interface ComprehensiveProspectPackage {
       key_benefit: string;
     }[];
     competitor_intelligence?: {
-        identified_competitors: { name: string, description: string }[];
+      identified_competitors: { name: string, description: string }[];
     };
   };
   enhanced_personalized_message?: {
@@ -205,7 +205,6 @@ export interface LeadData {
   website: string;
   relevance_score: number;
   roi_potential_score: number;
-  brazilian_market_fit: number;
   qualification_tier: QualificationTier;
   company_sector: string;
   persona?: {
@@ -367,7 +366,6 @@ export interface UpdateLeadDto {
   annual_revenue?: number;
   relevance_score?: number;
   roi_potential_score?: number;
-  brazilian_market_fit?: number;
   qualification_tier?: QualificationTier;
   processing_stage?: ProcessingStage;
   persona_analysis?: string;
@@ -385,7 +383,7 @@ export interface LeadFilters {
     min: number;
     max: number;
   };
-  sort_by?: 'company_name' | 'relevance_score' | 'roi_potential_score' | 'brazilian_market_fit' | 'created_at';
+  sort_by?: 'company_name' | 'relevance_score' | 'roi_potential_score' | 'created_at';
   sort_order?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
@@ -565,7 +563,7 @@ export interface BusinessError extends Error {
 export const isProcessingStage = (value: string): value is ProcessingStage => {
   return [
     'lead_qualification',
-    'analyzing_refining', 
+    'analyzing_refining',
     'possibly_qualified',
     'prospecting',
     'revisando',
@@ -606,10 +604,10 @@ export const AGENT_NAMES: AgentName[] = [
   // Initial Processing Agents
   'lead_intake_agent',
   'lead_analysis_agent',
-  
+
   // Main Orchestrator
   'enhanced_lead_processor',
-  
+
   // Specialized Sub-Agents (used by Enhanced Lead Processor)
   'tavily_enrichment_agent',
   'contact_extraction_agent',
@@ -626,7 +624,7 @@ export const AGENT_NAMES: AgentName[] = [
   'value_proposition_customization_agent',
   'b2b_personalized_message_agent',
   'internal_briefing_summary_agent',
-  
+
   // Alternative/Modular Agents
   'approach_strategy_agent',
   'b2b_persona_creation_agent',
@@ -641,10 +639,10 @@ export const AGENT_DISPLAY_NAMES: Record<AgentName, string> = {
   // Initial Processing Agents
   'lead_intake_agent': 'Lead Intake Agent',
   'lead_analysis_agent': 'Lead Analysis Agent',
-  
+
   // Main Orchestrator
   'enhanced_lead_processor': 'Enhanced Lead Processor',
-  
+
   // Specialized Sub-Agents
   'tavily_enrichment_agent': 'Web Research Agent',
   'contact_extraction_agent': 'Contact Extraction Agent',
@@ -661,7 +659,7 @@ export const AGENT_DISPLAY_NAMES: Record<AgentName, string> = {
   'value_proposition_customization_agent': 'Value Proposition Agent',
   'b2b_personalized_message_agent': 'Message Personalization Agent',
   'internal_briefing_summary_agent': 'Internal Briefing Agent',
-  
+
   // Alternative/Modular Agents
   'approach_strategy_agent': 'Approach Strategy Agent',
   'b2b_persona_creation_agent': 'B2B Persona Agent',

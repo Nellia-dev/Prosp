@@ -434,7 +434,6 @@ class EnhancedSystemTester:
         results['cultural_constants_loaded'] = len(BRAZILIAN_BUSINESS_INDICATORS) > 0
         results['sector_keywords_br'] = 'tecnologia' in str(SECTOR_KEYWORDS).lower()
         
-        logger.info(f"Brazilian market features test completed: {results}")
         return results
     
     def test_error_handling(self) -> Dict[str, Any]:

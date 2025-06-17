@@ -1,18 +1,18 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { LeadsService } from './leads.service';
-import { 
-  LeadData, 
-  CreateLeadDto, 
-  UpdateLeadDto, 
-  LeadFilters 
+import {
+  LeadData,
+  CreateLeadDto,
+  UpdateLeadDto,
+  LeadFilters
 } from '../../shared/types/nellia.types';
 
 @ApiBearerAuth()
 @ApiTags('leads')
 @Controller('leads')
 export class LeadsController {
-  constructor(private readonly leadsService: LeadsService) {}
+  constructor(private readonly leadsService: LeadsService) { }
 
   @Get()
   @ApiOperation({ summary: 'Get all leads with optional filters' })
@@ -53,7 +53,7 @@ export class LeadsController {
   @ApiResponse({ status: 200, description: 'Lead stage updated successfully' })
   @ApiResponse({ status: 404, description: 'Lead not found' })
   async updateStage(
-    @Param('id') id: string, 
+    @Param('id') id: string,
     @Body('stage') stage: string
   ): Promise<LeadData> {
     return this.leadsService.updateStage(id, stage);
@@ -78,7 +78,6 @@ export class LeadsController {
     averageScores: {
       relevance: number;
       roi: number;
-      marketFit: number;
     };
   }> {
     return this.leadsService.getLeadsStats();

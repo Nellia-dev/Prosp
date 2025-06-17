@@ -28,7 +28,7 @@ export class QueueService {
     private readonly leadsService: LeadsService,
     private readonly quotaService: QuotaService,
     private readonly usersService: UsersService,
-  ) {}
+  ) { }
 
   // ===================================
   // Lead Processing Queue Methods
@@ -267,7 +267,7 @@ export class QueueService {
       case 'lead_enrichment_end':
         await this.handleLeadEnrichmentEnd(user_id, job_id, data.lead_id, data.success, data.final_package, data.error_message);
         break;
-        
+
       case 'pipeline_end':
         await this.handlePipelineEnd(user_id, job_id, data.total_leads_generated);
         break;
@@ -294,7 +294,7 @@ export class QueueService {
     try {
       const createDto = { ...leadDto, id: leadId, userId, status: LeadStatus.HARVESTED };
       const newLead = await this.leadsService.create(createDto);
-      
+
       // This is not needed here, the enrichment process starts automatically.
       // Dispatch for enrichment using the queue system
       // await this.enrichmentProcessingQueue.add('enrich-lead', {
@@ -342,7 +342,7 @@ export class QueueService {
       if (lead_id) {
         // Map status messages to processing stages
         let newStage: ProcessingStage | null = null;
-        
+
         if (status_message?.includes('qualification')) {
           newStage = ProcessingStage.LEAD_QUALIFICATION;
         } else if (status_message?.includes('analyzing') || status_message?.includes('analysis')) {
@@ -388,15 +388,15 @@ export class QueueService {
         await this.leadsService.updateStatus(leadId, LeadStatus.ENRICHED);
         await this.leadsService.updateStage(leadId, ProcessingStage.COMPLETED);
         await this.leadsService.updateEnrichmentData(leadId, finalPackage);
-        
+
         // Extract and save all relevant data from the final package
         const updateData: any = {};
-        
+
         // Handle different package structures (enhanced vs hybrid)
         if (finalPackage.enhanced_strategy?.lead_qualification?.qualification_tier) {
           updateData.qualification_tier = finalPackage.enhanced_strategy.lead_qualification.qualification_tier;
         }
-        
+
         // Extract scores from the top-level package
         if (finalPackage.relevance_score !== undefined) {
           updateData.relevance_score = finalPackage.relevance_score;
@@ -404,10 +404,7 @@ export class QueueService {
         if (finalPackage.roi_potential_score !== undefined) {
           updateData.roi_potential_score = finalPackage.roi_potential_score;
         }
-        if (finalPackage.brazilian_market_fit !== undefined) {
-          updateData.brazilian_market_fit = finalPackage.brazilian_market_fit;
-        }
-        
+
         // Extract analyzed lead data if available
         if (finalPackage.analyzed_lead) {
           const analyzedLead = finalPackage.analyzed_lead;
@@ -446,7 +443,7 @@ export class QueueService {
             recommended_approach: finalPackage.ai_intelligence.predictive_insights,
           };
         }
-        
+
         // Update lead with extracted data
         if (Object.keys(updateData).length > 0) {
           await this.leadsService.update(leadId, updateData);
@@ -468,7 +465,7 @@ export class QueueService {
   private async handlePipelineEnd(userId: string, jobId: string, totalLeads: number): Promise<void> {
     try {
       await this.usersService.clearProspectingJob(userId);
-      
+
       const user = await this.usersService.getUserById(userId);
       const planDetails = PLANS[user.plan];
       const quotaRemaining = await this.quotaService.getRemainingQuota(userId);

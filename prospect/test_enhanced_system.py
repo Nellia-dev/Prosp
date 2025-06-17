@@ -100,7 +100,6 @@ class TestEnhancedSystem(unittest.TestCase): # Inherit from unittest.TestCase
                 print(f"   - URL: {lead_result.get('url')}")
                 print(f"   - Overall Confidence: {lead_result.get('overall_confidence_score', 0):.3f}")
                 print(f"   - ROI Potential: {lead_result.get('roi_potential_score', 0):.3f}")
-                print(f"   - Brazilian Market Fit: {lead_result.get('brazilian_market_fit', 0):.3f}")
 
                 # Assertions for key structured data fields
                 self.assertIsNotNone(lead_result.get('company_name'))

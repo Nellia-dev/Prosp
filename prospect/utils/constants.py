@@ -232,10 +232,6 @@ NELLIA_USPS = {
         "claim": "527% ROI increase through AI-powered lead processing",
         "proof_points": ["Automated analysis", "Personalized outreach", "Higher conversion rates"]
     },
-    "brazilian_market_expertise": {
-        "claim": "Deep Brazilian market understanding",
-        "proof_points": ["Portuguese-native team", "LGPD compliance", "Regional insights"]
-    },
     "personalized_outreach_automation": {
         "claim": "15x faster lead processing with personalization",
         "proof_points": ["AI-generated personas", "Custom messaging", "Multi-channel approach"]
