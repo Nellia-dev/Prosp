@@ -164,7 +164,6 @@ export class InitialMigration1699000000000 implements MigrationInterface {
         "website" character varying NOT NULL,
         "relevance_score" decimal(3,2) NOT NULL,
         "roi_potential_score" decimal(3,2) NOT NULL,
-        "brazilian_market_fit" decimal(3,2) NOT NULL,
         "qualification_tier" "qualification_tier_enum" NOT NULL,
         "company_sector" character varying NOT NULL,
         "persona" jsonb,

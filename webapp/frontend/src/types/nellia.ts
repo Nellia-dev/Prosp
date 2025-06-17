@@ -54,7 +54,7 @@ export interface AgentStatus {
   metrics: AgentMetrics;
   last_updated: string;
   current_task?: string;
-  description?: string; 
+  description?: string;
   category: AgentCategory; // Use unified AgentCategory
 }
 
@@ -74,7 +74,6 @@ export interface LeadData {
   website: string;
   relevance_score: number;
   roi_potential_score: number;
-  brazilian_market_fit: number;
   qualification_tier: 'High Potential' | 'Medium Potential' | 'Low Potential';
   company_sector: string;
   persona?: {

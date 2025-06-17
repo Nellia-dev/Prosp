@@ -84,6 +84,9 @@ except ImportError as e:
 
 # Importações de Módulos do Projeto
 try:
+    from data_models.enums import ProcessingStage, LeadStatus, QualificationTier
+    from data_models.prospect import LeadData
+    from data_models.strategy import Persona
     from event_models import (LeadEnrichmentEndEvent, LeadEnrichmentStartEvent,
                               LeadGeneratedEvent, PipelineEndEvent,
                               PipelineErrorEvent, PipelineStartEvent,
@@ -518,7 +521,7 @@ class PipelineOrchestrator:
             job_id=self.job_id,
             user_id=self.user_id,
             initial_query=search_query,
-            max_leads_to_generate=max_leads
+            max_leads=max_leads
         ).to_dict()
         
         # 1. Executar o Harvester (que já serializa o contexto)
@@ -575,16 +578,28 @@ class PipelineOrchestrator:
 
             logger.info(f"[PIPELINE_STEP] Processing lead #{leads_found_count} ({lead_id}): {lead_data.get('company_name', 'Unknown')} - {lead_data.get('website', 'No website')}")
             
-            yield LeadGeneratedEvent(
-                event_type="lead_generated",
-                timestamp=datetime.now().isoformat(),
-                job_id=self.job_id,
-                user_id=self.user_id,
-                lead_id=lead_id,
-                lead_data=lead_data,
-                source_url=lead_data.get("source_url", "N/A"),
-                agent_name="ADK1HarvesterAgent"
-            ).to_dict()
+            # Transform the raw dict into a structured LeadData object
+            try:
+                structured_lead_data = self._create_lead_data_from_raw(lead_data, lead_id)
+                yield LeadGeneratedEvent(
+                    event_type="lead_generated",
+                    timestamp=datetime.now().isoformat(),
+                    job_id=self.job_id,
+                    user_id=self.user_id,
+                    lead_data=structured_lead_data
+                ).to_dict()
+            except Exception as e:
+                logger.error(f"Failed to create structured lead data for lead {lead_id}: {e}")
+                # Optionally, yield an error event here
+                yield PipelineErrorEvent(
+                    event_type="pipeline_error",
+                    timestamp=datetime.now().isoformat(),
+                    job_id=self.job_id,
+                    user_id=self.user_id,
+                    error_message=f"Data validation failed for lead {lead_id}: {e}",
+                    error_type="DataValidationError",
+                    agent_name="PipelineOrchestrator"
+                ).to_dict()
 
             # Aguarda a conclusão do setup do RAG se ainda não terminou
             if not rag_setup_task.done():
@@ -625,11 +640,46 @@ class PipelineOrchestrator:
             job_id=self.job_id,
             user_id=self.user_id,
             total_leads_generated=leads_found_count,
-            execution_time_seconds=total_time,
+            execution_time=execution_time,
             success=True
         ).to_dict()
 
-    async def _enrich_lead_and_collect_events(self, lead_data, lead_id):
+    def _create_lead_data_from_raw(self, raw_data: Dict[str, Any], lead_id: str) -> LeadData:
+        """
+        Transforms a raw dictionary from the harvester into a structured LeadData object,
+        providing default values for missing fields to ensure robustness.
+        """
+        # Basic info
+        company_name = raw_data.get('company_name', 'N/A')
+        website = raw_data.get('website', '')
+
+        # Handle cases where company_name might be nested in adk1_enrichment
+        if company_name == 'N/A' and 'adk1_enrichment' in raw_data:
+            nested_name = raw_data['adk1_enrichment'].get('company_name')
+            if nested_name:
+                company_name = nested_name
+        
+        return LeadData(
+            id=lead_id,
+            company_name=company_name,
+            website=website,
+            linkedin_url=raw_data.get('linkedin_url'),
+            relevance_score=raw_data.get('relevance_score', 0.0),
+            short_summary=raw_data.get('short_summary', ''),
+            status=LeadStatus.LEAD_GENERATED,
+            processing_stage=ProcessingStage.PROSPECTING,
+            qualification_tier=QualificationTier.NOT_QUALIFIED,
+            last_updated=datetime.now().isoformat(),
+            # Initialize complex/nested fields as None or empty structures
+            persona=None,
+            detailed_analysis=None,
+            value_proposition=None,
+            action_plan=None,
+            contact_info=None,
+            customized_outreach=None,
+        )
+
+    async def _enrich_lead_and_collect_events(self, lead_data: Dict, lead_id: str) -> AsyncIterator[Dict]:
         # Helper para coletar todos os eventos de um único enriquecimento
         events = []
         async for event in self._enrich_lead(lead_data, lead_id):

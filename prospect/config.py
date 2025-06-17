@@ -83,7 +83,6 @@ class BusinessConfig:
     target_roi_increase: float = 5.27  # 527%
     min_relevance_score: float = 0.7
     min_qualification_score: float = 0.6
-    brazilian_market_focus: bool = True
 
 @dataclass
 class NelliaProspectorConfig:

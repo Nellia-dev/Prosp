@@ -7,11 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { 
-  Bot, 
-  TrendingUp, 
-  Users, 
-  MessageSquare, 
+import {
+  Bot,
+  TrendingUp,
+  Users,
+  MessageSquare,
   Settings,
   Globe,
   Activity,
@@ -34,9 +34,9 @@ import { AgentsEmptyState } from '../components/EmptyStates/AgentsEmptyState';
 import { LeadsEmptyState } from '../components/EmptyStates/LeadsEmptyState';
 import { WebSocketProvider } from '../contexts/WebSocketContext';
 
-import { 
-  AgentStatus, 
-  LeadData, 
+import {
+  AgentStatus,
+  LeadData,
   AgentName,
   AgentCategory,
   AgentStatusType,
@@ -93,7 +93,6 @@ const transformLeadResponse = (apiLead: LeadResponse): LeadData => ({
   website: apiLead.website,
   relevance_score: apiLead.relevance_score,
   roi_potential_score: apiLead.roi_potential_score,
-  brazilian_market_fit: apiLead.brazilian_market_fit,
   qualification_tier: apiLead.qualification_tier,
   company_sector: apiLead.company_sector,
   persona: apiLead.persona,
@@ -112,7 +111,7 @@ const transformAgentResponse = (apiAgent: AgentResponse): AgentStatus => {
   // and apiAgent.category is a string that should match one of AgentCategory
   // The AgentResponse type from types/api.ts should ideally reflect this.
   const agentName = apiAgent.name as AgentName;
-   // Cast, assuming API provides valid names
+  // Cast, assuming API provides valid names
   const agentCategory = (apiAgent.category || 'specialized') as AgentCategory; // Default category if undefined
 
   return {
@@ -219,14 +218,15 @@ const DashboardContent = () => {
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-green-950">
         {/* Header */}
         <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <Zap className="w-8 h-8 text-green-500" />
-                <div>
-                  <h1 className="text-2xl font-bold text-white">Nellia Prospector</h1>
-                  <p className="text-sm text-green-400">AI-Powered B2B Lead Processing</p>
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <Zap className="w-8 h-8 text-green-500" />
+                  <div>
+                    <h1 className="text-2xl font-bold text-white">Nellia Prospector</h1>
+                    <p className="text-sm text-green-400">AI-Powered B2B Lead Processing</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -252,7 +252,6 @@ const DashboardContent = () => {
               </Badge>
             </div>
           </div>
-        </div>
       </header>
 
       {/* Main Content */}
@@ -331,9 +330,9 @@ const DashboardContent = () => {
               </Card>
             </div>
 
-            <MetricsVisualization />
+              <MetricsVisualization />
 
-            <Card className="md:col-span-3 bg-slate-800/50 border-slate-700">
+              <Card className="md:col-span-3 bg-slate-800/50 border-slate-700">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                     <CardTitle className="text-lg font-medium text-white">
                         {t('automated_prospecting')}
@@ -357,8 +356,8 @@ const DashboardContent = () => {
                         </p>
                     )}
                 </CardContent>
-            </Card>
-
+              </Card>
+        
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:col-span-3">
               {agents.slice(0, 3).map((agent) => (
                 <AgentStatusCard key={agent.id} agent={agent} showControls={false} />

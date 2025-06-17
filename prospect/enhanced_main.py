@@ -260,7 +260,6 @@ class EnhancedNelliaProspector:
                         "company_name": comprehensive_package.processing_metadata.get("company_name", "Unknown"),
                         "overall_confidence_score": comprehensive_package.confidence_score,
                         "roi_potential_score": comprehensive_package.roi_potential_score,
-                        "brazilian_market_fit": comprehensive_package.brazilian_market_fit,
                         "status": "enhanced_complete",
                         "processing_time_seconds": comprehensive_package.processing_metadata.get("total_processing_time", 0),
                     }
@@ -492,7 +491,6 @@ def main():
                 f"High Potential Leads: {high_potential_count}/{results.successful_leads}\n"
                 f"Avg Overall Confidence Score: {avg_confidence:.3f}\n"
                 f"Avg ROI Potential: {avg_roi_potential:.3f}\n"
-                f"Brazilian Market Optimization: ENABLED\n\n"
                 f"✨ Ready for high-converting outreach!",
                 title="Enhanced Processing Complete", border_style="gold1"
             ))

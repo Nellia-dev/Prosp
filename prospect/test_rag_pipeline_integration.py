@@ -280,7 +280,8 @@ async def test_phase2_integrations():
         # rag_vector_store=None # Simplified for this test
     )
     # This is still not an AnalyzedLead object. Let's create one properly.
-    from prospect.data_models.lead_structures import AnalyzedLead, ValidatedLead, SiteData, GoogleSearchData, LeadAnalysis, ExtractionStatus
+    from data_models.core import AnalyzedLead, ValidatedLead, SiteData, GoogleSearchData, LeadAnalysis
+    from data_models.enums import ExtractionStatus
     
     validated_lead_mock = ValidatedLead(
         site_data=SiteData(

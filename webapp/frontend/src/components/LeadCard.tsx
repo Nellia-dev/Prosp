@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Building2, Globe, Target, TrendingUp } from "lucide-react";
-import { LeadData } from "../types/nellia";
+import { LeadData, QualificationTier } from "../types/unified";
 import { useTranslation } from "../hooks/useTranslation";
 
 interface LeadCardProps {
@@ -14,13 +14,15 @@ interface LeadCardProps {
 export const LeadCard = ({ lead, onClick }: LeadCardProps) => {
   const { t } = useTranslation();
 
-  const getQualificationColor = (tier: string) => {
-    switch (tier) {
-      case 'High Potential': return 'bg-green-500';
-      case 'Medium Potential': return 'bg-yellow-500';
-      case 'Low Potential': return 'bg-red-500';
-      default: return 'bg-gray-500';
-    }
+  const getQualificationColor = (tier: QualificationTier): string => {
+    const tierMap: { [key in QualificationTier]: string } = {
+      'Alto Potencial': 'bg-green-500',
+      'Potencial Médio': 'bg-yellow-500',
+      'Baixo Potencial': 'bg-red-500',
+      'Não Qualificado': 'bg-gray-700',
+      'N/A': 'bg-gray-500',
+    };
+    return tierMap[tier] || 'bg-gray-500';
   };
 
   const getStageProgress = (stage: string) => {
@@ -31,12 +33,12 @@ export const LeadCard = ({ lead, onClick }: LeadCardProps) => {
   const formatScore = (score: number) => (score * 100).toFixed(0);
 
   return (
-    <Card 
+    <Card
       className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-slate-800 border-slate-700 hover:border-green-500/50 transition-all duration-300 cursor-pointer group"
       onClick={onClick}
     >
       <div className={`absolute top-0 left-0 w-full h-1 ${getQualificationColor(lead.qualification_tier)}`} />
-      
+
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
@@ -75,16 +77,6 @@ export const LeadCard = ({ lead, onClick }: LeadCardProps) => {
               {formatScore(lead.roi_potential_score)}%
             </div>
           </div>
-
-          <div className="text-center space-y-1">
-            <div className="flex items-center justify-center text-slate-400 text-xs">
-              <Building2 className="w-3 h-3 mr-1" />
-              {t('brazilian_market_fit')}
-            </div>
-            <div className="text-white text-lg font-bold">
-              {formatScore(lead.brazilian_market_fit)}%
-            </div>
-          </div>
         </div>
 
         <div className="space-y-2">
@@ -92,8 +84,8 @@ export const LeadCard = ({ lead, onClick }: LeadCardProps) => {
             <span className="text-slate-400">{t('processing_progress')}</span>
             <span className="text-white capitalize">{lead.processing_stage}</span>
           </div>
-          <Progress 
-            value={getStageProgress(lead.processing_stage)} 
+          <Progress
+            value={getStageProgress(lead.processing_stage)}
             className="h-2"
           />
         </div>

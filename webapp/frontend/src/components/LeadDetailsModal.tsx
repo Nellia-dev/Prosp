@@ -11,12 +11,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUpdateLead, useDeleteLead, useProcessLead } from '../hooks/api/useUnifiedApi';
 import { LeadData, ProcessingStage, QualificationTier, PROCESSING_STAGES, QUALIFICATION_TIERS } from '../types/unified';
 import { useTranslation } from '../hooks/useTranslation';
-import { 
-  Save, 
-  Trash2, 
-  Play, 
-  Edit3, 
-  Eye, 
+import {
+  Save,
+  Trash2,
+  Play,
+  Edit3,
+  Eye,
   ExternalLink,
   Building,
   Globe,
@@ -58,7 +58,6 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
         purchase_triggers: lead.purchase_triggers,
         relevance_score: lead.relevance_score,
         roi_potential_score: lead.roi_potential_score,
-        brazilian_market_fit: lead.brazilian_market_fit,
       });
     }
   }, [lead]);
@@ -79,15 +78,14 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
         qualification_tier: formData.qualification_tier,
         relevance_score: formData.relevance_score,
         roi_potential_score: formData.roi_potential_score,
-        brazilian_market_fit: formData.brazilian_market_fit,
         processing_stage: formData.processing_stage,
         pain_point_analysis: formData.pain_point_analysis,
         purchase_triggers: formData.purchase_triggers,
       };
 
-      const updatedLead = await updateLeadMutation.mutateAsync({ 
-        id: lead.id, 
-        data: updateData 
+      const updatedLead = await updateLeadMutation.mutateAsync({
+        id: lead.id,
+        data: updateData
       });
 
       // API response is now already in the correct format (LeadData)
@@ -143,7 +141,7 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
 
   const getScoreColor = (score: number) => {
     if (score >= 0.8) return 'text-green-400';
-    if (score >= 0.6) return 'text-yellow-400'; 
+    if (score >= 0.6) return 'text-yellow-400';
     if (score >= 0.4) return 'text-orange-400';
     return 'text-red-400';
   };
@@ -228,9 +226,9 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                     <>
                       <div className="flex items-center space-x-2">
                         <Globe className="w-4 h-4 text-slate-400" />
-                        <a 
-                          href={lead.website.startsWith('http') ? lead.website : `https://${lead.website}`} 
-                          target="_blank" 
+                        <a
+                          href={lead.website.startsWith('http') ? lead.website : `https://${lead.website}`}
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-400 hover:text-blue-300 flex items-center"
                         >
@@ -282,18 +280,6 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                           className="bg-slate-700 border-slate-600 text-white"
                         />
                       </div>
-                      <div>
-                        <Label className="text-slate-300">{t('brazilian_market_fit')}</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          max="1"
-                          step="0.01"
-                          value={formData.brazilian_market_fit || 0}
-                          onChange={(e) => handleInputChange('brazilian_market_fit', parseFloat(e.target.value))}
-                          className="bg-slate-700 border-slate-600 text-white"
-                        />
-                      </div>
                     </>
                   ) : (
                     <>
@@ -307,12 +293,6 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                         <span className="text-slate-300">{t('roi_potential')}</span>
                         <span className={`font-bold ${getScoreColor(lead.roi_potential_score)}`}>
                           {(lead.roi_potential_score * 100).toFixed(1)}%
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-300">{t('market_fit')}</span>
-                        <span className={`font-bold ${getScoreColor(lead.brazilian_market_fit)}`}>
-                          {(lead.brazilian_market_fit * 100).toFixed(1)}%
                         </span>
                       </div>
                     </>
@@ -334,8 +314,8 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                     <>
                       <div>
                         <Label className="text-slate-300">Qualification Tier</Label>
-                        <Select 
-                          value={formData.qualification_tier} 
+                        <Select
+                          value={formData.qualification_tier}
                           onValueChange={(value) => handleInputChange('qualification_tier', value)}
                         >
                           <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
@@ -350,8 +330,8 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                       </div>
                       <div>
                         <Label className="text-slate-300">Processing Stage</Label>
-                        <Select 
-                          value={formData.processing_stage} 
+                        <Select
+                          value={formData.processing_stage}
                           onValueChange={(value) => handleInputChange('processing_stage', value)}
                         >
                           <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
@@ -400,7 +380,7 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                   <div className="flex justify-between items-center">
                     <span className="text-slate-300">Decision Maker</span>
                     <span className="text-white">
-                      {lead.persona?.decision_maker_probability 
+                      {lead.persona?.decision_maker_probability
                         ? `${(lead.persona.decision_maker_probability * 100).toFixed(0)}%`
                         : 'Unknown'
                       }
@@ -543,7 +523,7 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                   <CardTitle className="text-white text-sm">Lead Actions</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <Button 
+                  <Button
                     onClick={handleProcess}
                     disabled={processLeadMutation.isPending}
                     className="w-full bg-blue-600 hover:bg-blue-700"
@@ -551,8 +531,8 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
                     <Play className="w-4 h-4 mr-2" />
                     {processLeadMutation.isPending ? 'Processing...' : 'Process Lead'}
                   </Button>
-                  
-                  <Button 
+
+                  <Button
                     onClick={() => setIsEditing(!isEditing)}
                     variant="outline"
                     className="w-full border-slate-600 text-slate-300 hover:bg-slate-700"
@@ -601,7 +581,7 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
 
         {/* Action Buttons */}
         <div className="flex justify-between items-center pt-4 border-t border-slate-700">
-          <Button 
+          <Button
             onClick={handleDelete}
             disabled={deleteLeadMutation.isPending}
             variant="destructive"
@@ -616,7 +596,7 @@ export const LeadDetailsModal = ({ lead, isOpen, onClose, onLeadUpdate }: LeadDe
               Cancel
             </Button>
             {isEditing && (
-              <Button 
+              <Button
                 onClick={handleSave}
                 disabled={updateLeadMutation.isPending}
                 size="sm"

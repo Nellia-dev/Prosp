@@ -6,8 +6,8 @@ import { QualificationTier, ProcessingStage, LeadStatus } from '@/shared/enums/n
 import {
   LeadData,
   CreateLeadDto,
-  UpdateLeadDto, 
-  LeadFilters 
+  UpdateLeadDto,
+  LeadFilters
 } from '../../shared/types/nellia.types';
 
 @Injectable()
@@ -15,7 +15,7 @@ export class LeadsService {
   constructor(
     @InjectRepository(Lead)
     private readonly leadRepository: Repository<Lead>,
-  ) {}
+  ) { }
 
   async findAll(filters?: LeadFilters): Promise<{ data: LeadData[], total: number }> {
     console.log('Finding all leads with filters:', filters);
@@ -81,11 +81,11 @@ export class LeadsService {
 
   async findOne(id: string): Promise<LeadData> {
     const lead = await this.leadRepository.findOne({ where: { id } });
-    
+
     if (!lead) {
       throw new NotFoundException(`Lead with ID ${id} not found`);
     }
-    
+
     return this.convertToLeadData(lead);
   }
 
@@ -113,7 +113,6 @@ export class LeadsService {
       // Default values for required fields
       relevance_score: 0.5,
       roi_potential_score: 0.5,
-      brazilian_market_fit: 0.5,
       qualification_tier: QualificationTier.MEDIUM_POTENTIAL,
       processing_stage: ProcessingStage.LEAD_QUALIFICATION,
       status: LeadStatus.NEW,
@@ -125,39 +124,39 @@ export class LeadsService {
 
   async update(id: string, updateLeadDto: UpdateLeadDto): Promise<LeadData> {
     const lead = await this.leadRepository.findOne({ where: { id } });
-    
+
     if (!lead) {
       throw new NotFoundException(`Lead with ID ${id} not found`);
     }
 
     // Update fields
     Object.assign(lead, updateLeadDto);
-    
+
     // Handle enum fields properly
     if (updateLeadDto.qualification_tier) {
       lead.qualification_tier = updateLeadDto.qualification_tier as QualificationTier;
     }
-    
+
     if (updateLeadDto.processing_stage) {
       lead.processing_stage = this.mapStageToEnum(updateLeadDto.processing_stage);
     }
 
     lead.updated_at = new Date();
-    
+
     const savedLead = await this.leadRepository.save(lead);
     return this.convertToLeadData(savedLead);
   }
 
   async updateStage(id: string, stage: string): Promise<LeadData> {
     const lead = await this.leadRepository.findOne({ where: { id } });
-    
+
     if (!lead) {
       throw new NotFoundException(`Lead with ID ${id} not found`);
     }
 
     lead.processing_stage = this.mapStageToEnum(stage);
     lead.updated_at = new Date();
-    
+
     const savedLead = await this.leadRepository.save(lead);
     return this.convertToLeadData(savedLead);
   }
@@ -178,7 +177,7 @@ export class LeadsService {
 
   async remove(id: string): Promise<void> {
     const result = await this.leadRepository.delete(id);
-    
+
     if (result.affected === 0) {
       throw new NotFoundException(`Lead with ID ${id} not found`);
     }
@@ -209,7 +208,6 @@ export class LeadsService {
     averageScores: {
       relevance: number;
       roi: number;
-      marketFit: number;
     };
   }> {
     const [leads, totalCount] = await this.leadRepository.findAndCount();
@@ -218,19 +216,17 @@ export class LeadsService {
     const byTier: Record<string, number> = {};
     let totalRelevance = 0;
     let totalRoi = 0;
-    let totalMarketFit = 0;
 
     leads.forEach(lead => {
       // Count by stage
       byStage[lead.processing_stage] = (byStage[lead.processing_stage] || 0) + 1;
-      
+
       // Count by tier
       byTier[lead.qualification_tier] = (byTier[lead.qualification_tier] || 0) + 1;
-      
+
       // Sum scores
       totalRelevance += Number(lead.relevance_score);
       totalRoi += Number(lead.roi_potential_score);
-      totalMarketFit += Number(lead.brazilian_market_fit);
     });
 
     return {
@@ -240,7 +236,6 @@ export class LeadsService {
       averageScores: {
         relevance: totalCount > 0 ? totalRelevance / totalCount : 0,
         roi: totalCount > 0 ? totalRoi / totalCount : 0,
-        marketFit: totalCount > 0 ? totalMarketFit / totalCount : 0,
       },
     };
   }
@@ -284,7 +279,6 @@ export class LeadsService {
       website: lead.website,
       relevance_score: Number(lead.relevance_score),
       roi_potential_score: Number(lead.roi_potential_score),
-      brazilian_market_fit: Number(lead.brazilian_market_fit),
       qualification_tier: lead.qualification_tier,
       company_sector: lead.company_sector,
       persona: lead.persona ? {

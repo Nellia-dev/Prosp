@@ -31,7 +31,6 @@ export interface LeadData {
   website: string;
   relevance_score: number;
   roi_potential_score: number;
-  brazilian_market_fit: number;
   qualification_tier: 'High Potential' | 'Medium Potential' | 'Low Potential';
   company_sector: string;
   persona?: {
@@ -133,7 +132,6 @@ export interface UpdateLeadDto {
   annual_revenue?: number;
   relevance_score?: number;
   roi_potential_score?: number;
-  brazilian_market_fit?: number;
   qualification_tier?: QualificationTier;
   processing_stage?: ProcessingStage;
   persona_analysis?: string;
@@ -151,7 +149,7 @@ export interface LeadFilters {
     min: number;
     max: number;
   };
-  sort_by?: 'company_name' | 'relevance_score' | 'roi_potential_score' | 'brazilian_market_fit' | 'created_at';
+  sort_by?: 'company_name' | 'relevance_score' | 'roi_potential_score' | 'created_at';
   sort_order?: 'asc' | 'desc';
   limit?: number;
   offset?: number;

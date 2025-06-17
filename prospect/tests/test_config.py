@@ -72,7 +72,6 @@ class TestBusinessConfig:
         assert config.target_roi_increase == 5.27
         assert config.min_relevance_score == 0.7
         assert config.min_qualification_score == 0.6
-        assert config.brazilian_market_focus == True
 
 class TestNelliaProspectorConfig:
     """Test main configuration class"""

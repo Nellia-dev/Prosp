@@ -27,9 +27,6 @@ export class Lead {
   @Column({ type: 'decimal', precision: 3, scale: 2 })
   roi_potential_score: number;
 
-  @Column({ type: 'decimal', precision: 3, scale: 2 })
-  brazilian_market_fit: number;
-
   @Column({
     type: 'enum',
     enum: QualificationTier,
@@ -74,7 +71,7 @@ export class Lead {
   @UpdateDateColumn()
   updated_at: Date;
 
-    // Additional optional fields for extended lead data
+  // Additional optional fields for extended lead data
   @Column({ type: 'varchar', nullable: true })
   description?: string;
 
@@ -102,11 +99,11 @@ export class Lead {
   @Column({ type: 'decimal', precision: 3, scale: 2, nullable: true })
   decision_maker_probability?: number;
 
-    get stage(): string {
-      return this.processing_stage;
-    }
-  
-    set stage(value: string) {
-      this.processing_stage = value as ProcessingStage;
-    }
+  get stage(): string {
+    return this.processing_stage;
+  }
+
+  set stage(value: string) {
+    this.processing_stage = value as ProcessingStage;
+  }
 }

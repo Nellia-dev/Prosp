@@ -41,7 +41,7 @@ export const CompactLeadCard = ({ lead, onExpand, isUpdated, enrichmentEvent }: 
       onClick={() => onExpand?.(lead)}
     >
       <div className={`absolute top-0 left-0 w-full h-1 ${getQualificationColor(lead.qualification_tier)}`} />
-      
+
       <CardContent className="p-3 space-y-2">
         {/* Header */}
         <div className="flex items-start justify-between">
@@ -75,10 +75,6 @@ export const CompactLeadCard = ({ lead, onExpand, isUpdated, enrichmentEvent }: 
               <div>
                 <div className="text-slate-400">ROI</div>
                 <div className="text-white font-semibold">{formatScore(lead.roi_potential_score)}%</div>
-              </div>
-              <div>
-                <div className="text-slate-400">FIT</div>
-                <div className="text-white font-semibold">{formatScore(lead.brazilian_market_fit)}%</div>
               </div>
             </div>
             <div className="flex items-center justify-between mt-2">

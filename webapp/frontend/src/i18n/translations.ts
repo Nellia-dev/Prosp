@@ -41,14 +41,14 @@ export const translations = {
     persona_creation: "Criação de Persona",
     approach_strategy: "Estratégia de Abordagem",
     message_crafting: "Criação de Mensagens",
-    
+
     // Agent Status
     active: "Ativo",
     inactive: "Inativo",
     processing: "Processando",
     error: "Erro",
     completed: "Concluído",
-    
+
     // Metrics
     processing_time: "Tempo de Processamento",
     success_rate: "Taxa de Sucesso",
@@ -181,10 +181,9 @@ export const translations = {
     // Lead Management
     relevance_score: "Pontuação de Relevância",
     roi_potential: "Potencial de ROI",
-    brazilian_market_fit: "Adequação ao Mercado Brasileiro",
     qualification_tier: "Nível de Qualificação",
     company_sector: "Setor da Empresa",
-    
+
     // CRM Board
     filters: "Filtros",
     search_leads: "Buscar leads...",
@@ -195,7 +194,7 @@ export const translations = {
     medium_score: "Médio (60-79%)",
     low_score: "Baixo (<60%)",
     reset_filters: "Limpar Filtros",
-    
+
     // Business Context
     business_description: "Descrição do Negócio",
     target_market: "Mercado-Alvo",
@@ -213,12 +212,12 @@ export const translations = {
     ideal_customer_error: "O perfil do cliente ideal deve ter pelo menos 10 caracteres.",
     pain_points_error: "Os pontos de dor devem ter pelo menos 10 caracteres.",
     industry_focus_error: "O foco da indústria deve ter pelo menos 3 caracteres.",
-    
+
     // Chat Interface
     send_message: "Enviar Mensagem",
     type_message: "Digite sua mensagem...",
     upload_file: "Enviar Arquivo",
-    
+
     // Processing Stages
     lead_qualification: "Qualificação de Lead",
     analyzing_refining: "Analisando/Refinando",
@@ -229,7 +228,7 @@ export const translations = {
     negociando: "Negociando",
     desqualificado: "Lead Desqualificado",
     reuniao_agendada: "Reunião Agendada",
-    
+
     // Brazilian Optimization
     cultural_timing: "Timing Cultural",
     regional_insights: "Insights Regionais",
@@ -245,27 +244,31 @@ export const translations = {
     settings: "Settings",
     business_context: "Business Context",
     crm_board: "CRM Board",
-    
+
     // Agent Names
     lead_intake: "Lead Intake",
     analysis: "Analysis",
     persona_creation: "Persona Creation",
     approach_strategy: "Approach Strategy",
     message_crafting: "Message Crafting",
-    
+
     // Agent Status
     active: "Active",
     inactive: "Inactive",
     processing: "Processing",
     error: "Error",
     completed: "Completed",
-    
+
     // Metrics
     processing_time: "Processing Time",
     success_rate: "Success Rate",
     queue_depth: "Queue Depth",
     throughput: "Throughput",
     token_usage: "Token Usage",
+    
+    // Lead Management
+    relevance_score: "Relevance Score",
+    roi_potential: "ROI Potential",
     
     // Agent Status Card
     prompt: "Prompt",
@@ -383,7 +386,7 @@ export const translations = {
     brazilian_market_fit: "Brazilian Market Fit",
     qualification_tier: "Qualification Tier",
     company_sector: "Company Sector",
-    
+
     // CRM Board
     filters: "Filters",
     search_leads: "Search leads...",
@@ -394,7 +397,7 @@ export const translations = {
     medium_score: "Medium (60-79%)",
     low_score: "Low (<60%)",
     reset_filters: "Reset Filters",
-    
+
     // Business Context
     business_description: "Business Description",
     target_market: "Target Market",
@@ -412,12 +415,12 @@ export const translations = {
     ideal_customer_error: "Ideal customer profile must be at least 10 characters.",
     pain_points_error: "Pain points must be at least 10 characters.",
     industry_focus_error: "Industry focus must be at least 3 characters.",
-    
+
     // Chat Interface
     send_message: "Send Message",
     type_message: "Type your message...",
     upload_file: "Upload File",
-    
+
     // Processing Stages
     lead_qualification: "Lead Qualification",
     analyzing_refining: "Analyzing/Refining",
@@ -428,7 +431,7 @@ export const translations = {
     negociando: "Negotiating",
     desqualificado: "Disqualified Lead",
     reuniao_agendada: "Meeting Scheduled",
-    
+
     // Brazilian Optimization
     cultural_timing: "Cultural Timing",
     regional_insights: "Regional Insights",
@@ -444,28 +447,28 @@ export const translations = {
     settings: "Configuración",
     business_context: "Contexto del Negocio",
     crm_board: "Tablero CRM",
-    
+
     // Agent Names
     lead_intake: "Captación de Leads",
     analysis: "Análisis",
     persona_creation: "Creación de Persona",
     approach_strategy: "Estrategia de Abordaje",
     message_crafting: "Creación de Mensajes",
-    
+
     // Agent Status
     active: "Activo",
     inactive: "Inactivo",
     processing: "Procesando",
     error: "Error",
     completed: "Completado",
-    
+
     // Metrics
     processing_time: "Tiempo de Procesamiento",
     success_rate: "Tasa de Éxito",
     queue_depth: "Cola de Procesamiento",
     throughput: "Rendimiento",
     token_usage: "Uso de Tokens",
-    
+
     // Agent Status Card
     prompt: "Prompt",
     completion: "Completion",
@@ -580,10 +583,9 @@ export const translations = {
     // Lead Management
     relevance_score: "Puntuación de Relevancia",
     roi_potential: "Potencial de ROI",
-    brazilian_market_fit: "Ajuste al Mercado Brasileño",
     qualification_tier: "Nivel de Calificación",
     company_sector: "Sector de la Empresa",
-    
+
     // CRM Board
     filters: "Filtros",
     search_leads: "Buscar leads...",
@@ -594,7 +596,7 @@ export const translations = {
     medium_score: "Medio (60-79%)",
     low_score: "Bajo (<60%)",
     reset_filters: "Limpiar Filtros",
-    
+
     // Business Context
     business_description: "Descripción del Negocio",
     target_market: "Mercado Objetivo",
@@ -612,12 +614,12 @@ export const translations = {
     ideal_customer_error: "El perfil del cliente ideal debe tener al menos 10 caracteres.",
     pain_points_error: "Los puntos de dolor deben tener al menos 10 caracteres.",
     industry_focus_error: "El enfoque de la industria debe tener al menos 3 caracteres.",
-    
+
     // Chat Interface
     send_message: "Enviar Mensaje",
     type_message: "Escribe tu mensaje...",
     upload_file: "Subir Archivo",
-    
+
     // Processing Stages
     lead_qualification: "Calificación de Lead",
     analyzing_refining: "Analizando/Refinando",
@@ -628,7 +630,7 @@ export const translations = {
     negociando: "Negociando",
     desqualificado: "Lead Descalificado",
     reuniao_agendada: "Reunión Programada",
-    
+
     // Brazilian Optimization
     cultural_timing: "Timing Cultural",
     regional_insights: "Insights Regionales",

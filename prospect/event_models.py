@@ -6,6 +6,7 @@ Defines structured event types that are yielded during the execution of the agen
 from typing import Dict, Any, Optional, List, Union
 from dataclasses import dataclass
 from datetime import datetime
+from data_models.prospect import LeadData, ComprehensiveProspectPackage
 from pydantic import HttpUrl
 import json
 
@@ -33,14 +34,14 @@ class BaseEvent:
 class PipelineStartEvent(BaseEvent):
     """Event emitted when the agentic pipeline starts."""
     initial_query: str
-    max_leads_to_generate: int
+    max_leads: int
     
     
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
         data.update({
             "initial_query": self.initial_query,
-            "max_leads_to_generate": self.max_leads_to_generate
+            "max_leads": self.max_leads
         })
         return data
 
@@ -49,7 +50,7 @@ class PipelineStartEvent(BaseEvent):
 class PipelineEndEvent(BaseEvent):
     """Event emitted when the agentic pipeline completes."""
     total_leads_generated: int
-    execution_time_seconds: float
+    execution_time: float
     success: bool
     error_message: Optional[str] = None
     
@@ -58,7 +59,7 @@ class PipelineEndEvent(BaseEvent):
         data = super().to_dict()
         data.update({
             "total_leads_generated": self.total_leads_generated,
-            "execution_time_seconds": self.execution_time_seconds,
+            "execution_time": self.execution_time,
             "success": self.success,
             "error_message": self.error_message
         })
@@ -69,7 +70,6 @@ class PipelineEndEvent(BaseEvent):
 class AgentStartEvent(BaseEvent):
     """Event emitted when an agent starts execution."""
     agent_name: str
-    agent_description: str
     input_query: str
     
     
@@ -77,7 +77,6 @@ class AgentStartEvent(BaseEvent):
         data = super().to_dict()
         data.update({
             "agent_name": self.agent_name,
-            "agent_description": self.agent_description,
             "input_query": self.input_query
         })
         return data
@@ -87,9 +86,8 @@ class AgentStartEvent(BaseEvent):
 class AgentEndEvent(BaseEvent):
     """Event emitted when an agent completes execution."""
     agent_name: str
-    execution_time_seconds: float
+    execution_time: float
     success: bool
-    final_response: Optional[str] = None
     error_message: Optional[str] = None
     
     
@@ -97,9 +95,8 @@ class AgentEndEvent(BaseEvent):
         data = super().to_dict()
         data.update({
             "agent_name": self.agent_name,
-            "execution_time_seconds": self.execution_time_seconds,
+            "execution_time": self.execution_time,
             "success": self.success,
-            "final_response": self.final_response,
             "error_message": self.error_message
         })
         return data
@@ -168,19 +165,14 @@ class ToolCallEndEvent(BaseEvent):
 @dataclass
 class LeadGeneratedEvent(BaseEvent):
     """Event emitted when a lead is successfully generated."""
-    lead_id: str # Unique ID for this lead throughout its lifecycle
-    lead_data: Dict[str, Any]
-    source_url: str
-    agent_name: str
-    
-    
+    lead_data: LeadData  # Use the strongly-typed Pydantic model
+
     def to_dict(self) -> Dict[str, Any]:
         data = super().to_dict()
+        # The lead_data is now a Pydantic model, so we dump it to a dict for serialization.
+        # model_dump ensures that nested Pydantic models and enums are correctly converted.
         data.update({
-            "lead_id": self.lead_id,
-            "lead_data": self.lead_data,
-            "source_url": self.source_url,
-            "agent_name": self.agent_name
+            "lead_data": self.lead_data.model_dump(by_alias=True, exclude_none=True)
         })
         return data
 
@@ -206,7 +198,7 @@ class LeadEnrichmentEndEvent(BaseEvent):
     """Event emitted when the enrichment process for a lead completes."""
     lead_id: str
     success: bool
-    final_package: Optional[Dict[str, Any]] = None
+    final_package: Optional[ComprehensiveProspectPackage] = None  # Use the new model
     error_message: Optional[str] = None
 
 
@@ -242,13 +234,13 @@ class LeadEnrichmentEndEvent(BaseEvent):
             return item
 
         processed_final_package = None
-        if self.final_package:
-            processed_final_package = convert_special_types(self.final_package)
+        # The final_package is now a Pydantic model. model_dump handles serialization.
+        final_package_dict = self.final_package.model_dump(by_alias=True, exclude_none=True) if self.final_package else None
 
         data.update({
             "lead_id": self.lead_id,
             "success": self.success,
-            "final_package": processed_final_package,
+            "final_package": final_package_dict,
             "error_message": self.error_message,
         })
         return data
