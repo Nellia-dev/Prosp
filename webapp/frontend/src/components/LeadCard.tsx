@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Building2, Globe, Target, TrendingUp } from "lucide-react";
-import { LeadData } from "../types/nellia";
+import { LeadData, QualificationTier } from "../types/unified";
 import { useTranslation } from "../hooks/useTranslation";
 
 interface LeadCardProps {
@@ -14,13 +14,15 @@ interface LeadCardProps {
 export const LeadCard = ({ lead, onClick }: LeadCardProps) => {
   const { t } = useTranslation();
 
-  const getQualificationColor = (tier: string) => {
-    switch (tier) {
-      case 'High Potential': return 'bg-green-500';
-      case 'Medium Potential': return 'bg-yellow-500';
-      case 'Low Potential': return 'bg-red-500';
-      default: return 'bg-gray-500';
-    }
+  const getQualificationColor = (tier: QualificationTier): string => {
+    const tierMap: { [key in QualificationTier]: string } = {
+      'Alto Potencial': 'bg-green-500',
+      'Potencial Médio': 'bg-yellow-500',
+      'Baixo Potencial': 'bg-red-500',
+      'Não Qualificado': 'bg-gray-700',
+      'N/A': 'bg-gray-500',
+    };
+    return tierMap[tier] || 'bg-gray-500';
   };
 
   const getStageProgress = (stage: string) => {

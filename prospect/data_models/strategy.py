@@ -1,6 +1,11 @@
 from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
 from .enums import CommunicationChannel
+from .intelligence import (
+    LeadQualification, PurchaseTriggers, ExternalIntelligence, ContactInformation,
+    PainPointAnalysis, CompetitorIntelligence, ToTStrategyOptionModel, EvaluatedStrategyModel, 
+    ToTActionPlanSynthesisModel, ObjectionFramework, DetailedApproachPlanModel
+)
 
 class Persona(BaseModel):
     likely_role: str
@@ -21,17 +26,21 @@ class ValueProposition(BaseModel):
     title: str
     key_benefit: str
 
-class CompetitorInfo(BaseModel):
-    name: str
-    description: str
-
-class CompetitorIntelligence(BaseModel):
-    identified_competitors: List[CompetitorInfo]
-
+# EnhancedStrategy is now the main container for all intelligence pieces
 class EnhancedStrategy(BaseModel):
-    detailed_approach_plan: Optional[DetailedApproachPlan] = None
-    value_propositions: Optional[List[ValueProposition]] = None
+    external_intelligence: Optional[ExternalIntelligence] = None
+    contact_information: Optional[ContactInformation] = None
+    pain_point_analysis: Optional[PainPointAnalysis] = None
     competitor_intelligence: Optional[CompetitorIntelligence] = None
+    purchase_triggers: Optional[PurchaseTriggers] = None
+    lead_qualification: Optional[LeadQualification] = None
+    tot_generated_strategies: Optional[List[ToTStrategyOptionModel]] = None
+    tot_evaluated_strategies: Optional[List[EvaluatedStrategyModel]] = None
+    tot_synthesized_action_plan: Optional[ToTActionPlanSynthesisModel] = None
+    detailed_approach_plan: Optional[DetailedApproachPlanModel] = None
+    value_propositions: Optional[List[ValueProposition]] = None
+    objection_framework: Optional[ObjectionFramework] = None
+    strategic_questions: Optional[List[str]] = None
 
 class PersonaDetails(BaseModel):
     """Detailed persona information for a decision maker"""

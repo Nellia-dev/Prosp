@@ -252,7 +252,6 @@ const DashboardContent = () => {
               </Badge>
             </div>
           </div>
-        </div>
       </header>
 
       {/* Main Content */}

@@ -384,74 +384,70 @@ export class QueueService {
   private async handleLeadEnrichmentEnd(userId: string, jobId: string, leadId: string, success: boolean, finalPackage: any, errorMessage?: string): Promise<void> {
     try {
       if (success && finalPackage) {
-        // Use the specific update methods
         await this.leadsService.updateStatus(leadId, LeadStatus.ENRICHED);
         await this.leadsService.updateStage(leadId, ProcessingStage.COMPLETED);
-        await this.leadsService.updateEnrichmentData(leadId, finalPackage);
 
-        // Extract and save all relevant data from the final package
+        // Create a mutable copy to avoid modifying the original object in unexpected ways
+        const enrichmentData = { ...finalPackage };
+
+        // This object will hold the flattened fields for the main lead record
         const updateData: any = {};
 
-        // Handle different package structures (enhanced vs hybrid)
-        if (finalPackage.enhanced_strategy?.lead_qualification?.qualification_tier) {
-          updateData.qualification_tier = finalPackage.enhanced_strategy.lead_qualification.qualification_tier;
+        // --- Data Extraction and Flattening ---
+
+        if (enrichmentData.enhanced_strategy?.lead_qualification?.qualification_tier) {
+          updateData.qualification_tier = enrichmentData.enhanced_strategy.lead_qualification.qualification_tier;
         }
-
-        // Extract scores from the top-level package
-        if (finalPackage.relevance_score !== undefined) {
-          updateData.relevance_score = finalPackage.relevance_score;
+        if (enrichmentData.relevance_score !== undefined) {
+          updateData.relevance_score = enrichmentData.relevance_score;
         }
-        if (finalPackage.roi_potential_score !== undefined) {
-          updateData.roi_potential_score = finalPackage.roi_potential_score;
+        if (enrichmentData.roi_potential_score !== undefined) {
+          updateData.roi_potential_score = enrichmentData.roi_potential_score;
         }
-
-        // Extract analyzed lead data if available
-        if (finalPackage.analyzed_lead) {
-          const analyzedLead = finalPackage.analyzed_lead;
-
-          if (analyzedLead.analysis?.company_sector) {
-            updateData.company_sector = analyzedLead.analysis.company_sector;
-          }
-
-          // Extract pain points
-          if (analyzedLead.analysis?.potential_challenges) {
-            updateData.pain_point_analysis = analyzedLead.analysis.potential_challenges;
-          }
+        if (enrichmentData.analyzed_lead?.analysis?.company_sector) {
+          updateData.company_sector = enrichmentData.analyzed_lead.analysis.company_sector;
         }
-
-        // Extract persona information from top-level package
-        if (finalPackage.persona_profile) {
+        if (enrichmentData.analyzed_lead?.analysis?.potential_challenges) {
+          updateData.pain_point_analysis = enrichmentData.analyzed_lead.analysis.potential_challenges;
+        }
+        if (enrichmentData.persona_profile) {
           updateData.persona = {
-            likely_role: finalPackage.persona_profile.persona_title || '',
-            decision_maker_probability: finalPackage.persona_profile.decision_maker_likelihood || 0,
+            likely_role: enrichmentData.persona_profile.persona_title || '',
+            decision_maker_probability: enrichmentData.persona_profile.decision_maker_likelihood || 0,
           };
         }
-
-        // Extract purchase triggers from enhanced_strategy
-        if (finalPackage.enhanced_strategy?.purchase_triggers) {
-          updateData.purchase_triggers = finalPackage.enhanced_strategy.purchase_triggers;
+        if (enrichmentData.enhanced_strategy?.purchase_triggers) {
+          updateData.purchase_triggers = enrichmentData.enhanced_strategy.purchase_triggers;
         }
 
-        // Extract AI intelligence data if available
-        if (finalPackage.ai_intelligence) {
-          // Store AI intelligence data in enrichment_data for full preservation
-          const enrichmentData = finalPackage;
+        // --- Package Modification ---
+
+        // Add the summary to the enrichment data *before* saving it
+        if (enrichmentData.analyzed_lead?.ai_intelligence) {
           enrichmentData.ai_intelligence_summary = {
-            market_fit_score: finalPackage.ai_intelligence.pain_alignment_score,
-            decision_maker_likelihood: finalPackage.ai_intelligence.buying_intent_score,
-            lead_quality_score: finalPackage.ai_intelligence.prospect_score,
-            recommended_approach: finalPackage.ai_intelligence.predictive_insights,
+            market_fit_score: enrichmentData.analyzed_lead.ai_intelligence.pain_alignment_score,
+            decision_maker_likelihood: enrichmentData.analyzed_lead.ai_intelligence.buying_intent_score,
+            lead_quality_score: enrichmentData.analyzed_lead.ai_intelligence.prospect_score,
+            recommended_approach: enrichmentData.analyzed_lead.ai_intelligence.predictive_insights,
           };
         }
 
-        // Update lead with extracted data
+        // --- Database Updates ---
+
+        // 1. Save the complete, potentially modified, enrichment package
+        await this.leadsService.updateEnrichmentData(leadId, enrichmentData);
+
+        // 2. Update the main lead record with the flattened fields
         if (Object.keys(updateData).length > 0) {
           await this.leadsService.update(leadId, updateData);
         }
 
+        // --- Finalization ---
+
         const updatedLead = await this.leadsService.findOne(leadId);
         this.webSocketService.emitToUser(userId, 'lead-enriched', { lead: updatedLead });
         this.logger.log(`Successfully enriched lead ${leadId} with comprehensive data extraction.`);
+
       } else {
         await this.leadsService.updateStatus(leadId, LeadStatus.ENRICHMENT_FAILED);
         this.webSocketService.emitToUser(userId, 'lead_enrichment_failed', { leadId, error: errorMessage });

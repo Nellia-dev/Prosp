@@ -487,17 +487,17 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             pipeline_logger.info("🔧 Constructing enhanced strategy object")
             enhanced_strategy = EnhancedStrategy(
                 external_intelligence=external_intel,
-                contact_information=contact_info.model_dump() if contact_info else None,
-                pain_point_analysis=pain_analysis_output.model_dump() if pain_analysis_output else None,
-                competitor_intelligence=competitor_intel_output.model_dump() if competitor_intel_output else None,
-                purchase_triggers=purchase_triggers_output.model_dump() if purchase_triggers_output else None,
+                contact_information=contact_info,
+                pain_point_analysis=pain_analysis_output,
+                competitor_intelligence=competitor_intel_output,
+                purchase_triggers=purchase_triggers_output,
                 lead_qualification=lead_qual_data,
-                tot_generated_strategies=[s.model_dump() for s in tot_generation_output.proposed_strategies] if tot_generation_output and tot_generation_output.proposed_strategies else [],
-                tot_evaluated_strategies=[e.model_dump() for e in tot_evaluation_output.evaluated_strategies] if tot_evaluation_output and tot_evaluation_output.evaluated_strategies else [],
-                tot_synthesized_action_plan=tot_synthesis_output.model_dump() if tot_synthesis_output else None,
-                detailed_approach_plan=detailed_approach_plan_output.model_dump() if detailed_approach_plan_output else None,
-                value_propositions=[p.model_dump() for p in value_props_output.custom_propositions] if value_props_output and value_props_output.custom_propositions else [],
-                objection_framework=objection_handling_output.model_dump() if objection_handling_output else None,
+                tot_generated_strategies=tot_generation_output.proposed_strategies if tot_generation_output else [],
+                tot_evaluated_strategies=tot_evaluation_output.evaluated_strategies if tot_evaluation_output else [],
+                tot_synthesized_action_plan=tot_synthesis_output,
+                detailed_approach_plan=detailed_approach_plan_output,
+                value_propositions=value_props_output.custom_propositions if value_props_output else [],
+                objection_framework=objection_handling_output,
                 strategic_questions=strategic_questions_output.generated_questions if strategic_questions_output else []
             )
             
@@ -613,8 +613,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             
             primary_message = PersonalizedMessage(**primary_message_args)
             
-            # Convert agent output to the correct Pydantic model for the final package.
-            internal_briefing_for_package = InternalBriefing(**internal_briefing_output.model_dump())
+
 
             # Create enhanced final package with AI insights
             final_package = ComprehensiveProspectPackage(
@@ -623,11 +622,11 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 enhanced_personalized_message=EnhancedPersonalizedMessage(
                     primary_message=primary_message
                 ),
-                internal_briefing=internal_briefing_for_package,
-                confidence_score=self._calculate_confidence_score_with_ai(enhanced_strategy, ai_prospect_profile),
+                internal_briefing=internal_briefing_output,
+                relevance_score=self._calculate_confidence_score_with_ai(enhanced_strategy, ai_prospect_profile),
                 roi_potential_score=self._calculate_roi_potential_with_ai(enhanced_strategy, ai_prospect_profile),
                 processing_metadata={
-                    "total_processing_time": total_time,
+                    "total_processing_time": total_time,                    
                     "processing_mode": "enhanced_with_ai_intelligence",
                     "tavily_enabled": bool(self.tavily_api_key),
                     "company_name": company_name,
@@ -660,7 +659,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             pipeline_logger.info(f"   • Personalized Message: {'✅' if message_length > 0 else '❌'} ({message_length} chars via {message_channel})")
 
             yield LeadEnrichmentEndEvent(
-                event_type="pipeline_end",
+                event_type="lead_enrichment_end",
                 timestamp=datetime.now().isoformat(), # Added
                 job_id=job_id,
                 user_id=user_id,

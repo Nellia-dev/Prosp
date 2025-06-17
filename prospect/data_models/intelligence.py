@@ -129,10 +129,26 @@ class ObjectionResponseModelSchema(BaseModel):
     response_strategy: str
     suggested_response: str
 
-class InternalBriefingSectionSchema(BaseModel):
-    """Maps to InternalBriefingSummaryOutput.InternalBriefingSection"""
+class InternalBriefingSection(BaseModel):
     title: str
     content: str
+
+class InternalBriefing(BaseModel):
+    executive_summary: str = "Não especificado"
+    lead_overview: InternalBriefingSection = Field(default_factory=lambda: InternalBriefingSection(title="Visão Geral do Lead", content=""))
+    persona_profile_summary: InternalBriefingSection = Field(default_factory=lambda: InternalBriefingSection(title="Perfil da Persona", content=""))
+    pain_points_and_needs: InternalBriefingSection = Field(default_factory=lambda: InternalBriefingSection(title="Dores e Necessidades", content=""))
+    buying_triggers_opportunity: InternalBriefingSection = Field(default_factory=lambda: InternalBriefingSection(title="Gatilhos de Compra e Oportunidade", content=""))
+    lead_qualification_summary: InternalBriefingSection = Field(default_factory=lambda: InternalBriefingSection(title="Qualificação do Lead", content=""))
+    approach_strategy_summary: InternalBriefingSection = Field(default_factory=lambda: InternalBriefingSection(title="Estratégia de Abordagem", content=""))
+    custom_value_proposition_summary: InternalBriefingSection = Field(default_factory=lambda: InternalBriefingSection(title="Proposta de Valor Customizada", content=""))
+    potential_objections_summary: InternalBriefingSection = Field(default_factory=lambda: InternalBriefingSection(title="Objeções Potenciais", content=""))
+    recommended_next_step: str = "Não especificado"
+    error_message: Optional[str] = None
+
+class PersonaProfile(BaseModel):
+    persona_title: str
+    decision_maker_likelihood: float
 
 class ExternalIntelligence(BaseModel):
     """External intelligence gathered from Tavily and other sources"""
