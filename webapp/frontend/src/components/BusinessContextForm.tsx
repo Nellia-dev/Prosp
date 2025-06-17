@@ -64,11 +64,11 @@ export const BusinessContextForm = ({ onComplete }: BusinessContextFormProps) =>
     };
     saveContext(requestData, {
       onSuccess: () => {
-        console.log(t('businessContext.form.success'));
+        console.log(t('form_success'));
         onComplete();
       },
       onError: (error: Error) => {
-        console.error(t('businessContext.form.error'), error);
+        console.error(t('form_error'), error);
       }
     });
   };
@@ -191,7 +191,7 @@ export const BusinessContextForm = ({ onComplete }: BusinessContextFormProps) =>
         />
 
         <Button type="submit" disabled={isPending} className="w-full bg-green-600 hover:bg-green-700 text-white">
-          {isPending ? t('common.saving') : t('common.saveContext')}
+          {isPending ? t('saving') : t('save_context')}
         </Button>
       </form>
     </Form>

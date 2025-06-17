@@ -79,7 +79,7 @@ export const LeadCard = ({ lead, onClick }: LeadCardProps) => {
 
         <div className="space-y-2">
           <div className="flex justify-between text-xs">
-            <span className="text-slate-400">Processing Progress</span>
+            <span className="text-slate-400">{t('processing_progress')}</span>
             <span className="text-white capitalize">{lead.processing_stage}</span>
           </div>
           <Progress
@@ -97,10 +97,10 @@ export const LeadCard = ({ lead, onClick }: LeadCardProps) => {
 
         {lead.persona && (
           <div className="border-t border-slate-700 pt-3">
-            <div className="text-xs text-slate-400 mb-1">Likely Contact</div>
+            <div className="text-xs text-slate-400 mb-1">{t('likely_contact')}</div>
             <div className="text-sm text-white">{lead.persona.likely_role}</div>
             <div className="text-xs text-green-400">
-              {(lead.persona.decision_maker_probability * 100).toFixed(0)}% decision maker probability
+              {(lead.persona.decision_maker_probability * 100).toFixed(0)}% {t('decision_maker_probability')}
             </div>
           </div>
         )}

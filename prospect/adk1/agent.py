@@ -126,32 +126,47 @@ def search_and_qualify_leads(query: str, max_search_results_to_scrape: int) -> L
         - 'qualification_summary': Avaliação do Gemini sobre a relevância do lead.
         - 'error': Se algum erro ocorreu durante a raspagem ou qualificação.
     """
-    print(f"--- DEBUG (search_and_qualify_leads): Chamado com query: '{query}' e max_results_to_scrape: {max_search_results_to_scrape} ---")
+    print(f"--- DEBUG (search_and_qualify_leads): Called with query='{query}', max_search_results_to_scrape={max_search_results_to_scrape} ---")
     try:
         model = _initialize_gemini_model()
-        # Use default value if not provided, and busca o dobro de resultados do que será raspado para ter uma margem de URLs válidas
+        # Use default value if not provided
         if max_search_results_to_scrape is None:
             max_search_results_to_scrape = MAX_SCRAPE_RESULTS
+
+        print(f"--- DEBUG (search_and_qualify_leads): Calling _tavily_search_internal with query='{query}', max_results={max_search_results_to_scrape * 2} ---")
         search_results = _tavily_search_internal(query=query, max_results=max_search_results_to_scrape * 2)
+        print(f"--- DEBUG (search_and_qualify_leads): _tavily_search_internal returned {len(search_results)} results ---")
 
         if not search_results:
-            print("--- DEBUG (search_and_qualify_leads): Nenhuns resultados da busca Tavily. ---")
+            print("--- DEBUG (search_and_qualify_leads): No search results from Tavily. ---")
             return [{"error": "Não foram encontrados resultados na busca inicial com a Tavily."}]
 
-        qualified_leads_data = []
-        count_scraped = 0
+        qualified_leads_data: list[dict[str, Any]] = []
+        successfully_scraped_leads = 0
+        leads_attempted_to_scrape = 0
 
-        for result in search_results:
-            if count_scraped >= max_search_results_to_scrape:
+        for result_idx, result in enumerate(search_results):
+            if leads_attempted_to_scrape >= max_search_results_to_scrape:
+                print(f"--- DEBUG (search_and_qualify_leads): Limite de {max_search_results_to_scrape} tentativas de raspagem atingido. Parando loop principal.")
                 break
+            leads_attempted_to_scrape += 1
 
             url_to_scrape = result.get('url')
             if url_to_scrape and url_to_scrape.startswith('http'):
-                print(f"--- DEBUG (search_and_qualify_leads): Tentando raspar URL: '{url_to_scrape}' ---")
+                print(f"--- DEBUG (search_and_qualify_leads): [Attempt {leads_attempted_to_scrape}/{max_search_results_to_scrape}] Processing result {result_idx+1}/{len(search_results)}: {url_to_scrape} ---")
+
+                if successfully_scraped_leads >= max_search_results_to_scrape:
+                    print(f"--- DEBUG (search_and_qualify_leads): Successfully scraped {successfully_scraped_leads} leads, which meets or exceeds max_search_results_to_scrape ({max_search_results_to_scrape}). Stopping. ---")
+                    break
+
+                print(f"--- DEBUG (search_and_qualify_leads): [Attempt {leads_attempted_to_scrape}/{max_search_results_to_scrape}] Calling web_scraper for {url_to_scrape} ---")
                 scraped_data = web_scraper(url=url_to_scrape)
+                print(f"--- DEBUG (search_and_qualify_leads): [Attempt {leads_attempted_to_scrape}/{max_search_results_to_scrape}] web_scraper returned for {url_to_scrape} ---")
 
                 if not scraped_data.get('error') and scraped_data.get('content'):
                     full_content = scraped_data.get('content')
+                    print(f"--- DEBUG (search_and_qualify_leads): [Attempt {leads_attempted_to_scrape}/{max_search_results_to_scrape}] Successfully scraped {len(full_content)} chars from {url_to_scrape}. ---")
+
                     prompt_qualify = (
                         f"Analise o seguinte conteúdo de uma página web para determinar se ela representa um "
                         f"potencial lead para a query '{query}'. "
@@ -159,12 +174,15 @@ def search_and_qualify_leads(query: str, max_search_results_to_scrape: int) -> L
                         f"Identifique o nome da empresa, se possível. Responda de forma concisa.\n\n"
                         f"Conteúdo:\n{full_content[:MAX_GEMINI_INPUT_CHARS]}"
                     )
+                    qualification_summary = "Não foi possível qualificar com Gemini. Conteúdo bruto disponível." # Default value
+                    print(f"--- DEBUG (search_and_qualify_leads): [Attempt {leads_attempted_to_scrape}/{max_search_results_to_scrape}] Calling Gemini's model.generate_content for qualification of {url_to_scrape}. ---")
                     try:
                         gemini_response = model.generate_content(prompt_qualify)
+                        print(f"--- DEBUG (search_and_qualify_leads): [Attempt {leads_attempted_to_scrape}/{max_search_results_to_scrape}] Gemini's model.generate_content returned for qualification of {url_to_scrape}. ---")
                         qualification_summary = gemini_response.text
                     except Exception as gemini_err:
-                        print(f"--- DEBUG (search_and_qualify_leads): Erro ao qualificar com Gemini para {url_to_scrape}: {gemini_err}. ---")
-                        qualification_summary = "Não foi possível qualificar com Gemini. Conteúdo bruto disponível."
+                        print(f"--- DEBUG (search_and_qualify_leads): [Attempt {leads_attempted_to_scrape}/{max_search_results_to_scrape}] Erro ao qualificar com Gemini para {url_to_scrape}: {gemini_err}. ---")
+                        # qualification_summary remains the default value
 
                     qualified_leads_data.append({
                         "title": result.get('title'),
@@ -173,14 +191,23 @@ def search_and_qualify_leads(query: str, max_search_results_to_scrape: int) -> L
                         "full_content": full_content,
                         "qualification_summary": qualification_summary
                     })
-                    count_scraped += 1
+                    successfully_scraped_leads += 1
+
+                    if successfully_scraped_leads >= max_search_results_to_scrape:
+                         print(f"--- DEBUG (search_and_qualify_leads): [Attempt {leads_attempted_to_scrape}/{max_search_results_to_scrape}] Successfully scraped leads limit ({max_search_results_to_scrape}) reached after qualifying {url_to_scrape}. ---")
+                         # The main loop condition will handle breaking if this was the last attempt allowed.
+
                     time.sleep(DELAY_BETWEEN_GEMINI_CALLS_SECONDS)  # Pausa para gerenciar limites de taxa
                 else:
-                    print(f"--- DEBUG (search_and_qualify_leads): Falha ao raspar '{url_to_scrape}': {scraped_data.get('error', 'Conteúdo vazio/erro desconhecido')} ---")
+                    print(f"--- DEBUG (search_and_qualify_leads): [Attempt {leads_attempted_to_scrape}/{max_search_results_to_scrape}] Falha ao raspar '{url_to_scrape}': {scraped_data.get('error', 'Conteúdo vazio/erro desconhecido')} ---")
             else:
-                print(f"--- DEBUG (search_and_qualify_leads): URL inválida ou vazia, pulando: '{url_to_scrape}' ---")
+                print(f"--- DEBUG (search_and_qualify_leads): [Attempt {leads_attempted_to_scrape}/{max_search_results_to_scrape}] URL inválida ou vazia, pulando: '{url_to_scrape}' ---")
 
-        print(f"--- DEBUG (search_and_qualify_leads): Retornando {len(qualified_leads_data)} resultados qualificados. ---")
+            if successfully_scraped_leads >= max_search_results_to_scrape: # Check after processing each URL
+                print(f"--- DEBUG (search_and_qualify_leads): Successfully scraped leads limit ({max_search_results_to_scrape}) reached within the outer loop for URL {url_to_scrape}. Stopping. ---")
+                break
+
+        print(f"--- DEBUG (search_and_qualify_leads): Finished. Returning {len(qualified_leads_data)} qualified leads after attempting to scrape {leads_attempted_to_scrape} search results. ---")
         return qualified_leads_data
     except ValueError as ve:
         print(f"--- DEBUG (search_and_qualify_leads): Erro de configuração da API: {ve} ---")
@@ -203,7 +230,7 @@ def find_and_extract_structured_leads(query: str, max_search_results_to_process:
         Uma lista de dicionários, onde cada dicionário representa um lead estruturado.
         Retorna uma lista vazia se nenhum lead for encontrado ou se ocorrer um erro.
     """
-    print(f"--- DEBUG (find_and_extract_structured_leads): Chamado com query: '{query}' e max_results: {max_search_results_to_process} ---")
+    print(f"--- DEBUG (find_and_extract_structured_leads): Called with query='{query}', max_search_results_to_process={max_search_results_to_process} ---")
     
     # Padrões comuns de Regex para e-mails, telefones e sites (pode ser refinado para mais variações)
     email_regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
@@ -211,30 +238,45 @@ def find_and_extract_structured_leads(query: str, max_search_results_to_process:
     phone_regex = r'\b(?:\+?\d{1,3}\s?)?(?:\(?\d{2}\)?\s?)?\d{4,5}[-\s]?\d{4}\b'
     website_regex = r'(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+\.[a-zA-Z]{2,})(?:\/\S*)?'
 
-    extracted_leads = []
+    extracted_leads: list[dict[str, Any]] = []
+    successfully_processed_leads = 0
+    leads_attempted_to_process = 0
+
     try:
         model = _initialize_gemini_model()
         # Use default value if not provided
         if max_search_results_to_process is None:
             max_search_results_to_process = MAX_SCRAPE_RESULTS
+
+        print(f"--- DEBUG (find_and_extract_structured_leads): Calling _tavily_search_internal with query='{query}', max_results={max_search_results_to_process * 2} ---")
         search_results = _tavily_search_internal(query=query, max_results=max_search_results_to_process * 2)
+        print(f"--- DEBUG (find_and_extract_structured_leads): _tavily_search_internal returned {len(search_results)} results ---")
 
         if not search_results:
-            print("--- DEBUG (find_and_extract_structured_leads): Nenhuns resultados da busca Tavily. ---")
+            print("--- DEBUG (find_and_extract_structured_leads): No search results from Tavily. ---")
             return [{"error": "Não foram encontrados resultados na busca inicial com a Tavily."}]
 
-        count_processed = 0
-        for result in search_results:
-            if count_processed >= max_search_results_to_process:
+        for result_idx, result in enumerate(search_results):
+            if leads_attempted_to_process >= max_search_results_to_process:
+                print(f"--- DEBUG (find_and_extract_structured_leads): Limite de {max_search_results_to_process} tentativas de processamento atingido. Parando loop principal.")
                 break
+            leads_attempted_to_process += 1
             
             url_to_scrape = result.get('url')
             if url_to_scrape and url_to_scrape.startswith('http'):
-                print(f"--- DEBUG (find_and_extract_structured_leads): Tentando raspar URL: '{url_to_scrape}' ---")
+                print(f"--- DEBUG (find_and_extract_structured_leads): [Attempt {leads_attempted_to_process}/{max_search_results_to_process}] Processing result {result_idx+1}/{len(search_results)}: {url_to_scrape} ---")
+
+                if successfully_processed_leads >= max_search_results_to_process:
+                    print(f"--- DEBUG (find_and_extract_structured_leads): Successfully processed {successfully_processed_leads} leads, which meets or exceeds max_search_results_to_process ({max_search_results_to_process}). Stopping. ---")
+                    break
+
+                print(f"--- DEBUG (find_and_extract_structured_leads): [Attempt {leads_attempted_to_process}/{max_search_results_to_process}] Calling web_scraper for {url_to_scrape} ---")
                 scraped_data = web_scraper(url=url_to_scrape)
+                print(f"--- DEBUG (find_and_extract_structured_leads): [Attempt {leads_attempted_to_process}/{max_search_results_to_process}] web_scraper returned for {url_to_scrape} ---")
                 
                 if not scraped_data.get('error') and scraped_data.get('content'):
                     full_content = scraped_data.get('content')
+                    print(f"--- DEBUG (find_and_extract_structured_leads): [Attempt {leads_attempted_to_process}/{max_search_results_to_process}] Successfully scraped {len(full_content)} chars from {url_to_scrape}. ---")
                     
                     # 1. Extração com Regex (passagem inicial para padrões comuns)
                     emails = list(set(re.findall(email_regex, full_content)))
@@ -264,15 +306,17 @@ def find_and_extract_structured_leads(query: str, max_search_results_to_process:
                     )
                     
                     gemini_extracted_data = {}
+                    print(f"--- DEBUG (find_and_extract_structured_leads): [Attempt {leads_attempted_to_process}/{max_search_results_to_process}] Calling Gemini's model.generate_content for {url_to_scrape} ---")
                     try:
                         response = model.generate_content(prompt_extract)
+                        print(f"--- DEBUG (find_and_extract_structured_leads): [Attempt {leads_attempted_to_process}/{max_search_results_to_process}] Gemini's model.generate_content returned for {url_to_scrape} ---")
                         # Remove markdown code block if present
                         json_str = response.text.strip().replace('```json\n', '').replace('\n```', '')
                         gemini_extracted_data = json.loads(json_str)
                     except json.JSONDecodeError as jde:
-                        print(f"--- DEBUG (find_and_extract_structured_leads): Erro ao decodificar JSON do Gemini para {url_to_scrape}: {jde}. Resposta bruta: {response.text[:200]}..." )
+                        print(f"--- DEBUG (find_and_extract_structured_leads): [Attempt {leads_attempted_to_process}/{max_search_results_to_process}] Erro ao decodificar JSON do Gemini para {url_to_scrape}: {jde}. Resposta bruta: {response.text[:200]}..." )
                     except Exception as gemini_err:
-                        print(f"--- DEBUG (find_and_extract_structured_leads): Erro na chamada Gemini para {url_to_scrape}: {gemini_err} ---")
+                        print(f"--- DEBUG (find_and_extract_structured_leads): [Attempt {leads_attempted_to_process}/{max_search_results_to_process}] Erro na chamada Gemini para {url_to_scrape}: {gemini_err} ---")
                     
                     # Combina resultados de Regex e Gemini, priorizando Gemini e enriquecendo
                     final_emails = list(set((gemini_extracted_data.get('contact_emails') or []) + emails))
@@ -294,14 +338,24 @@ def find_and_extract_structured_leads(query: str, max_search_results_to_process:
                         "search_snippet": result.get('snippet', 'N/A')
                     }
                     extracted_leads.append(lead_data)
-                    count_processed += 1
+                    successfully_processed_leads += 1
+
+                    if successfully_processed_leads >= max_search_results_to_process:
+                        print(f"--- DEBUG (find_and_extract_structured_leads): [Attempt {leads_attempted_to_process}/{max_search_results_to_process}] Successfully processed leads limit ({max_search_results_to_process}) reached after processing a lead from {url_to_scrape}. ---")
+                        # This break will exit the inner loop for results from the current URL.
+                        # The outer loop condition `if successfully_processed_leads >= max_search_results_to_process:` will then break the main loop.
+
                     time.sleep(DELAY_BETWEEN_GEMINI_CALLS_SECONDS)  # Pausa para gerenciar limites de taxa
                 else:
-                    print(f"--- DEBUG (find_and_extract_structured_leads): Falha ao raspar '{url_to_scrape}': {scraped_data.get('error', 'Conteúdo vazio/erro desconhecido')} ---")
+                    print(f"--- DEBUG (find_and_extract_structured_leads): [Attempt {leads_attempted_to_process}/{max_search_results_to_process}] Falha ao raspar '{url_to_scrape}': {scraped_data.get('error', 'Conteúdo vazio/erro desconhecido')} ---")
             else:
-                print(f"--- DEBUG (find_and_extract_structured_leads): URL inválida ou vazia, pulando: '{url_to_scrape}' ---")
+                print(f"--- DEBUG (find_and_extract_structured_leads): [Attempt {leads_attempted_to_process}/{max_search_results_to_process}] URL inválida ou vazia, pulando: '{url_to_scrape}' ---")
             
-        print(f"--- DEBUG (find_and_extract_structured_leads): Retornando {len(extracted_leads)} leads estruturados. ---")
+            if successfully_processed_leads >= max_search_results_to_process: # Check after processing each URL's results
+                 print(f"--- DEBUG (find_and_extract_structured_leads): Successfully processed leads limit ({max_search_results_to_process}) reached within the outer loop for URL {url_to_scrape}. Stopping. ---")
+                 break
+
+        print(f"--- DEBUG (find_and_extract_structured_leads): Finished. Extracted {len(extracted_leads)} leads after attempting to process {leads_attempted_to_process} search results. ---")
         return extracted_leads
 
     except ValueError as ve:

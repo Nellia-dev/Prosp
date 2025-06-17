@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,20 +23,28 @@ export const ChatInterface = () => {
   const [activeAgent, setActiveAgent] = useState('intake');
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<Record<string, ChatMessage[]>>({
-    intake: [
-      {
-        id: '1',
-        agent_id: 'intake',
-        content: 'Olá! Sou o agente de captação de leads. Envie os dados do seu lead para processamento.',
-        timestamp: new Date().toISOString(),
-        type: 'agent'
-      }
-    ],
+    intake: [],
     analysis: [],
     persona: [],
     strategy: [],
     message: []
   });
+
+  // Set initial greeting message when component mounts
+  useEffect(() => {
+    setMessages(prev => ({
+      ...prev,
+      intake: [
+        {
+          id: '1',
+          agent_id: 'intake',
+          content: t('intake_greeting'),
+          timestamp: new Date().toISOString(),
+          type: 'agent'
+        }
+      ]
+    }));
+  }, [t]);
 
   const handleSendMessage = () => {
     if (!message.trim()) return;
@@ -61,7 +69,7 @@ export const ChatInterface = () => {
       const agentResponse: ChatMessage = {
         id: (Date.now() + 1).toString(),
         agent_id: activeAgent,
-        content: `Processando sua solicitação... ${message}`,
+        content: `${t('processing_request')} ${message}`,
         timestamp: new Date().toISOString(),
         type: 'agent'
       };

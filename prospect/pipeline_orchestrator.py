@@ -270,32 +270,35 @@ class PipelineOrchestrator:
             import threading
             
             def run_adk1_search():
+                logger.info(f"[run_adk1_search] Started execution in thread for query: '{query}', max_leads: {max_leads}")
                 try:
-                    logger.info(f"[run_adk1_search] Executando find_and_extract_structured_leads com query: '{query}', max_leads: {max_leads}")
+                    logger.info(f"[run_adk1_search] Executing find_and_extract_structured_leads with query: '{query}', max_leads: {max_leads}")
                     # Usar find_and_extract_structured_leads para obter dados mais ricos
                     results = find_and_extract_structured_leads(query, max_leads)
-                    logger.info(f"[run_adk1_search] ADK1 find_and_extract_structured_leads retornou {len(results)} resultados estruturados")
-                    return results
+                    logger.info(f"[run_adk1_search] ADK1 find_and_extract_structured_leads returned {len(results)} structured results")
                 except Exception as e:
-                    logger.error(f"[run_adk1_search] Erro no ADK1 find_and_extract_structured_leads: {e}")
+                    logger.error(f"[run_adk1_search] Error in ADK1 find_and_extract_structured_leads: {e}")
                     traceback.print_exc()
                     # Fallback para search_and_qualify_leads
                     try:
-                        logger.info(f"[run_adk1_search] Tentando fallback com search_and_qualify_leads")
+                        logger.info(f"[run_adk1_search] Attempting fallback with search_and_qualify_leads for query: '{query}', max_leads: {max_leads}")
                         results = search_and_qualify_leads(query, max_leads)
-                        logger.info(f"[run_adk1_search] ADK1 fallback retornou {len(results)} resultados")
-                        return results
+                        logger.info(f"[run_adk1_search] ADK1 fallback search_and_qualify_leads returned {len(results)} results")
                     except Exception as e2:
-                        logger.error(f"[run_adk1_search] Erro no ADK1 fallback: {e2}")
+                        logger.error(f"[run_adk1_search] Error in ADK1 fallback search_and_qualify_leads: {e2}")
                         traceback.print_exc()
-                        return []
+                        results = [] # Ensure results is always defined
+
+                logger.info(f"[run_adk1_search] Finished execution in thread. Returning {len(results)} results.")
+                return results
             
             # Executar em thread pool para não bloquear o event loop
             loop = asyncio.get_event_loop()
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                logger.info(f"[_search_with_adk1_agent] Calling run_adk1_search with query: {query} and max_leads: {max_leads}")
+                logger.info(f"[_search_with_adk1_agent] Preparing to call run_adk1_search via executor with query: '{query}' and max_leads: {max_leads}")
+                logger.info(f"[_search_with_adk1_agent] About to await loop.run_in_executor for run_adk1_search.")
                 results = await loop.run_in_executor(executor, run_adk1_search)
-                logger.info(f"[_search_with_adk1_agent] run_adk1_search returned {len(results)} results")
+                logger.info(f"[_search_with_adk1_agent] await loop.run_in_executor for run_adk1_search has returned. Number of results: {len(results)}")
             
             # Verificar se temos resultados
             if not results:
@@ -606,6 +609,10 @@ class PipelineOrchestrator:
             # Inicia o enriquecimento para o lead em uma tarefa separada
             task = asyncio.create_task(self._enrich_lead_and_collect_events(lead_data, lead_id))
             enrichment_tasks.append(task)
+
+            if leads_found_count >= max_leads:
+                logger.info(f"[PIPELINE_STEP] Reached max_leads ({max_leads}). Stopping further lead generation and processing from harvester.")
+                break
             
         if not search_loop_entered:
             logger.error("[PIPELINE_STEP] ❌ CRITICAL: Never entered the _search_leads async for loop! This means _search_leads yielded nothing.")
