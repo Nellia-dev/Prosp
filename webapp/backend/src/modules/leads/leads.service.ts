@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Lead } from '@/database/entities/lead.entity';
+import { UserSeenLead } from '@/database/entities/user-seen-lead.entity';
 import { QualificationTier, ProcessingStage, LeadStatus } from '@/shared/enums/nellia.enums';
 import {
   LeadData,
@@ -12,13 +13,17 @@ import {
 
 @Injectable()
 export class LeadsService {
+  private readonly logger = new Logger(LeadsService.name); // Added logger instance
+
   constructor(
     @InjectRepository(Lead)
     private readonly leadRepository: Repository<Lead>,
+    @InjectRepository(UserSeenLead) // Added
+    private readonly userSeenLeadRepository: Repository<UserSeenLead>, // Added
   ) { }
 
-  async findAll(filters?: LeadFilters): Promise<{ data: LeadData[], total: number }> {
-    console.log('Finding all leads with filters:', filters);
+  async findAll(userId: string, filters?: LeadFilters): Promise<{ data: LeadData[], total: number }> {
+    this.logger.log(`Finding all leads for user ${userId} with filters: ${JSON.stringify(filters)}`);
     try {
       const query = this.leadRepository.createQueryBuilder('lead');
 
@@ -69,12 +74,23 @@ export class LeadsService {
         query.orderBy('lead.created_at', 'DESC');
       }
 
+      // Get seen lead IDs for the user
+      const seenLeadEntries = await this.userSeenLeadRepository.find({
+        where: { userId },
+        select: ['leadId'], // Only select leadId
+      });
+      const seenLeadIds = seenLeadEntries.map(entry => entry.leadId);
+
+      if (seenLeadIds.length > 0) {
+        query.andWhere('lead.id NOT IN (:...seenLeadIds)', { seenLeadIds });
+      }
+
       const [leads, total] = await query.getManyAndCount();
       const data = leads.map(lead => this.convertToLeadData(lead));
 
       return { data: data || [], total: total || 0 };
     } catch (error) {
-      console.error('Error fetching leads:', error);
+      this.logger.error(`Error fetching leads for user ${userId}:`, error);
       return { data: [], total: 0 }; // Always return structured response, never undefined
     }
   }
@@ -295,5 +311,35 @@ export class LeadsService {
     };
     console.log(`Converted DTO:`, leadData);
     return leadData;
+  }
+
+  async markAsSeen(userId: string, leadId: string): Promise<void> {
+    try {
+      const existingEntry = await this.userSeenLeadRepository.findOne({
+        where: { userId, leadId },
+      });
+
+      if (existingEntry) {
+        // Optionally, update seenAt if it already exists, or just return
+        // this.logger.log(`Lead ${leadId} already marked as seen by user ${userId}`);
+        // existingEntry.seenAt = new Date();
+        // await this.userSeenLeadRepository.save(existingEntry);
+        return;
+      }
+
+      const userSeenLead = this.userSeenLeadRepository.create({
+        userId,
+        leadId,
+        // seenAt is defaulted by the database
+      });
+      await this.userSeenLeadRepository.save(userSeenLead);
+      this.logger.log(`Lead ${leadId} marked as seen by user ${userId}`);
+    } catch (error) {
+      // Consider if the lead or user doesn't exist, FK constraint will throw an error.
+      // Specific error handling can be added if needed.
+      this.logger.error(`Error marking lead ${leadId} as seen for user ${userId}:`, error);
+      // Re-throw or handle as appropriate for the application
+      throw error;
+    }
   }
 }
