@@ -69,6 +69,7 @@ class AnalyzedLead(BaseModel):
     analysis_timestamp: datetime = Field(default_factory=datetime.now)
     product_service_context: str = Field(..., description="Product/service being offered")
     ai_intelligence: Optional[Dict[str, Any]] = Field(None, description="AI prospect intelligence profile from RAG")
+    lead_vector: Optional[List[float]] = Field(None, description="Vector embedding of the lead")
 
 class LeadWithPersona(BaseModel):
     """Lead with persona information"""

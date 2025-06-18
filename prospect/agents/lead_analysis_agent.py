@@ -7,11 +7,10 @@ from typing import Optional, Dict, Any, List
 from loguru import logger
 
 from agents.base_agent import BaseAgent
-from data_models.lead_structures import (
-    ValidatedLead, 
-    AnalyzedLead, 
-    LeadAnalysis,
-    ExtractionStatus
+from ..data_models.core import ValidatedLead, AnalyzedLead, LeadAnalysis
+from ..data_models.enums import ExtractionStatus
+from ..core_logic.vectorization_utils import generate_lead_vector
+
 )
 
 
@@ -69,12 +68,26 @@ class LeadAnalysisAgent(BaseAgent[ValidatedLead, AnalyzedLead]):
             # Generate full analysis using LLM
             analysis = self._generate_full_analysis(input_data)
         
-        # Create and return analyzed lead
-        return AnalyzedLead(
+        # Create AnalyzedLead instance
+        analyzed_lead_instance = AnalyzedLead(
             validated_lead=input_data,
             analysis=analysis,
             product_service_context=self.product_service_context
         )
+
+        # Generate and assign the vector
+        try:
+            vector = generate_lead_vector(analyzed_lead_instance)
+            if vector:
+                analyzed_lead_instance.lead_vector = vector
+            else:
+                logger.warning(f"Lead vector generation returned None for lead: {input_data.site_data.url}")
+                # analyzed_lead_instance.lead_vector will remain None (its default)
+        except Exception as e:
+            logger.error(f"Error generating lead vector for {input_data.site_data.url}: {e}")
+            # analyzed_lead_instance.lead_vector will remain None
+
+        return analyzed_lead_instance
     
     def _generate_full_analysis(self, lead: ValidatedLead) -> LeadAnalysis:
         """Generate comprehensive analysis for leads with successful extraction"""
