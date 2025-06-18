@@ -2,8 +2,10 @@ import { DataSource, DataSourceOptions } from 'typeorm';
 import { Agent } from '../database/entities/agent.entity';
 import { Lead } from '../database/entities/lead.entity';
 import { User } from '../database/entities/user.entity';
+import { UserSeenLead } from '../database/entities/user-seen-lead.entity';
 import { BusinessContextEntity } from '../database/entities/business-context.entity';
 import { ChatMessage } from '../database/entities/chat-message.entity';
+import { UserSeenLeadTable1750270675446 } from "../database/migrations/1750270675446-UserSeenLeadTable";
 
 // Options for AppDataSource
 const appDataSourceOptions: DataSourceOptions = {
@@ -13,14 +15,8 @@ const appDataSourceOptions: DataSourceOptions = {
   username: process.env.DB_USERNAME || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
   database: process.env.DB_DATABASE || 'nellia_prospector',
-  entities: [
-    Agent,
-    Lead,
-    User,
-    BusinessContextEntity,
-    ChatMessage
-  ],
-  migrations: ['src/database/migrations/*.ts'],
+  entities: ['src/database/entities/**/*.entity.ts'],
+  migrations: ['src/database/migrations/*.ts', UserSeenLeadTable1750270675446],
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
   ssl: process.env.NODE_ENV === 'production'
@@ -46,9 +42,10 @@ export const databaseConfig = (configService: any) => { // configService is typi
       Lead,
       User,
       BusinessContextEntity,
-      ChatMessage
+    ChatMessage,
+    UserSeenLead
     ],
-    migrations: ['dist/database/migrations/*.js'],
+    migrations: ['dist/database/migrations/*.js', UserSeenLeadTable1750270675446],
     synchronize: false,
     logging: configService.get('NODE_ENV') === 'development', // No type arguments
     ssl: configService.get('NODE_ENV') === 'production'
