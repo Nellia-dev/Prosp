@@ -28,6 +28,7 @@ import { Search, RotateCcw, RefreshCw, TrendingUp, Users, Target } from 'lucide-
 interface CRMBoardProps {
   leads: LeadData[];
   onLeadUpdate?: (lead: LeadData) => void;
+  onNewLead?: (lead: LeadData) => void; // Add this to handle new leads from websockets
   isLoading?: boolean;
 }
 
@@ -47,10 +48,9 @@ const STAGE_CONFIGS = PROCESSING_STAGES.map(stage => ({
   style: { borderLeftColor: STAGE_COLORS[stage] || '#6b7280' }
 }));
 
-export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardProps) => {
+export const CRMBoard = ({ leads, onLeadUpdate, onNewLead, isLoading = false }: CRMBoardProps) => {
   const { t } = useTranslation();
-  useRealTimeUpdates();
-  const [liveLeads, setLiveLeads] = useState<LeadData[]>([]);
+  
   const [enrichmentEvents, setEnrichmentEvents] = useState<Record<string, EnrichmentEvent>>({});
   const [draggedLead, setDraggedLead] = useState<LeadData | null>(null);
   const [selectedLead, setSelectedLead] = useState<LeadData | null>(null);
@@ -77,7 +77,9 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
   }, [leads]);
 
   useRealTimeEvent<LeadCreatedEvent>('lead-created', (event) => {
-    setLiveLeads(prev => [...prev, event.lead]);
+    if (onNewLead) {
+      onNewLead(event.lead);
+    }
   });
 
   useRealTimeEvent<ProspectPipelineEvent>('enrichment-update', (event) => {
@@ -95,13 +97,26 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
   });
 
   useRealTimeEvent<LeadEnrichedEvent>('lead-enriched', (event) => {
-    setLiveLeads(prev => prev.filter(l => l.id !== event.lead.id));
-    onLeadUpdate?.(event.lead); // This should trigger a refetch in the parent
+    // The parent component will handle the update, so we just notify it.
+    if (onLeadUpdate) {
+      onLeadUpdate(event.lead);
+    }
   });
+
+  const allLeads = useMemo(() => {
+    const combined = [...leads];
+    return Array.from(new Map(combined.map(lead => [lead.id, lead])).values());
+  }, [leads]);
+
+  const { processingLeads, boardLeads } = useMemo(() => {
+    const processing = allLeads.filter(lead => ['new', 'harvested', 'pending_enrichment', 'enriching'].includes(lead.status));
+    const board = allLeads.filter(lead => lead.status === 'enriched');
+    return { processingLeads: processing, boardLeads: board };
+  }, [allLeads]);
 
   // Filter leads based on current filters
   const filteredLeads = useMemo(() => {
-    return leads.filter(lead => {
+    return boardLeads.filter(lead => {
       const searchMatch = !filters.search ||
         lead.company_name.toLowerCase().includes(filters.search.toLowerCase()) ||
         (lead.website && lead.website.toLowerCase().includes(filters.search.toLowerCase()));
@@ -123,20 +138,19 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
       
       return searchMatch && sectorMatch && qualificationMatch && scoreMatch;
     });
-  }, [leads, filters]);
+  }, [boardLeads, filters]);
 
   // Group leads by processing stage
   const leadsByStage = useMemo(() => {
-    const grouped: Record<ProcessingStage, LeadData[]> = {} as Record<ProcessingStage, LeadData[]>;
-    PROCESSING_STAGES.forEach(stage => {
-      grouped[stage] = filteredLeads.filter(lead => lead.processing_stage === stage);
-    });
-    return grouped;
+    return filteredLeads.reduce((acc, lead) => {
+      const stage = lead.processing_stage || 'lead_qualification';
+      if (!acc[stage]) {
+        acc[stage] = [];
+      }
+      acc[stage].push(lead);
+      return acc;
+    }, {} as Record<ProcessingStage, LeadData[]>);
   }, [filteredLeads]);
-
-  // Get unique sectors and qualifications for filter options
-  const sectors = [...new Set(leads.map(lead => lead.company_sector).filter(Boolean))];
-  const qualifications = [...new Set(leads.map(lead => lead.qualification_tier).filter(Boolean))] as QualificationTier[];
 
   const handleDragStart = (e: React.DragEvent, lead: LeadData) => {
     setDraggedLead(lead);
@@ -266,7 +280,7 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
               </SelectTrigger>
               <SelectContent className="bg-slate-800 border-slate-700">
                 <SelectItem value="all">{t('all_sectors')}</SelectItem>
-                {sectors.map(sector => (
+                {allLeads.map(lead => lead.company_sector).filter(Boolean).map(sector => (
                   <SelectItem key={sector} value={sector}>{sector}</SelectItem>
                 ))}
               </SelectContent>
@@ -278,7 +292,7 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
               </SelectTrigger>
               <SelectContent className="bg-slate-800 border-slate-700">
                 <SelectItem value="all">{t('all_levels')}</SelectItem>
-                {qualifications.map(qual => (
+                {allLeads.map(lead => lead.qualification_tier).filter(Boolean).map(qual => (
                   <SelectItem key={qual} value={qual}>{qual.split(' ')[0]}</SelectItem>
                 ))}
               </SelectContent>
@@ -325,12 +339,12 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
                 <h3 className="font-medium text-white text-sm">{t('harvesting_enriching')}</h3>
               </div>
               <Badge variant="secondary" className="text-xs bg-slate-700 text-white">
-                {liveLeads.length}
+                {processingLeads.length}
               </Badge>
             </div>
           </div>
           <div className="p-3 space-y-2 min-h-96 max-h-96 overflow-y-auto">
-            {liveLeads.map(lead => (
+            {processingLeads.map(lead => (
               <CompactLeadCard
                 key={lead.id}
                 lead={lead}
@@ -338,7 +352,7 @@ export const CRMBoard = ({ leads, onLeadUpdate, isLoading = false }: CRMBoardPro
                 enrichmentEvent={enrichmentEvents[lead.id]}
               />
             ))}
-            {liveLeads.length === 0 && (
+            {processingLeads.length === 0 && (
               <div className="text-center text-slate-500 py-8">
                 <div className="text-sm">{t('no_new_leads_processing')}</div>
               </div>

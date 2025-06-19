@@ -148,10 +148,17 @@ const DashboardContent = () => {
 
   // API calls
   const { data: agentsData, isLoading: agentsLoading, error: agentsError } = useAgents();
-  const { data: leadsResponse, isLoading: leadsLoading, error: leadsError } = useLeads();
+  const { data: initialLeadsData, error: leadsError, isLoading: leadsLoading, refetch: refetchLeads } = useLeads();
+  const [leads, setLeads] = useState<LeadData[]>([]);
   const { data: metricsData, isLoading: metricsLoading, error: metricsError } = useDashboardMetrics();
   const { data: businessContext, isLoading: businessContextLoading, isError: businessContextError, isSuccess: businessContextSuccess } = useBusinessContext();
   const startProspectingMutation = useStartProspectingJob();
+
+  useEffect(() => {
+    if (initialLeadsData) {
+      setLeads(initialLeadsData.data.map(transformLeadResponse));
+    }
+  }, [initialLeadsData]);
 
   const handleContextSetupComplete = () => {
     setShowBusinessContextForm(false);
@@ -208,11 +215,22 @@ const DashboardContent = () => {
 
   if (businessContextSuccess && businessContext) {
     const agents: AgentStatus[] = Array.isArray(agentsData) ? agentsData.map(transformAgentResponse) : [];
-    const leads: LeadData[] = leadsResponse?.data ? leadsResponse.data.map(transformLeadResponse) : [];
     const metrics: DashboardMetricsResponse = metricsData || getDefaultFrontendMetrics();
 
     const handleLeadUpdate = (updatedLead: LeadData) => {
-      console.log('Lead updated:', updatedLead);
+      setLeads(prevLeads => 
+        prevLeads.map(lead => lead.id === updatedLead.id ? updatedLead : lead)
+      );
+    };
+
+    const handleNewLead = (newLead: LeadData) => {
+      setLeads(prevLeads => {
+        // Avoid adding duplicates
+        if (prevLeads.some(lead => lead.id === newLead.id)) {
+          return prevLeads;
+        }
+        return [newLead, ...prevLeads];
+      });
     };
 
     return (
@@ -371,7 +389,7 @@ const DashboardContent = () => {
           </TabsContent>
 
           <TabsContent value="crm" className="space-y-6">
-            <CRMBoard leads={leads} onLeadUpdate={handleLeadUpdate} />
+            <CRMBoard leads={leads} onLeadUpdate={handleLeadUpdate} onNewLead={handleNewLead} />
           </TabsContent>
 
           <TabsContent value="agents" className="space_y-6">

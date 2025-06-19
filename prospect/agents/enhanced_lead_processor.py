@@ -189,74 +189,44 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 ).to_dict()
                 
                 output = None
-                agent_start_time = time.time()
-                try:
-                    agent_logger.debug(f"⚡ Starting async execution for {agent.name}")
-                    output = await agent.execute_async(input_data)
-                    
-                    # Detailed success analysis
-                    error_msg = getattr(output, 'error_message', None)
-                    success = not error_msg
-                    
-                    if success:
-                        # Log output quality metrics
-                        output_info = self._analyze_agent_output(agent.name, output)
-                        agent_logger.info(f"✅ Agent {agent.name} completed successfully: {output_info}")
-                    else:
-                        agent_logger.warning(f"⚠️  Agent {agent.name} completed with error: {error_msg}")
-                        
-                except Exception as e:
-                    agent_logger.error(f"❌ Sub-agent {agent.name} raised an exception: {e}")
-                    agent_logger.error(f"🔍 Exception traceback: {traceback.format_exc()}")
-                    success = False
-                    # Try to create a default output object with an error message
-                    try:
-                        # This line seems wrong - agent.output_model doesn't exist
-                        # We should create a proper default output based on the agent type
-                        output = self._create_default_output_for_agent(agent.name, f"Agent execution failed: {e}")
-                    except Exception as create_error:
-                        agent_logger.error(f"🚨 Failed to create default output: {create_error}")
-                        pass
-
-                agent_end_time = time.time()
-                execution_time = agent_end_time - agent_start_time
-                
-                agent_logger.info(f"⏱️  Agent {agent.name} execution time: {execution_time:.2f} seconds")
-                
-                yield AgentEndEvent(
-                    event_type="agent_end",
-                    timestamp=datetime.now().isoformat(),
-                    job_id=job_id,
-                    user_id=user_id,
-                    agent_name=agent.name,
-                    execution_time_seconds=execution_time,
-                    success=success,
-                    final_response=output.model_dump_json() if output else None,
-                    error_message=getattr(output, 'error_message', "Agent execution failed with an exception.")
-                ).to_dict()
-                
-                if not success:
-                    agent_logger.error(f"🔴 Sub-agent {agent.name} FAILED: {getattr(output, 'error_message', 'Unknown error')}")
-                else:
-                    agent_logger.info(f"🟢 Sub-agent {agent.name} COMPLETED successfully")
-                
-                yield output
-
             async def get_agent_result(agent, input_data, description):
-                result = None
+                start_time = time.time()
+                agent_name = agent.name
                 events = []
+                
+                self.logger.info(f"Executing Agent: {agent_name} - {description}")
+                input_json = input_data.model_dump_json()
+                self.logger.debug(f"Agent '{agent_name}' input: {input_json[:1000] + ('...' if len(input_json) > 1000 else '')}")
+
+                await self.event_stream.emit(AgentStartEvent(job_id=job_id, user_id=user_id, agent_name=agent_name, timestamp=datetime.now().isoformat()))
+                events.append(AgentStartEvent(job_id=job_id, user_id=user_id, agent_name=agent_name, timestamp=datetime.now().isoformat()))
+
+                output = None
                 try:
-                    async for item in run_and_log_agent(agent, input_data, description):
-                        if isinstance(item, dict) and 'event_type' in item:
-                            events.append(item)
-                        else:
-                            result = item
+                    output = await agent.execute(input_data)
+                    if hasattr(output, 'error_message') and output.error_message:
+                        self.logger.warning(f"Agent '{agent_name}' returned an error in its output: {output.error_message}")
+                        raise Exception(output.error_message)
+                    
+                    analysis = self._analyze_agent_output(agent_name, output)
+                    self.logger.success(f"Agent '{agent_name}' executed successfully in {time.time() - start_time:.2f}s. Analysis: {analysis}")
+
                 except Exception as e:
-                    pipeline_logger.error(f"Error in get_agent_result for {agent.name}: {e}\n{traceback.format_exc()}")
-                    # The original code returned None, so we'll create a default error object if possible
-                    # or just let result be None.
-                    pass
-                return result, events
+                    error_message = f"Agent '{agent_name}' failed: {e}"
+                    self.logger.error(error_message)
+                    self.logger.debug(traceback.format_exc())
+                    await self.event_stream.emit(PipelineErrorEvent(job_id=job_id, user_id=user_id, agent_name=agent_name, error=str(e), timestamp=datetime.now().isoformat()))
+                    events.append(PipelineErrorEvent(job_id=job_id, user_id=user_id, agent_name=agent_name, error=str(e), timestamp=datetime.now().isoformat()))
+                    
+                    output = self._create_default_output_for_agent(agent_name, str(e))
+
+                end_time = time.time()
+                duration = end_time - start_time
+                output_dump = output.model_dump() if output else {}
+                await self.event_stream.emit(AgentEndEvent(job_id=job_id, user_id=user_id, agent_name=agent_name, timestamp=datetime.now().isoformat(), duration=duration, output=output_dump))
+                events.append(AgentEndEvent(job_id=job_id, user_id=user_id, agent_name=agent_name, timestamp=datetime.now().isoformat(), duration=duration, output=output_dump))
+
+                return output, events  
 
             analysis_obj = analyzed_lead.analysis
             persona_profile_str = self._construct_persona_profile_string(analysis_obj, company_name)
@@ -282,8 +252,11 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             pipeline_logger.info("🚀 PHASE 2: Strategic Analysis & Qualification")
             
             # Prepare analysis string for subsequent agents
+            self.logger.info("Constructing lead analysis and persona profile strings for subsequent agents.")
             lead_analysis_str_for_agents = self._construct_lead_analysis_string(analysis_obj, external_intel)
-            pipeline_logger.debug(f"📊 Constructed lead analysis string, length: {len(lead_analysis_str_for_agents)}")
+            self.logger.debug(f"Constructed lead_analysis_str_for_agents (first 500 chars): {lead_analysis_str_for_agents[:500]}")
+            persona_profile_str = self._construct_persona_profile_string(analyzed_lead.analysis, company_name)
+            self.logger.debug(f"Constructed persona_profile_str (first 500 chars): {persona_profile_str[:500]}")
             
             # Step 3: Pain Point Deepening
             pipeline_logger.info("🎯 Step 3/15: Pain Point Analysis")
@@ -447,11 +420,52 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
 
             # Step 14: Personalized Message Generation
             pipeline_logger.info("💌 Step 14/15: Personalized Message Creation")
-            personalized_message_output, events = await get_agent_result(self.b2b_personalized_message_agent, B2BPersonalizedMessageInput(final_action_plan_text=tot_synthesis_output.model_dump_json() if tot_synthesis_output else '{}', customized_value_propositions_text=json.dumps([p.model_dump() for p in value_props_output.custom_propositions]) if value_props_output and value_props_output.custom_propositions else '[]', contact_details=B2BContactDetailsInput(emails_found=contact_info.emails_found if contact_info else [], instagram_profiles_found=contact_info.instagram_profiles_found if contact_info else []), product_service_offered=self.product_service_context, lead_url=url, company_name=company_name, persona_fictional_name=persona_profile_str), "Crafting personalized message")
-            for event in events: yield event
-            message_channel = getattr(personalized_message_output, 'crafted_message_channel', 'N/A') if personalized_message_output else 'N/A'
-            message_length = len(getattr(personalized_message_output, 'crafted_message_body', '')) if personalized_message_output else 0
-            pipeline_logger.info(f"✅ Personalized message completed: channel={message_channel}, message_length={message_length}")
+            
+            personalized_message_output = None
+            
+            # Check if there are any contact channels to generate a message for
+            if contact_info and (contact_info.emails_found or contact_info.instagram_profiles_found):
+                pipeline_logger.info(f"Found contact channels: {len(contact_info.emails_found)} emails, {len(contact_info.instagram_profiles_found)} Instagram. Generating one personalized message.")
+                
+                # Prepare shared inputs for the message agent
+                final_action_plan_str = tot_synthesis_output.model_dump_json() if tot_synthesis_output else "{}"
+                value_props_str = json.dumps([p.model_dump() for p in value_props_output.custom_propositions], ensure_ascii=False) if value_props_output and value_props_output.custom_propositions else "[]"
+
+                # The B2BPersonalizedMessageAgent is designed to take all found contacts and determine the best channel itself.
+                # We create one input object with all the lists of contacts.
+                message_input = B2BPersonalizedMessageInput(
+                    final_action_plan_text=final_action_plan_str,
+                    customized_value_propositions_text=value_props_str,
+                    contact_details=B2BContactDetailsInput(
+                        emails_found=contact_info.emails_found,
+                        instagram_profiles_found=contact_info.instagram_profiles_found
+                        # Note: The B2B agent currently only supports email and Instagram.
+                        # Other contacts from ContactExtractionAgent (phone, linkedin) are not used here.
+                    ),
+                    product_service_offered=self.product_service_context,
+                    lead_url=url,
+                    company_name=company_name,
+                    persona_fictional_name=persona_profile_str # The agent uses the fictional persona name for personalization
+                )
+                
+                personalized_message_output, events = await get_agent_result(
+                    self.b2b_personalized_message_agent,
+                    message_input,
+                    f"Crafting personalized message for {company_name}"
+                )
+                for event in events: yield event
+
+                # Log the result of the single message generation
+                if personalized_message_output and not personalized_message_output.error_message:
+                    message_channel = personalized_message_output.crafted_message_channel
+                    message_length = len(personalized_message_output.crafted_message_body)
+                    pipeline_logger.info(f"✅ Personalized message completed: 1 message generated for channel '{message_channel}', length={message_length}")
+                else:
+                    error_msg = personalized_message_output.error_message if personalized_message_output else "Agent returned no output."
+                    pipeline_logger.warning(f"⚠️ Personalized message generation failed: {error_msg}")
+            
+            else:
+                pipeline_logger.warning("No suitable contacts (email or Instagram) found, skipping personalized message generation.")
             
             # Construct enhanced strategy before final step
             pipeline_logger.info("🔧 Constructing enhanced strategy object")
@@ -521,7 +535,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 "tot_synthesis": {"success": synthesis_success},
                 "detailed_plan": {"success": detailed_plan_success},
                 "objection_handling": {"success": bool(objection_handling_output and not getattr(objection_handling_output, 'error_message', None)), "objections": objections_count},
-                "personalized_message": {"success": bool(personalized_message_output and not getattr(personalized_message_output, 'error_message', None)), "channel": message_channel, "length": message_length},
+                "personalized_message": {"success": messages_count > 0, "channel": message_channel, "messages_generated": messages_count, "total_length": total_message_length},
                 "internal_briefing": {"success": briefing_success}
             }
             
