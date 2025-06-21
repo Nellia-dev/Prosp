@@ -10,7 +10,7 @@ export const translations = {
     business_context: "Contexto do Negócio",
     crm_board: "Quadro CRM",
     prospect: "Prospectar",
-    
+
     // Main Dashboard
     loading: "Carregando...",
     error_loading_data: "Erro ao carregar dados. Tente novamente mais tarde.",
@@ -34,48 +34,48 @@ export const translations = {
     error_loading_leads: "Erro ao carregar leads.",
     real_time_active: "Tempo Real Ativo",
     contexto: "Contexto",
-    
+
     // Agent Names
     lead_intake: "Captação de Leads",
     analysis: "Análise",
     persona_creation: "Criação de Persona",
     approach_strategy: "Estratégia de Abordagem",
     message_crafting: "Criação de Mensagens",
-    
+
     // Agent Status
     active: "Ativo",
     inactive: "Inativo",
-    processing: "Processando",
+    processing: "Processando...",
     error: "Erro",
     completed: "Concluído",
-    
+
     // Metrics
     processing_time: "Tempo de Processamento",
     success_rate: "Taxa de Sucesso",
     queue_depth: "Fila de Processamento",
     throughput: "Throughput",
     token_usage: "Uso de Tokens",
-    
+
     // Agent Status Card
     prompt: "Prompt",
     completion: "Completion",
     last_updated: "Última atualização",
-    
+
     // Lead Card
     processing_progress: "Progresso de Processamento",
     likely_contact: "Contato Provável",
     decision_maker_probability: "probabilidade de tomador de decisão",
-    
+
     // Business Context Form
     saving: "Salvando...",
     save_context: "Salvar Contexto",
     form_success: "Contexto salvo com sucesso!",
     form_error: "Erro ao salvar contexto",
-    
+
     // Chat Interface
     processing_request: "Processando sua solicitação...",
     intake_greeting: "Olá! Sou o agente de captação de leads. Envie os dados do seu lead para processamento.",
-    
+
     // CRM Board
     total_leads: "Total de Leads",
     avg_roi_potential: "Potencial Médio de ROI",
@@ -87,18 +87,17 @@ export const translations = {
     drop_lead_here: "Solte o lead aqui para mover",
     updating_lead_stage: "Atualizando estágio do lead...",
     reset: "Limpar",
-    
+
     // Empty States
     no_leads_found: "Nenhum Lead Encontrado",
     start_prospecting_message: "Inicie o processo de prospecção para encontrar seus primeiros leads.",
     start_prospecting: "Iniciar Prospecção",
     no_agents_configured: "Nenhum Agente Configurado",
     agents_auto_configured: "Os agentes serão configurados automaticamente quando você definir o contexto do seu negócio.",
-    
+
     // CompactLeadCard
-    processing: "Processando...",
     agent: "Agente",
-    
+
     // LeadDetailsModal
     company_information: "Informações da Empresa",
     company_name: "Nome da Empresa",
@@ -141,7 +140,6 @@ export const translations = {
     deleting: "Excluindo...",
     cancel: "Cancelar",
     save_changes: "Salvar Alterações",
-    saving: "Salvando...",
     delete_confirmation: "Tem certeza de que deseja excluir este lead?",
     lead_updated: "Lead Atualizado",
     lead_updated_success: "As informações do lead foram atualizadas com sucesso.",
@@ -149,16 +147,12 @@ export const translations = {
     lead_deleted_success: "Lead foi excluído com sucesso.",
     processing_started: "Processamento Iniciado",
     processing_started_success: "O processamento do lead foi iniciado.",
-    error: "Erro",
     update_error: "Falha ao atualizar o lead. Tente novamente.",
     delete_error: "Falha ao excluir o lead. Tente novamente.",
     process_error: "Falha ao iniciar o processamento. Tente novamente.",
-    
+
     // MetricsVisualization
-    total_leads: "Total de Leads",
-    completed: "Concluídos",
     active_agents: "Agentes Ativos",
-    success_rate: "Taxa de Sucesso",
     overview: "Visão Geral",
     details: "Detalhes",
     insights: "Insights",
@@ -174,17 +168,13 @@ export const translations = {
     pipeline_performance: "Performance do Pipeline",
     average_processing_time: "Tempo Médio de Processamento",
     currently_processing: "Processando Atualmente",
-    queue_depth: "Profundidade da Fila",
     pipeline_stages: "Estágios do Pipeline",
-    active: "Ativo",
-    
+
     // Lead Management
     relevance_score: "Pontuação de Relevância",
-    roi_potential: "Potencial de ROI",
-    brazilian_market_fit: "Adequação ao Mercado Brasileiro",
     qualification_tier: "Nível de Qualificação",
     company_sector: "Setor da Empresa",
-    
+
     // CRM Board
     filters: "Filtros",
     search_leads: "Buscar leads...",
@@ -195,14 +185,13 @@ export const translations = {
     medium_score: "Médio (60-79%)",
     low_score: "Baixo (<60%)",
     reset_filters: "Limpar Filtros",
-    
+
     // Business Context
     business_description: "Descrição do Negócio",
     target_market: "Mercado-Alvo",
     value_proposition: "Proposta de Valor",
     product_service_description: "Descrição do Produto/Serviço",
     ideal_customer: "Cliente Ideal",
-    pain_points: "Pontos de Dor",
     competitive_advantage: "Vantagem Competitiva",
     industry_focus: "Foco da Indústria",
     competitors: "Concorrentes",
@@ -213,12 +202,12 @@ export const translations = {
     ideal_customer_error: "O perfil do cliente ideal deve ter pelo menos 10 caracteres.",
     pain_points_error: "Os pontos de dor devem ter pelo menos 10 caracteres.",
     industry_focus_error: "O foco da indústria deve ter pelo menos 3 caracteres.",
-    
+
     // Chat Interface
     send_message: "Enviar Mensagem",
     type_message: "Digite sua mensagem...",
     upload_file: "Enviar Arquivo",
-    
+
     // Processing Stages
     lead_qualification: "Qualificação de Lead",
     analyzing_refining: "Analisando/Refinando",
@@ -229,7 +218,7 @@ export const translations = {
     negociando: "Negociando",
     desqualificado: "Lead Desqualificado",
     reuniao_agendada: "Reunião Agendada",
-    
+
     // Brazilian Optimization
     cultural_timing: "Timing Cultural",
     regional_insights: "Insights Regionais",
@@ -245,48 +234,48 @@ export const translations = {
     settings: "Settings",
     business_context: "Business Context",
     crm_board: "CRM Board",
-    
+
     // Agent Names
     lead_intake: "Lead Intake",
     analysis: "Analysis",
     persona_creation: "Persona Creation",
     approach_strategy: "Approach Strategy",
     message_crafting: "Message Crafting",
-    
+
     // Agent Status
     active: "Active",
     inactive: "Inactive",
     processing: "Processing",
     error: "Error",
     completed: "Completed",
-    
+
     // Metrics
     processing_time: "Processing Time",
     success_rate: "Success Rate",
     queue_depth: "Queue Depth",
     throughput: "Throughput",
     token_usage: "Token Usage",
-    
+
     // Agent Status Card
     prompt: "Prompt",
     completion: "Completion",
     last_updated: "Last updated",
-    
+
     // Lead Card
     processing_progress: "Processing Progress",
     likely_contact: "Likely Contact",
     decision_maker_probability: "decision maker probability",
-    
+
     // Business Context Form
     saving: "Saving...",
     save_context: "Save Context",
     form_success: "Context saved successfully!",
     form_error: "Error saving context",
-    
+
     // Chat Interface
     processing_request: "Processing your request...",
     intake_greeting: "Hello! I'm the lead intake agent. Send your lead data for processing.",
-    
+
     // CRM Board
     total_leads: "Total Leads",
     avg_roi_potential: "Avg ROI Potential",
@@ -298,17 +287,17 @@ export const translations = {
     drop_lead_here: "Drop lead here to move",
     updating_lead_stage: "Updating lead stage...",
     reset: "Reset",
-    
+
     // Empty States
     no_leads_found: "No Leads Found",
     start_prospecting_message: "Start the prospecting process to find your first leads.",
     start_prospecting: "Start Prospecting",
     no_agents_configured: "No Agents Configured",
     agents_auto_configured: "Agents will be automatically configured when you set up your business context.",
-    
+
     // CompactLeadCard
     agent: "Agent",
-    
+
     // LeadDetailsModal
     company_information: "Company Information",
     company_name: "Company Name",
@@ -359,7 +348,7 @@ export const translations = {
     update_error: "Failed to update lead. Please try again.",
     delete_error: "Failed to delete lead. Please try again.",
     process_error: "Failed to start processing. Please try again.",
-    
+
     // MetricsVisualization
     overview: "Overview",
     details: "Details",
@@ -377,13 +366,13 @@ export const translations = {
     average_processing_time: "Average Processing Time",
     currently_processing: "Currently Processing",
     pipeline_stages: "Pipeline Stages",
-    
+
     // Lead Management
     relevance_score: "Relevance Score",
     brazilian_market_fit: "Brazilian Market Fit",
     qualification_tier: "Qualification Tier",
     company_sector: "Company Sector",
-    
+
     // CRM Board
     filters: "Filters",
     search_leads: "Search leads...",
@@ -394,7 +383,7 @@ export const translations = {
     medium_score: "Medium (60-79%)",
     low_score: "Low (<60%)",
     reset_filters: "Reset Filters",
-    
+
     // Business Context
     business_description: "Business Description",
     target_market: "Target Market",
@@ -412,12 +401,12 @@ export const translations = {
     ideal_customer_error: "Ideal customer profile must be at least 10 characters.",
     pain_points_error: "Pain points must be at least 10 characters.",
     industry_focus_error: "Industry focus must be at least 3 characters.",
-    
+
     // Chat Interface
     send_message: "Send Message",
     type_message: "Type your message...",
     upload_file: "Upload File",
-    
+
     // Processing Stages
     lead_qualification: "Lead Qualification",
     analyzing_refining: "Analyzing/Refining",
@@ -428,7 +417,7 @@ export const translations = {
     negociando: "Negotiating",
     desqualificado: "Disqualified Lead",
     reuniao_agendada: "Meeting Scheduled",
-    
+
     // Brazilian Optimization
     cultural_timing: "Cultural Timing",
     regional_insights: "Regional Insights",
@@ -444,48 +433,48 @@ export const translations = {
     settings: "Configuración",
     business_context: "Contexto del Negocio",
     crm_board: "Tablero CRM",
-    
+
     // Agent Names
     lead_intake: "Captación de Leads",
     analysis: "Análisis",
     persona_creation: "Creación de Persona",
     approach_strategy: "Estrategia de Abordaje",
     message_crafting: "Creación de Mensajes",
-    
+
     // Agent Status
     active: "Activo",
     inactive: "Inactivo",
     processing: "Procesando",
     error: "Error",
     completed: "Completado",
-    
+
     // Metrics
     processing_time: "Tiempo de Procesamiento",
     success_rate: "Tasa de Éxito",
     queue_depth: "Cola de Procesamiento",
     throughput: "Rendimiento",
     token_usage: "Uso de Tokens",
-    
+
     // Agent Status Card
     prompt: "Prompt",
     completion: "Completion",
     last_updated: "Última actualización",
-    
+
     // Lead Card
     processing_progress: "Progreso de Procesamiento",
     likely_contact: "Contacto Probable",
     decision_maker_probability: "probabilidad de tomador de decisiones",
-    
+
     // Business Context Form
     saving: "Guardando...",
     save_context: "Guardar Contexto",
     form_success: "¡Contexto guardado exitosamente!",
     form_error: "Error al guardar contexto",
-    
+
     // Chat Interface
     processing_request: "Procesando su solicitud...",
     intake_greeting: "¡Hola! Soy el agente de captación de leads. Envía los datos de tu lead para procesamiento.",
-    
+
     // CRM Board
     total_leads: "Total de Leads",
     avg_roi_potential: "Potencial Promedio de ROI",
@@ -497,17 +486,17 @@ export const translations = {
     drop_lead_here: "Suelta el lead aquí para mover",
     updating_lead_stage: "Actualizando etapa del lead...",
     reset: "Limpiar",
-    
+
     // Empty States
     no_leads_found: "No se Encontraron Leads",
     start_prospecting_message: "Inicia el proceso de prospección para encontrar tus primeros leads.",
     start_prospecting: "Iniciar Prospección",
     no_agents_configured: "No hay Agentes Configurados",
     agents_auto_configured: "Los agentes se configurarán automáticamente cuando definas el contexto de tu negocio.",
-    
+
     // CompactLeadCard
     agent: "Agente",
-    
+
     // LeadDetailsModal
     company_information: "Información de la Empresa",
     company_name: "Nombre de la Empresa",
@@ -558,7 +547,7 @@ export const translations = {
     update_error: "Error al actualizar el lead. Inténtalo de nuevo.",
     delete_error: "Error al eliminar el lead. Inténtalo de nuevo.",
     process_error: "Error al iniciar el procesamiento. Inténtalo de nuevo.",
-    
+
     // MetricsVisualization
     overview: "Resumen",
     details: "Detalles",
@@ -576,14 +565,14 @@ export const translations = {
     average_processing_time: "Tiempo Promedio de Procesamiento",
     currently_processing: "Procesando Actualmente",
     pipeline_stages: "Etapas del Pipeline",
-    
+
     // Lead Management
     relevance_score: "Puntuación de Relevancia",
     roi_potential: "Potencial de ROI",
     brazilian_market_fit: "Ajuste al Mercado Brasileño",
     qualification_tier: "Nivel de Calificación",
     company_sector: "Sector de la Empresa",
-    
+
     // CRM Board
     filters: "Filtros",
     search_leads: "Buscar leads...",
@@ -594,7 +583,7 @@ export const translations = {
     medium_score: "Medio (60-79%)",
     low_score: "Bajo (<60%)",
     reset_filters: "Limpiar Filtros",
-    
+
     // Business Context
     business_description: "Descripción del Negocio",
     target_market: "Mercado Objetivo",
@@ -612,12 +601,12 @@ export const translations = {
     ideal_customer_error: "El perfil del cliente ideal debe tener al menos 10 caracteres.",
     pain_points_error: "Los puntos de dolor deben tener al menos 10 caracteres.",
     industry_focus_error: "El enfoque de la industria debe tener al menos 3 caracteres.",
-    
+
     // Chat Interface
     send_message: "Enviar Mensaje",
     type_message: "Escribe tu mensaje...",
     upload_file: "Subir Archivo",
-    
+
     // Processing Stages
     lead_qualification: "Calificación de Lead",
     analyzing_refining: "Analizando/Refinando",
@@ -628,7 +617,7 @@ export const translations = {
     negociando: "Negociando",
     desqualificado: "Lead Descalificado",
     reuniao_agendada: "Reunión Programada",
-    
+
     // Brazilian Optimization
     cultural_timing: "Timing Cultural",
     regional_insights: "Insights Regionales",

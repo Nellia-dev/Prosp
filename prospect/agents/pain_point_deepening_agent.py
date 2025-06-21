@@ -1,140 +1,116 @@
-from typing import Optional, List
-from pydantic import BaseModel, Field
-import json # For mock test
+import asyncio
+import json
+import textwrap
+from typing import List, Optional
 
-from agents.base_agent import BaseAgent
+from loguru import logger
+from pydantic import BaseModel, Field
+
+from .base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
 
-# Constants
-GEMINI_TEXT_INPUT_TRUNCATE_CHARS = 180000
+# Data Models
+class Persona(BaseModel):
+    name: str
+    title: str
+    description: str
+
+class PainPoint(BaseModel):
+    pain_point: str = Field(description="A specific pain point the persona likely experiences.")
+    implication: str = Field(description="The business implication of this pain point if not addressed.")
+    solution_fit: str = Field(description="How our product/service directly addresses this pain point.")
 
 class PainPointDeepeningInput(BaseModel):
-    lead_analysis: str # Summary from LeadAnalysisAgent
-    persona_profile: str # Summary from PersonaCreationAgent (or constructed)
-    product_service_offered: str # User's product/service
     company_name: str
-
-# Updated Pydantic Models
-class DetailedPainPoint(BaseModel):
-    pain_point_title: str = Field(default="Dor não especificada", description="Título curto e impactante da dor (ex: Baixa Eficiência Operacional, Dificuldade em Escalar Vendas).")
-    detailed_description: str = Field(default="Descrição não fornecida.", description="Descrição elaborada da dor, suas causas e sintomas percebidos no contexto da empresa.")
-    potential_business_impact: str = Field(default="Impacto não fornecido.", description="Impacto potencial ou real dessa dor no negócio do lead (ex: Perda de receita, Aumento de custos, Riscos de conformidade, Insatisfação de clientes).")
-    how_our_solution_helps: str = Field(default="Alinhamento com solução não fornecido.", description="Como nosso produto/serviço especificamente aborda e resolve esta dor.")
-    investigative_questions: List[str] = Field(default_factory=list, description="1-2 perguntas abertas para aprofundar o entendimento desta dor específica durante uma conversa.")
+    product_service_description: str
+    personas: List[Persona]
 
 class PainPointDeepeningOutput(BaseModel):
-    primary_pain_category: str = Field(default="Não especificado", description="Categoria principal que engloba as dores identificadas (ex: Eficiência Operacional, Crescimento de Receita, Gestão de Riscos, Custos Elevados).")
-    detailed_pain_points: List[DetailedPainPoint] = Field(default_factory=list)
-    urgency_level: str = Field(default="medium", description="Nível de urgência percebido para a resolução destas dores (Enum: 'low', 'medium', 'high', 'critical').")
-    overall_pain_summary: Optional[str] = Field(default=None, description="Breve resumo geral (1-2 frases) sobre o cenário de dores do lead e sua aparente prontidão ou necessidade por soluções.")
-    error_message: Optional[str] = None
+    pain_points: List[PainPoint] = Field(default_factory=list)
+    error_message: Optional[str] = Field(default=None)
 
+# Agent Definition
 class PainPointDeepeningAgent(BaseAgent[PainPointDeepeningInput, PainPointDeepeningOutput]):
-    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
-        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
+    """
+    Agent specialized in deepening the understanding of customer pain points.
+    """
 
-    def _truncate_text(self, text: str, max_chars: int) -> str:
-        """Truncates text to a maximum number of characters."""
-        return text[:max_chars]
+    def __init__(
+        self,
+        llm_client: LLMClientBase,
+        name: str = "Pain Point Deepening Agent",
+        description: str = "Deepens the understanding of customer pain points based on persona and initial analysis.",
+        event_queue: Optional[asyncio.Queue] = None,
+        user_id: Optional[str] = None,
+    ):
+        super().__init__(llm_client, name, description, event_queue, user_id)
 
-    def process(self, input_data: PainPointDeepeningInput) -> PainPointDeepeningOutput:
-        error_message = None
-        
-        self.logger.info(f"🎯 PAIN POINT DEEPENING AGENT STARTING for company: {input_data.company_name}")
-        self.logger.debug(f"📊 Input data: analysis_length={len(input_data.lead_analysis)}, persona_length={len(input_data.persona_profile)}, service='{input_data.product_service_offered}'")
+    async def process(self, lead_id: str, input_data: PainPointDeepeningInput) -> PainPointDeepeningOutput:
+        """
+        Deepens the analysis of pain points for a given persona.
+        """
+        await self._emit_event("agent_start", {"agent_name": self.name, "lead_id": lead_id})
+        logger.info(f"Starting Pain Point Deepening for {input_data.company_name} (Lead ID: {lead_id})")
 
-        try:
-            # Truncate inputs
-            prompt_fixed_overhead = 4000 # Estimate for fixed parts of the prompt and JSON structure
-            available_for_dynamic = GEMINI_TEXT_INPUT_TRUNCATE_CHARS - prompt_fixed_overhead
-            
-            tr_lead_analysis = self._truncate_text(input_data.lead_analysis, int(available_for_dynamic * 0.40))
-            tr_persona_profile = self._truncate_text(input_data.persona_profile, int(available_for_dynamic * 0.40))
-            # product_service_offered and company_name are typically short. Remaining 20% for them and buffer.
-            
-            self.logger.debug(f"✂️  Text truncation: analysis {len(input_data.lead_analysis)} -> {len(tr_lead_analysis)}, persona {len(input_data.persona_profile)} -> {len(tr_persona_profile)}")
-
-            # Refined prompt_template
-            prompt_template = """
-                Você é um Consultor de Negócios B2B Sênior e Estrategista de Contas, com expertise em diagnosticar profundamente os pontos de dor de empresas e alinhar soluções de forma eficaz, especialmente no mercado brasileiro.
-                Sua tarefa é analisar as informações da empresa '{company_name}' e da persona alvo, e detalhar os pontos de dor mais críticos, avaliando seu impacto e urgência, e formulando perguntas para aprofundamento.
-
-                INFORMAÇÕES DISPONÍVEIS PARA ANÁLISE:
-
-                1. ANÁLISE PRELIMINAR DO LEAD:
-                   \"\"\"
-                   {lead_analysis}
-                   \"\"\"
-
-                2. PERFIL DA PERSONA (Tomador de Decisão na {company_name}):
-                   \"\"\"
-                   {persona_profile}
-                   \"\"\"
-
-                3. NOSSO PRODUTO/SERVIÇO (que estamos oferecendo à {company_name}):
-                   "{product_service_offered}"
-
-                INSTRUÇÕES PARA O DIAGNÓSTICO DE PONTOS DE DOR:
-                1.  **Identifique a Categoria Principal das Dores:** Determine uma categoria geral que englobe os principais desafios da empresa (ex: Eficiência Operacional, Crescimento de Receita, Gestão de Riscos, Custos Elevados, Inovação Tecnológica).
-                2.  **Detalhe 2-3 Pontos de Dor Críticos:** Para cada ponto de dor identificado:
-                    a.  `pain_point_title`: Crie um título curto e impactante para a dor.
-                    b.  `detailed_description`: Descreva a dor de forma elaborada, incluindo suas possíveis causas e sintomas no contexto da '{company_name}'.
-                    c.  `potential_business_impact`: Explique o impacto potencial ou real dessa dor nos negócios da '{company_name}' (ex: perda de receita, aumento de custos, riscos, insatisfação de clientes, perda de competitividade).
-                    d.  `how_our_solution_helps`: Detalhe como o nosso "{product_service_offered}" especificamente aborda e ajuda a resolver esta dor.
-                    e.  `investigative_questions`: Formule de 1 a 2 perguntas investigativas abertas e específicas para esta dor, destinadas a aprofundar a compreensão do problema e suas implicações durante uma conversa com a persona.
-                3.  **Avalie o Nível de Urgência Geral:** Com base na sua análise, classifique o nível de urgência para a '{company_name}' resolver esses pontos de dor (opções: "low", "medium", "high", "critical").
-                4.  **Crie um Resumo Geral das Dores:** Forneça um breve resumo (1-2 frases) sobre o cenário geral de dores do lead e sua aparente prontidão ou necessidade por soluções.
-                5.  **Contexto Brasileiro:** Considere as nuances do mercado brasileiro ao avaliar os impactos e a urgência.
-
-                FORMATO DA RESPOSTA:
-                Responda EXCLUSIVAMENTE com um objeto JSON válido, seguindo o schema e as descrições de campo abaixo. Não inclua NENHUM texto, explicação, ou markdown (como ```json) antes ou depois do objeto JSON.
-
-                SCHEMA JSON ESPERADO:
-                {{
-                    "primary_pain_category": "string - Categoria principal que engloba as dores identificadas (ex: Eficiência Operacional, Crescimento de Receita).",
-                    "detailed_pain_points": [ // Lista de 2 a 3 objetos, um para cada dor detalhada.
-                        {{
-                            "pain_point_title": "string - Título curto e impactante da dor (ex: Baixa Eficiência em Processos Chave).",
-                            "detailed_description": "string - Descrição elaborada da dor, suas causas e sintomas percebidos na empresa.",
-                            "potential_business_impact": "string - Impacto potencial ou real dessa dor no negócio do lead (ex: Perda de receita devido a processos lentos).",
-                            "how_our_solution_helps": "string - Como nosso produto/serviço '{product_service_offered}' especificamente aborda esta dor.",
-                            "investigative_questions": ["string", ...] // Lista de 1-2 perguntas abertas para aprofundar esta dor específica. Lista vazia [] se não houver perguntas específicas.
-                        }}
-                    ],
-                    "urgency_level": "string", // Enum: "low", "medium", "high", "critical" - Nível de urgência geral para resolver estas dores.
-                    "overall_pain_summary": "string | null" // Breve resumo geral (1-2 frases) sobre o cenário de dores do lead. Use null se não houver um resumo conciso a adicionar.
-                }}
-            """
-
-            formatted_prompt = prompt_template.format(
-                lead_analysis=truncated_analysis,
-                persona_profile=truncated_persona,
-                product_service_offered=input_data.product_service_offered,
-                company_name=input_data.company_name
+        if not input_data.personas:
+            logger.warning(f"No personas found for Lead ID {lead_id}. Skipping pain point deepening.")
+            output = PainPointDeepeningOutput(
+                pain_points=[],
+                error_message="No personas provided.",
             )
-            self.logger.debug(f"Prompt for {self.name} (length: {len(formatted_prompt)}):\n{formatted_prompt[:600]}...")
+            await self._emit_event("agent_end", {"agent_name": self.name, "lead_id": lead_id, "response": output.model_dump()})
+            return output
 
-            llm_response_str = self.generate_llm_response(formatted_prompt)
+        persona = input_data.personas[0]
 
-            if not llm_response_str:
-                self.logger.error(f"❌ LLM call returned no response for {self.name} for company {input_data.company_name}")
-                return PainPointDeepeningOutput(error_message="LLM call returned no response.")
+        system_prompt = textwrap.dedent(
+            """
+            You are a solution-oriented sales engineer with deep empathy for customer challenges. Your task is to analyze a buyer persona and our product description to identify and elaborate on their most critical pain points.
 
-            self.logger.debug(f"LLM response received for {self.name} (length: {len(llm_response_str)}). Attempting to parse.")
-            
-            parsed_output = self.parse_llm_json_response(llm_response_str, PainPointDeepeningOutput)
-            
-            if parsed_output.error_message:
-                self.logger.warning(f"⚠️  {self.name} JSON parsing/validation failed for {input_data.company_name}. Error: {parsed_output.error_message}. Raw response snippet: {llm_response_str[:500]}")
-                return parsed_output
+            For the given persona, identify 3-5 key pain points. For each one, describe its business implication and how our product offers a direct solution.
 
-            pain_points_count = len(parsed_output.detailed_pain_points)
-            self.logger.info(f"✅ Pain point analysis successful for {input_data.company_name}: category='{parsed_output.primary_pain_category}', points_found={pain_points_count}, urgency='{parsed_output.urgency_level}'.")
-            return parsed_output
+            Output the result as a JSON array of objects. Each object must have the keys "pain_point", "implication", and "solution_fit".
+            Do not include any other text or explanations outside of the JSON array.
+            """
+        )
 
-        except Exception as e:
-            self.logger.error(f"❌ An unexpected error occurred in {self.name} for {input_data.company_name}: {e}", exc_info=True)
-            return PainPointDeepeningOutput(error_message=f"An unexpected error occurred: {str(e)}")
+        user_prompt = textwrap.dedent(
+            f"""
+            Our Product/Service Description:
+            {input_data.product_service_description}
+
+            Target Buyer Persona:
+            - Name: {persona.name}
+            - Title: {persona.title}
+            - Description: {persona.description}
+
+            Based on this, generate the detailed pain point analysis in the specified JSON format.
+            """
+        )
+
+        response_text = await self.llm_client.generate(system_prompt, user_prompt)
+
+        pain_points = []
+        error_message = None
+        try:
+            # Handle markdown code blocks
+            if response_text.strip().startswith("```json"):
+                response_text = response_text.strip()[7:-3].strip()
+
+            pain_points_data = json.loads(response_text)
+            pain_points = [PainPoint(**p) for p in pain_points_data]
+            logger.info(f"Successfully parsed {len(pain_points)} pain points for Lead ID {lead_id}.")
+        except (json.JSONDecodeError, TypeError, AttributeError) as e:
+            error_message = f"Failed to parse Pain Points from LLM response: {e}"
+            logger.error(f"{error_message} for Lead ID {lead_id}")
+            logger.debug(f"LLM Response Text: {response_text}")
+
+        output = PainPointDeepeningOutput(pain_points=pain_points, error_message=error_message)
+
+        logger.info(f"Finished Pain Point Deepening for {input_data.company_name} (Lead ID: {lead_id})")
+        await self._emit_event("agent_end", {"agent_name": self.name, "lead_id": lead_id, "response": output.model_dump()})
+
+        return output
 
 if __name__ == '__main__':
     from loguru import logger
@@ -223,5 +199,3 @@ if __name__ == '__main__':
     assert output.overall_pain_summary is not None
 
     logger.info("\nMock test for PainPointDeepeningAgent completed successfully.")
-
-```

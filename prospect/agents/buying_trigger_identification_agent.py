@@ -2,7 +2,7 @@ from typing import Optional, List
 from pydantic import BaseModel, Field
 import json # Ensure json is imported for potential use in main block if needed
 
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
 
 # Constants
@@ -212,5 +212,3 @@ if __name__ == '__main__':
     assert output.other_observations is not None
 
     logger.info("Mock test completed successfully.")
-
-```

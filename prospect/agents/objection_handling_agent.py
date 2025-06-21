@@ -1,10 +1,9 @@
 import re
 from typing import Optional, List
 from pydantic import BaseModel, Field
-import json # For mock test
 
-from agents.base_agent import BaseAgent
-from core_logic.llm_client import LLMClientBase
+from .base_agent import BaseAgent
+from core_logic.llm_client import LLMClientBase, LLMResponse
 
 # Constants
 GEMINI_TEXT_INPUT_TRUNCATE_CHARS = 180000
@@ -28,8 +27,13 @@ class ObjectionHandlingOutput(BaseModel):
     error_message: Optional[str] = None
 
 class ObjectionHandlingAgent(BaseAgent[ObjectionHandlingInput, ObjectionHandlingOutput]):
-    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
-        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
+    def __init__(self, llm_client: Optional[LLMClientBase] = None, **kwargs):
+        super().__init__(
+            name="ObjectionHandlingAgent",
+            description="Anticipates and prepares responses for potential B2B sales objections.",
+            llm_client=llm_client,
+            **kwargs
+        )
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -119,12 +123,13 @@ class ObjectionHandlingAgent(BaseAgent[ObjectionHandlingInput, ObjectionHandling
             self.logger.debug(f"Prompt for {self.name} (length: {len(formatted_prompt)}):\n{formatted_prompt[:600]}...")
 
 
-            llm_response_str = self.generate_llm_response(formatted_prompt)
+            llm_response: Optional[LLMResponse] = self.generate_llm_response(formatted_prompt)
 
-            if not llm_response_str:
+            if not llm_response or not llm_response.content:
                 self.logger.error(f"❌ LLM call returned no response for {self.name} for company {input_data.company_name}")
                 return ObjectionHandlingOutput(error_message="LLM call returned no response.")
 
+            llm_response_str = llm_response.content
             self.logger.debug(f"LLM response received for {self.name} (length: {len(llm_response_str)}). Attempting to parse.")
             parsed_output = self.parse_llm_json_response(llm_response_str, ObjectionHandlingOutput)
             
@@ -139,96 +144,3 @@ class ObjectionHandlingAgent(BaseAgent[ObjectionHandlingInput, ObjectionHandling
             self.logger.error(f"❌ An unexpected error occurred in {self.name} for {input_data.company_name}: {e}", exc_info=True)
             return ObjectionHandlingOutput(error_message=f"An unexpected error occurred: {str(e)}")
 
-if __name__ == '__main__':
-    from loguru import logger
-    import sys
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG")
-
-    class MockLLMClient(LLMClientBase):
-        def __init__(self, api_key: str = "mock_key"):
-            super().__init__(api_key)
-
-        def generate_text_response(self, prompt: str) -> Optional[str]:
-            logger.debug(f"MockLLMClient received prompt snippet:\n{prompt[:600]}...")
-            # Simulate LLM returning valid JSON based on the refined prompt and new model
-            return json.dumps({
-                "anticipated_objections": [
-                    {
-                        "objection_category": "Custo/Orçamento",
-                        "potential_objection_statement": "Não temos orçamento para Nossas Soluções Incríveis de IA este trimestre, especialmente com os investimentos da expansão.",
-                        "suggested_response_strategy": "Validar a preocupação, focar no ROI e na economia a médio prazo, oferecer opções flexíveis se possível.",
-                        "key_talking_points_for_response": [
-                            "Entendo a questão orçamentária, Carlos, especialmente em expansão.",
-                            "Nossa solução é projetada para gerar economias X e Y em Z meses, otimizando custos que aumentam com a expansão.",
-                            "Poderíamos explorar um piloto ou fase inicial para demonstrar o valor rapidamente?"
-                        ]
-                    },
-                    {
-                        "objection_category": "Tempo/Urgência",
-                        "potential_objection_statement": "Estamos completamente focados em estabilizar as operações da expansão agora. Não temos tempo para um novo projeto como este.",
-                        "suggested_response_strategy": "Empatizar, posicionar a solução como um facilitador para os desafios atuais, sugerir início faseado.",
-                        "key_talking_points_for_response": [
-                            "Compreendo a carga de trabalho atual com a expansão.",
-                            "Nossa IA pode aliviar parte dessa pressão operacional, automatizando X e Y.",
-                            "Podemos iniciar com um escopo reduzido para demonstrar valor sem sobrecarregar sua equipe?"
-                        ]
-                    },
-                     {
-                        "objection_category": "Complexidade/Implementação",
-                        "potential_objection_statement": "Isso parece muito complexo de implementar no meio de tudo o que está acontecendo na Empresa Exemplo.",
-                        "suggested_response_strategy": "Reforçar facilidade de integração, apresentar casos de implementação rápida, oferecer suporte dedicado.",
-                        "key_talking_points_for_response": [
-                            "Nossa solução foi projetada para integração ágil, Carlos.",
-                            "Muitos clientes veem resultados em poucas semanas.",
-                            "Oferecemos um gerente de projeto para garantir uma transição suave."
-                        ]
-                    }
-                ],
-                "general_advice_for_objection_handling": "No Brasil, sempre valide a preocupação do lead antes de responder. Construir confiança é chave. Use exemplos e cases de sucesso locais, se possível, para aumentar a credibilidade."
-            })
-
-    logger.info("Running mock test for ObjectionHandlingAgent...")
-    mock_llm = MockLLMClient(api_key="mock_llm_key")
-    agent = ObjectionHandlingAgent(
-        name="TestObjectionHandlingAgent",
-        description="Test Agent for Objection Handling",
-        llm_client=mock_llm
-    )
-
-    test_detailed_plan = "Plano focado em email para Carlos Mendes sobre eficiência com IA na Empresa Exemplo, devido à expansão. CTA: call de 15 min."
-    test_persona_profile = "Carlos Mendes, Diretor de Operações da Empresa Exemplo. Busca eficiência, ROI, integração fácil. Preocupado com complexidade. Comunicação direta."
-    test_product_service = "Nossas Soluções Incríveis de IA para Automação"
-    test_company_name = "Empresa Exemplo"
-
-    input_data = ObjectionHandlingInput(
-        detailed_approach_plan_text=test_detailed_plan,
-        persona_profile=test_persona_profile,
-        product_service_offered=test_product_service,
-        company_name=test_company_name
-    )
-
-    output = agent.process(input_data)
-
-    if output.error_message:
-        logger.error(f"Error: {output.error_message}")
-    else:
-        logger.success("ObjectionHandlingAgent processed successfully.")
-        logger.info(f"Anticipated Objections: {len(output.anticipated_objections)}")
-        for i, obj_resp in enumerate(output.anticipated_objections):
-            logger.info(f"  Objection {i+1}: [{obj_resp.objection_category}] {obj_resp.potential_objection_statement}")
-            logger.info(f"    Strategy: {obj_resp.suggested_response_strategy}")
-            logger.info(f"    Talking Points: {obj_resp.key_talking_points_for_response}")
-        logger.info(f"General Advice: {output.general_advice_for_objection_handling}")
-
-
-    assert output.error_message is None
-    assert len(output.anticipated_objections) == 3
-    assert output.anticipated_objections[0].objection_category == "Custo/Orçamento"
-    assert "Carlos" in output.anticipated_objections[0].potential_objection_statement
-    assert len(output.anticipated_objections[0].key_talking_points_for_response) > 0
-    assert output.general_advice_for_objection_handling is not None and "Brasil" in output.general_advice_for_objection_handling
-
-    logger.info("\nMock test for ObjectionHandlingAgent completed successfully.")
-
-```

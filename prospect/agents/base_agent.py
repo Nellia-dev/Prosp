@@ -3,6 +3,7 @@ Base agent class that provides common functionality for all agents in the pipeli
 """
 
 from abc import ABC, abstractmethod
+import asyncio
 from typing import Any, Dict, Optional, TypeVar, Generic
 from datetime import datetime
 from loguru import logger
@@ -45,6 +46,8 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
         description: str,
         llm_client: Optional[LLMClientBase] = None,
         llm_provider: Optional[LLMProvider] = None,
+        event_queue: Optional[asyncio.Queue] = None,
+        user_id: Optional[str] = None,
         config: Optional[Dict[str, Any]] = None
     ):
         """
@@ -60,6 +63,8 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
         self.name = name
         self.description = description
         self.config = config or {}
+        self.event_queue = event_queue
+        self.user_id = user_id
         
         # Initialize logger instance for agent use
         self.logger = logger.bind(agent=name)
@@ -75,8 +80,20 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
         
         self.logger.info(f"Initialized agent: {self.name}")
     
+    async def _emit_event(self, event_type: str, payload: dict):
+        """Emit an event to the event queue if it exists."""
+        if self.event_queue:
+            event = {
+                "event_type": event_type,
+                "agent_name": self.name,
+                "user_id": self.user_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "payload": payload
+            }
+            await self.event_queue.put(event)
+
     @abstractmethod
-    def process(self, input_data: TInput) -> TOutput:
+    async def process(self, input_data: TInput) -> TOutput:
         """
         Process the input data and return the output.
         
@@ -298,9 +315,9 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
             logger.info(f"[{self.name}] JSON parsing successful - parsed object type: {type(data)}")
             
             # Validate if expected type is provided
-            if expected_type and hasattr(expected_type, 'parse_obj'):
+            if expected_type and hasattr(expected_type, 'model_validate'):
                 logger.debug(f"[{self.name}] Validating against expected type: {expected_type.__name__}")
-                validated_data = expected_type.parse_obj(data)
+                validated_data = expected_type.model_validate(data)
                 logger.info(f"[{self.name}] JSON validation successful")
                 return validated_data
             

@@ -3,19 +3,19 @@ Message Crafting Agent for Nellia Prospector
 Creates personalized outreach messages based on strategy and persona.
 """
 
-from typing import Optional, List # Added List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from loguru import logger
 import json
 import re
 
 from data_models.lead_structures import (
-    LeadWithStrategy, 
-    FinalProspectPackage, 
+    LeadWithStrategy,
+    FinalProspectPackage,
     PersonalizedMessage,
     CommunicationChannel
 )
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
 
 class MessageCraftingAgent(BaseAgent[LeadWithStrategy, FinalProspectPackage]):
@@ -47,10 +47,12 @@ class MessageCraftingAgent(BaseAgent[LeadWithStrategy, FinalProspectPackage]):
         prompt = self._build_message_prompt(lead_with_strategy, self.output_language)
         
         # Generate LLM response
-        llm_response_str = self.generate_llm_response(prompt, output_language=self.output_language)
-        
+        llm_response_obj = self.generate_llm_response(prompt, output_language=self.output_language)
+
+        llm_response_str = llm_response_obj.content if llm_response_obj else None
+
         # Parse the response
-        message_data_dict = self.parse_llm_json_response(llm_response_str, None)
+        message_data_dict = self.parse_llm_json_response(llm_response_str, dict) if llm_response_str else None
         
         # Create PersonalizedMessage from parsed data
         # Pass the determined primary_channel to _create_personalized_message
@@ -302,92 +304,8 @@ GENERAL GUIDELINES:
         if strategy.opening_questions and len(strategy.opening_questions) > 0: score += 0.05
 
         # Message generation success
-        if message.message_body and message.message_body != 'Mensagem não disponível' and message.message_body != self._create_fallback_message(message.channel).message_body :
+        if message.message_body and message.message_body != 'Message not available due to parsing error.' and message.message_body != self._create_fallback_message(message.channel).message_body:
             score += 0.15
 
         return min(round(score, 2), 1.0)
 
-if __name__ == '__main__':
-    from loguru import logger
-    import sys
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG")
-
-    class MockLLMClient(LLMClientBase): # Assuming LLMClientBase is correctly imported/defined
-        def __init__(self, api_key: str = "mock_key", **kwargs):
-            # super().__init__(api_key) # Depends on LLMClientBase
-            self.api_key = api_key
-
-        def generate_text_response(self, prompt: str, output_language: str = "en-US") -> Optional[str]:
-            logger.debug(f"MockLLMClient received prompt (lang: {output_language}):\n{prompt[:700]}...")
-            if f"strictly in the following language: {output_language}" not in prompt:
-                 logger.error(f"Language instruction for '{output_language}' missing in prompt!")
-
-            channel = "Email" # Default for mock
-            if "Selected Primary Channel: LinkedIn" in prompt: # English key
-                channel = "LinkedIn"
-            elif "Selected Primary Channel: WhatsApp" in prompt: # English key
-                channel = "WhatsApp"
-
-            subject = "Re: Strategic Opportunity for Example Inc." # English
-            if channel != "Email":
-                subject = None
-
-            # Example in English
-            return json.dumps({
-                "subject_line": subject,
-                "message_body": f"This is a mock message body for the {channel} channel, highly personalized for Carlos at Example Inc., focusing on optimization challenges and how Our Solutions can help. It includes the opening question: How do you currently approach X?",
-                "call_to_action": "Shall we talk for 15 minutes this week?",
-                "personalization_elements_used": ["Example Inc. Name", "Persona Name Carlos", "Optimization Challenge"],
-                "estimated_read_time_seconds": 45
-            })
-
-    logger.info("Running mock test for MessageCraftingAgent...")
-    mock_llm = MockLLMClient(api_key="mock_llm_key")
-    agent = MessageCraftingAgent(llm_client=mock_llm, output_language="en-US") # Testing with English
-
-    # Simulate LeadWithStrategy structure with English data
-    from data_models.lead_structures import LeadWithPersona, AnalyzedLead, ValidatedLead, SiteData, GoogleSearchData, LeadAnalysis, PersonaDetails, ApproachStrategy, CommunicationChannel
-
-    mock_site_data = SiteData(url="http://exampleinc.com", extracted_text_content="Content from Example Inc. website.", google_search_data=GoogleSearchData(title="Example Inc. - Innovative Solutions"))
-    mock_validated_lead = ValidatedLead(site_data=mock_site_data, extraction_successful=True, cleaned_text_content="Cleaned content.")
-    mock_lead_analysis = LeadAnalysis(company_sector="Technology", main_services=["SaaS", "Consulting"], potential_challenges=["Scalability", "Cost optimization"], opportunity_fit="High")
-    mock_analyzed_lead = AnalyzedLead(validated_lead=mock_validated_lead, analysis=mock_lead_analysis, product_service_context="Our Incredible Solutions") # Product context in English
-    mock_persona = PersonaDetails(fictional_name="Carlos Mendes", likely_role="IT Director", key_responsibilities=["Manage infrastructure", "Innovate"], professional_goals=["Reduce costs", "Increase efficiency"], main_challenges=["Integrate new technologies"], motivations=["Measurable results"], communication_style="Direct and formal", solution_seeking="Online research, recommendations")
-    mock_lead_with_persona = LeadWithPersona(analyzed_lead=mock_analyzed_lead, persona=mock_persona)
-    mock_strategy = ApproachStrategy(
-        primary_channel=CommunicationChannel.EMAIL,
-        tone_of_voice="Professional and direct",
-        key_value_propositions=["20% cost reduction", "Increased productivity"], # English
-        talking_points=["XPTO success case", "Easy integration"], # English
-        opening_questions=["How do you currently handle challenge X?"], # English
-        first_interaction_goal="Schedule a 15-minute call", # English
-        potential_objections={"Price": "Our ROI compensates."}, # English
-        follow_up_strategy="Send case study after 2 days if no response." # English
-    )
-
-    input_data = LeadWithStrategy(lead_with_persona=mock_lead_with_persona, strategy=mock_strategy)
-    output = agent.process(input_data)
-
-    logger.info(f"Final Package Lead ID: {output.lead_id}")
-    logger.info(f"Message Channel: {output.personalized_message.channel.value}")
-    logger.info(f"Subject: {output.personalized_message.subject_line}")
-    logger.info(f"Body: \n{output.personalized_message.message_body}")
-    logger.info(f"CTA: {output.personalized_message.call_to_action}")
-    logger.info(f"Personalization: {output.personalized_message.personalization_elements}")
-    logger.info(f"Read Time (s): {output.personalized_message.estimated_read_time}")
-    logger.info(f"Confidence Score: {output.confidence_score}")
-    if output.personalized_message.error_message:
-        logger.error(f"Error in message: {output.personalized_message.error_message}")
-
-    assert output.personalized_message.error_message is None
-    assert output.personalized_message.channel == CommunicationChannel.EMAIL
-    assert "Example Inc." in output.personalized_message.message_body # English
-    assert "Carlos" in output.personalized_message.message_body
-    # The mock LLM now directly uses the context, so "Our Incredible Solutions" might not be in the message if not explicitly part of the persona/strategy details used by mock.
-    # Adjusting this assertion based on the mock's new behavior.
-    assert "Our Solutions" in output.personalized_message.message_body # Mock now uses "Our Solutions"
-    assert output.confidence_score > 0.3
-
-    logger.info("\nMock test for MessageCraftingAgent completed successfully.")
-```

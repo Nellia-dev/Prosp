@@ -530,7 +530,6 @@ class ComprehensiveProspectPackage(BaseModel):
             "selected_strategy": self.enhanced_strategy.tot_strategy_evaluation.selected_strategy.strategy_name,
             "recommended_channel": self.enhanced_personalized_message.primary_message.channel.value,
             "personalization_score": self.enhanced_personalized_message.personalization_score,
-            "brazilian_fit_score": self.brazilian_market_fit,
             "contacts_found": len(self.enhanced_strategy.contact_information.emails_found),
             "purchase_triggers": len(self.enhanced_strategy.purchase_triggers.recent_events),
             "processing_timestamp": self.processing_timestamp.isoformat(),

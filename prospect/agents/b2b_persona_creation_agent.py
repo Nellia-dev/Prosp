@@ -1,170 +1,103 @@
-from typing import Optional
-from pydantic import BaseModel
+import asyncio
+import json
+import textwrap
+from typing import List, Optional
 
-from agents.base_agent import BaseAgent
+from loguru import logger
+from pydantic import BaseModel, Field
+
+from .base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
+from data_models.lead_structures import ExternalIntelligence
 
-# Constants
-GEMINI_TEXT_INPUT_TRUNCATE_CHARS = 180000 # Assuming this is a reasonable limit for the combined context
-
+# Input and Output Models
 class B2BPersonaCreationInput(BaseModel):
-    lead_analysis: str
-    product_service_offered: str
-    lead_url: str
+    company_name: str
+    company_description: str
+    product_service_description: str
+    external_intelligence: ExternalIntelligence
+
+class Persona(BaseModel):
+    name: str = Field(description="A fictional name and title for the persona.")
+    title: str = Field(description="The job title for the persona.")
+    description: str = Field(description="A detailed description of the persona, including responsibilities, challenges, and how the product can help.")
 
 class B2BPersonaCreationOutput(BaseModel):
-    persona_profile: str
-    error_message: Optional[str] = None
+    personas: List[Persona] = Field(default_factory=list, description="A list of generated B2B personas.")
+    error_message: Optional[str] = Field(default=None)
 
+# Agent Definition
 class B2BPersonaCreationAgent(BaseAgent[B2BPersonaCreationInput, B2BPersonaCreationOutput]):
-    def __init__(self, name: str, description: str, llm_client: LLMClientBase, output_language: str = "en-US"):
-        super().__init__(name=name, description=description, llm_client=llm_client)
-        self.output_language = output_language
+    """
+    Agent specialized in creating B2B buyer personas using LLM.
+    """
 
-    def _truncate_text(self, text: str, max_chars: int) -> str:
-        """Truncates text to a maximum number of characters."""
-        return text[:max_chars]
+    def __init__(
+        self,
+        llm_client: LLMClientBase,
+        name: str = "B2B Persona Creation Agent",
+        description: str = "Generates detailed B2B buyer personas based on company data and external intelligence.",
+        event_queue: Optional[asyncio.Queue] = None,
+        user_id: Optional[str] = None,
+    ):
+        super().__init__(llm_client, name, description, event_queue, user_id)
 
-    def process(self, input_data: B2BPersonaCreationInput) -> B2BPersonaCreationOutput:
-        persona_profile = ""
-        error_message = None
+    async def process(self, lead_id: str, input_data: B2BPersonaCreationInput) -> B2BPersonaCreationOutput:
+        """
+        Generates B2B personas based on company information and external intelligence.
+        """
+        await self._emit_event("agent_start", {"agent_name": self.name, "lead_id": lead_id})
+        logger.info(f"Starting B2B Persona Creation for {input_data.company_name} (Lead ID: {lead_id})")
 
-        try:
-            # Consider the total length of content being inserted into the prompt
-            # For simplicity, truncating lead_analysis primarily.
-            # A more sophisticated approach might budget characters for each section.
-            truncated_analysis = self._truncate_text(input_data.lead_analysis, GEMINI_TEXT_INPUT_TRUNCATE_CHARS - 2000) # Reserve ~2k for rest of prompt
-            
-            # Refined prompt_template, now in English and with language instruction
-            prompt_template = """
-                You are a B2B Marketing and Persona Creation Specialist, with a focus on the target market (e.g., Brazilian market - adapt based on context). Your task is to create a detailed narrative persona profile for a key decision-maker, based on lead analysis, the product/service your company offers, and the lead's URL.
-
-                LEAD ANALYSIS (provided by our intelligence team):
-                \"\"\"
-                {lead_analysis}
-                \"\"\"
-
-                OUR PRODUCT/SERVICE (that we want to present to this persona):
-                "{product_service_offered}"
-
-                LEAD URL (for your reference and additional context, if needed):
-                {lead_url}
-
-                INSTRUCTIONS FOR CREATING THE PERSONA PROFILE:
-                Develop a cohesive and detailed narrative profile that brings this decision-maker to life. The profile should be written in the specified output language and specifically adapted to the relevant business context (e.g., Brazilian business context if output_language is 'pt-BR').
-
-                The profile should cover, in an integrated and fluid manner, the following aspects:
-                1.  **Fictional Name (appropriate for the target market) and Likely Role:** Assign a common name in the target market and the most probable job title for this decision-maker, based on the lead analysis.
-                2.  **Key Responsibilities and Daily Challenges:** Describe their key functions and the obstacles they regularly face.
-                3.  **Professional Goals and Motivations:** What they seek to achieve in their career and what drives them.
-                4.  **B2B Search and Decision Behavior:** How this persona typically seeks solutions for their business challenges and what factors influence their purchasing decisions.
-                5.  **Communication Style and Preferred Channels:** How they prefer to be approached and which professional communication channels they use most (e.g., LinkedIn, formal email, WhatsApp for close contacts).
-                6.  **Specific Value Proposition:** How OUR PRODUCT/SERVICE ("{product_service_offered}") can specifically help this persona overcome their challenges and achieve their goals. Be clear and direct in this part.
-
-                OUTPUT STYLE AND FORMAT:
-                - The profile should be a **running text (narrative)**, descriptive and engaging.
-                - **Do not use JSON format** or any other formal data structure.
-                - Keep the text concise, ideally with a maximum of **350 words**, ensuring all 6 points above are covered.
-                - The tone should be professional yet insightful, providing useful insights for a sales team.
-
-                Start directly with the profile.
-
-                PERSONA PROFILE:
+        system_prompt = textwrap.dedent(
             """
+            You are an expert in B2B marketing and sales strategy. Your task is to create detailed buyer personas for a given company based on its description, product/service, and external intelligence.
 
-            # Add the language instruction
-            language_instruction = f"\n\nImportant: Generate your entire response, including all textual content and string values within any JSON structure, strictly in the following language: {self.output_language}. Do not include any English text unless it is part of the original input data that should be preserved as is."
-            final_prompt = prompt_template.format(
-                lead_analysis=truncated_analysis,
-                product_service_offered=input_data.product_service_offered,
-                lead_url=input_data.lead_url
-            ) + language_instruction
+            Generate 3 detailed B2B buyer personas.
 
-            llm_response = self.generate_llm_response(final_prompt, output_language=self.output_language)
+            For each persona, provide:
+            - A name and title.
+            - A detailed description including their key responsibilities, objectives, main challenges, pain points, how the company's product/service can help them, and the best channels to reach them.
 
-            if llm_response:
-                persona_profile = llm_response.strip()
-            else:
-                error_message = "LLM call returned no response or an empty response." # Already in English
-                self.logger.warning(f"{self.name} received an empty response from LLM for URL: {input_data.lead_url}")
-        
-        except Exception as e:
-            import traceback
-            self.logger.error(f"An unexpected error occurred in {self.name} for URL {input_data.lead_url}: {str(e)}\n{traceback.format_exc()}")
-            error_message = f"An unexpected error occurred in {self.name}: {str(e)}" # Already in English
-
-        return B2BPersonaCreationOutput(
-            persona_profile=persona_profile,
-            error_message=error_message
+            Output the result as a JSON array of objects, where each object represents a persona and has the keys "name", "title", and "description".
+            Do not include any other text or explanations outside of the JSON array.
+            """
         )
 
-if __name__ == '__main__':
-    # Ensure logger is available for __main__ block or use print
-    from loguru import logger
-    import sys
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG")
+        user_prompt = textwrap.dedent(
+            f"""
+            Company Name: {input_data.company_name}
+            Company Description: {input_data.company_description}
+            Product/Service Description: {input_data.product_service_description}
 
-    class MockLLMClient(LLMClientBase): # Assuming LLMClientBase is correctly imported or defined
-        def __init__(self, api_key: str = "mock_key", **kwargs): # Added **kwargs to match potential BaseAgent changes
-            # super().__init__(api_key) # This would depend on LLMClientBase's __init__
-            self.api_key = api_key
+            External Intelligence:
+            {input_data.external_intelligence.tavily_enrichment}
 
+            Based on this information, generate 3 detailed B2B buyer personas in the specified JSON format.
+            """
+        )
 
-        # Updated signature to include output_language
-        def generate_text_response(self, prompt: str, output_language: str = "en-US") -> Optional[str]:
-            logger.debug(f"MockLLMClient received prompt (lang: {output_language}):\n{prompt[:600]}...") # Log snippet
-            # Simple check if the language instruction is in the prompt
-            if f"strictly in the following language: {output_language}" not in prompt:
-                 logger.error("Language instruction missing or incorrect in prompt!")
+        response_text = await self.llm_client.generate(system_prompt, user_prompt)
 
-            if "PERSONA PROFILE:" in prompt: # English keyword from the new prompt
-                # Example persona in English, as if generated for en-US
-                return (
-                    "Carlos Mendes, Operations Director at ExampleTech, based in Campinas, SP, constantly faces the challenge of optimizing processes and reducing operational costs in a competitive tech market. "
-                    "His responsibilities include ensuring software production efficiency and the rapid implementation of new technologies to keep the company ahead. "
-                    "Carlos seeks solutions that demonstrate clear ROI and are easy to integrate with legacy systems, minimizing disruption. He is motivated by professional recognition and delivering measurable results that positively impact the bottom line. "
-                    "To stay updated, Carlos participates in technical webinars and reads articles on specialized IT sector portals. He values direct, data-driven communication and prefers formal emails or concise LinkedIn presentations for initial contact. "
-                    "Our Incredible Solutions for intelligent automation can help him automate manual development and QA tasks, providing real-time data for more assertive and faster decisions, aligning with his goal of modernization and efficiency. This would free up his team to focus on innovation, a crucial point for ExampleTech."
-                ).strip()
-            return "Default mock response."
+        personas = []
+        error_message = None
+        try:
+            # The LLM might return a markdown code block ```json ... ```, so we strip it.
+            if response_text.strip().startswith("```json"):
+                response_text = response_text.strip()[7:-3].strip()
 
-    logger.info("Running mock test for B2BPersonaCreationAgent...")
-    mock_llm = MockLLMClient()
-    # Providing name and description as per BaseAgent's __init__ and the new output_language
-    agent = B2BPersonaCreationAgent(
-        name="TestB2BPersonaAgent",
-        description="Test Agent for B2B Persona Creation",
-        llm_client=mock_llm,
-        output_language="en-US" # Testing with English
-    )
+            personas_data = json.loads(response_text)
+            personas = [Persona(**p) for p in personas_data]
+            logger.info(f"Successfully parsed {len(personas)} personas for Lead ID {lead_id}.")
+        except (json.JSONDecodeError, TypeError, AttributeError) as e:
+            error_message = f"Failed to parse B2B Personas from LLM response: {e}"
+            logger.error(f"{error_message} for Lead ID {lead_id}")
+            logger.debug(f"LLM Response Text: {response_text}")
+            # We will return an empty list of personas, which the downstream agents should handle.
 
-    test_lead_analysis = (
-        "ExampleTech, located in Campinas, São Paulo, operates in the Information Technology sector, primarily offering Software as a Service (SaaS) solutions for project management. "
-        "It is a medium-sized company with about 150 employees and recently announced an investment round to expand its operations in Latin America. "
-        "Its main disclosed challenges include the need to scale its software development operations efficiently and optimize internal processes to support accelerated growth. "
-        "They constantly seek innovation to remain competitive."
-    )
-    test_product_service = "Our Incredible Solutions for intelligent automation for DEVs and QA"
-    test_lead_url = "http://www.exampletech.com.br" # Corrected URL for mock
+        output = B2BPersonaCreationOutput(personas=personas, error_message=error_message)
 
-    input_data = B2BPersonaCreationInput(
-        lead_analysis=test_lead_analysis,
-        product_service_offered=test_product_service,
-        lead_url=test_lead_url
-    )
+        logger.info(f"Finished B2B Persona Creation for {input_data.company_name} (Lead ID: {lead_id})")
+        await self._emit_event("agent_end", {"agent_name": self.name, "lead_id": lead_id, "response": output.model_dump()})
 
-    output = agent.process(input_data)
-
-    logger.info(f"Persona Profile:\n{output.persona_profile}")
-    if output.error_message:
-        logger.error(f"Error: {output.error_message}")
-    else:
-        logger.success("Persona profile generated successfully.")
-
-    assert "Carlos Mendes" in output.persona_profile # Mock data example
-    assert "Our Incredible Solutions" in output.persona_profile # Check product mention
-    assert "Campinas" in output.persona_profile # Check context use
-    assert output.error_message is None
-    logger.info("Mock test for B2BPersonaCreationAgent completed successfully.")
-```
+        return output

@@ -37,13 +37,6 @@ from .persona_driven_lead_processor import PersonaDrivenLeadProcessor
 from .b2b_persona_creation_agent import B2BPersonaCreationAgent
 from .lead_analysis_generation_agent import LeadAnalysisGenerationAgent
 
-# Hybrid Orchestrator (Phase 3 Integration)
-# Note: This might logically sit outside 'agents' but is related to their orchestration.
-# For now, placing it here for discoverability as per the plan.
-# Consider moving to a higher-level 'orchestrators' module if structure evolves.
-# from prospect.hybrid_pipeline_orchestrator import HybridPipelineOrchestrator # Path needs to be correct
-
-
 __all__ = [
     "BaseAgent",
     "AgentMetrics",
@@ -71,5 +64,4 @@ __all__ = [
     "PersonaDrivenLeadProcessor",
     "B2BPersonaCreationAgent",
     "LeadAnalysisGenerationAgent",
-    # "HybridPipelineOrchestrator", # Add when its import path is finalized
 ]

@@ -1,8 +1,8 @@
 from typing import Optional, List
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 import json # Ensure json is imported
 
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
 
 # Constants
@@ -26,29 +26,17 @@ class ContactStepDetail(BaseModel):
     cta: str = Field(..., description="Specific and clear Call to Action for this step.")
     supporting_materials: Optional[str] = Field(default=None, description="Optional: Supporting resource/material to use or mention (e.g., link to case study, article).")
     
-    @validator('key_questions', 'key_topics_arguments', pre=True, always=True)
-    def ensure_list_of_strings(cls, v_list, field):
-        if v_list is None:
+    @field_validator('key_questions', 'key_topics_arguments', mode='before')
+    def ensure_list_of_strings(cls, v):
+        if v is None:
             return []
-        if isinstance(v_list, str):
-            # Split string by newline if it seems to be a multi-line string meant as a list
-            # Otherwise, wrap the single string in a list.
-            # This handles cases where LLM might provide a single string instead of a list of one.
-            return [s.strip() for s in v_list.splitlines() if s.strip()] if '\n' in v_list else ([v_list.strip()] if v_list.strip() else [])
-        if isinstance(v_list, list) and all(isinstance(item, str) for item in v_list):
-            return [s.strip() for s in v_list if s.strip()] # Clean up strings in list
-        # If it's a list but not all strings, or some other type, log/handle appropriately or return empty
-        # For now, returning as is if it's a list, Pydantic will catch type errors for items.
-        # Or, to be safer for this specific use case:
-        if isinstance(v_list, list): # Filter out non-string elements or convert
-            processed_list = []
-            for item in v_list:
-                if isinstance(item, str):
-                    if item.strip(): processed_list.append(item.strip())
-                # Optionally convert other types to string, or skip non-strings
-                # else: processed_list.append(str(item))
-            return processed_list
-        return [] # Default to empty list if input is not easily convertible
+        if isinstance(v, str):
+            # Handles single line string or multiline string from LLM
+            return [s.strip() for s in v.splitlines() if s.strip()]
+        if isinstance(v, list):
+            # Filter list to only include non-empty strings, converting all items to str just in case
+            return [str(item).strip() for item in v if str(item).strip()]
+        return [] # Return empty list for other unexpected types
 
 class DetailedApproachPlanOutput(BaseModel):
     main_objective: str = Field(default="Main objective of the approach not specified.", description="The primary strategic objective of this comprehensive approach plan.")
@@ -59,14 +47,21 @@ class DetailedApproachPlanOutput(BaseModel):
     suggested_next_steps_if_successful: List[str] = Field(default_factory=list, description="List of 1-2 suggested next steps if the initial contact sequence is successful.")
     error_message: Optional[str] = Field(default=None)
 
-    @validator('contact_sequence', pre=True, always=True)
+    @field_validator('contact_sequence', mode='before')
     def ensure_contact_sequence_is_list(cls, v):
-        if v is None: return []
+        if v is None:
+            return []
         return v if isinstance(v, list) else []
 
-    @validator('engagement_indicators_to_monitor', 'potential_obstacles_attention_points', 'suggested_next_steps_if_successful', pre=True, always=True)
-    def ensure_string_list_fields(cls, v_list, field): # Already using the robust validator from ContactStepDetail
-        return ContactStepDetail.ensure_list_of_strings(v_list, field)
+    @field_validator('engagement_indicators_to_monitor', 'potential_obstacles_attention_points', 'suggested_next_steps_if_successful', mode='before')
+    def ensure_string_list_fields(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [s.strip() for s in v.splitlines() if s.strip()]
+        if isinstance(v, list):
+            return [str(item).strip() for item in v if str(item).strip()]
+        return []
 
 
 class DetailedApproachPlanAgent(BaseAgent[DetailedApproachPlanInput, DetailedApproachPlanOutput]):
@@ -320,5 +315,3 @@ if __name__ == '__main__':
     assert len(output.potential_obstacles_attention_points) > 0
 
     logger.info("\nMock test for DetailedApproachPlanAgent completed successfully.")
-
-```

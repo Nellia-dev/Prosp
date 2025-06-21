@@ -3,10 +3,12 @@ Lead Analysis Agent - Analyzes lead data to extract insights about the company.
 """
 
 import json
+import re
 from typing import Optional, Dict, Any, List
 from loguru import logger
 
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
+from core_logic.llm_client import LLMClientBase
 from data_models.lead_structures import (
     ValidatedLead, 
     AnalyzedLead, 
@@ -26,7 +28,7 @@ class LeadAnalysisAgent(BaseAgent[ValidatedLead, AnalyzedLead]):
     - Opportunity fit assessment
     """
     
-    def __init__(self, name: str, description: str, llm_client: Optional[object] = None, product_service_context: str = "", output_language: str = "en-US", **kwargs):
+    def __init__(self, name: str, description: str, llm_client: Optional[LLMClientBase] = None, product_service_context: str = "", output_language: str = "en-US", **kwargs):
         """
         Initialize the Lead Analysis Agent.
         

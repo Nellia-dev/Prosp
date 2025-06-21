@@ -10,9 +10,21 @@ import re
 import time
 import requests
 import traceback
+import asyncio
 from typing import Optional, Dict, Any, List, AsyncIterator
 from datetime import datetime
 from loguru import logger
+
+try:
+    import numpy as np
+    import faiss
+    from sentence_transformers import SentenceTransformer
+    RAG_LIBRARIES_AVAILABLE = True
+except ImportError:
+    np = None
+    faiss = None
+    SentenceTransformer = None
+    RAG_LIBRARIES_AVAILABLE = False
 
 from data_models.lead_structures import (
     LeadAnalysis,
@@ -43,7 +55,7 @@ from data_models.lead_structures import (
     ObjectionResponseModelSchema,
     InternalBriefingSectionSchema,
 )
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
 from event_models import AgentStartEvent, AgentEndEvent, StatusUpdateEvent, PipelineErrorEvent, PipelineEndEvent
 
@@ -75,6 +87,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         competitors_list: str = "",
         tavily_api_key: Optional[str] = None,
         temperature: float = 0.7,
+        event_queue: Optional[asyncio.Queue] = None,
         **kwargs
     ):
         super().__init__(
@@ -90,26 +103,40 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         self.tavily_api_key = os.getenv("TAVILY_API_KEY")
         if (not self.tavily_api_key and not tavily_api_key):
             raise ValueError("Tavily API key is required for this agent. Please set the TAVILY_API_KEY environment variable or pass it as an argument.")
+        self.event_queue = event_queue
         self.logger = logger.bind(agent_name=self.name, agent_description=self.description)
         self.logger.info(f"Initializing EnhancedLeadProcessor with Tavily API key: {'set' if self.tavily_api_key else 'not set'}")
 
-        # Note: The sub-agent constructors will need to be updated to accept name and description
-        self.tavily_enrichment_agent = TavilyEnrichmentAgent(llm_client=self.llm_client, name="TavilyEnrichmentAgent", description="Gathers external intelligence and news about the company using the Tavily web search API.", tavily_api_key=self.tavily_api_key)
-        self.contact_extraction_agent = ContactExtractionAgent(llm_client=self.llm_client, name="ContactExtractionAgent", description="Extracts contact information from lead's data.")
-        self.pain_point_deepening_agent = PainPointDeepeningAgent(llm_client=self.llm_client, name="PainPointDeepeningAgent", description="Further analyzes and details the lead's potential pain points.")
-        self.lead_qualification_agent = LeadQualificationAgent(llm_client=self.llm_client, name="LeadQualificationAgent", description="Qualifies the lead by assigning a tier and provides a justification.")
-        self.competitor_identification_agent = CompetitorIdentificationAgent(llm_client=self.llm_client, name="CompetitorIdentificationAgent", description="Identifies potential competitors of the lead company.")
-        self.strategic_question_generation_agent = StrategicQuestionGenerationAgent(llm_client=self.llm_client, name="StrategicQuestionGenerationAgent", description="Generates additional strategic, open-ended questions.")
-        self.buying_trigger_identification_agent = BuyingTriggerIdentificationAgent(llm_client=self.llm_client, name="BuyingTriggerIdentificationAgent", description="Identifies events or signals that might indicate the lead is actively looking for solutions.")
-        self.tot_strategy_generation_agent = ToTStrategyGenerationAgent(llm_client=self.llm_client, name="ToTStrategyGenerationAgent", description="Generates multiple distinct strategic approach options for the lead.")
-        self.tot_strategy_evaluation_agent = ToTStrategyEvaluationAgent(llm_client=self.llm_client, name="ToTStrategyEvaluationAgent", description="Evaluates the generated strategic options.")
-        self.tot_action_plan_synthesis_agent = ToTActionPlanSynthesisAgent(llm_client=self.llm_client, name="ToTActionPlanSynthesisAgent", description="Synthesizes the evaluated strategies into a single, refined action plan.")
-        self.detailed_approach_plan_agent = DetailedApproachPlanAgent(llm_client=self.llm_client, name="DetailedApproachPlanAgent", description="Develops a detailed, step-by-step approach plan.")
-        self.objection_handling_agent = ObjectionHandlingAgent(llm_client=self.llm_client, name="ObjectionHandlingAgent", description="Anticipates potential objections the lead might have.")
-        self.value_proposition_customization_agent = ValuePropositionCustomizationAgent(llm_client=self.llm_client, name="ValuePropositionCustomizationAgent", description="Crafts customized value propositions.")
-        self.b2b_personalized_message_agent = B2BPersonalizedMessageAgent(llm_client=self.llm_client, name="B2BPersonalizedMessageAgent", description="Generates personalized outreach messages.")
-        self.internal_briefing_summary_agent = InternalBriefingSummaryAgent(llm_client=self.llm_client, name="InternalBriefingSummaryAgent", description="Creates a comprehensive internal briefing document.")
-        
+        self.embedding_model = None
+        if RAG_LIBRARIES_AVAILABLE:
+            try:
+                self.logger.info("Loading SentenceTransformer model for RAG...")
+                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+                self.logger.success("SentenceTransformer model loaded successfully.")
+            except Exception as e:
+                self.logger.warning(f"Failed to load SentenceTransformer model: {e}. RAG features will be disabled.")
+        else:
+            self.logger.warning("RAG libraries (numpy, faiss, sentence-transformers) not found. RAG features will be disabled.")
+
+        # Initialize sub-agents, passing the LLM client and other necessary configs
+        self.tavily_enrichment_agent = TavilyEnrichmentAgent(llm_client=self.llm_client, name="TavilyEnrichmentAgent", description="Gathers external intelligence and news about the company using the Tavily web search API.", tavily_api_key=self.tavily_api_key, event_queue=self.event_queue, user_id=self.user_id)
+        self.contact_extraction_agent = ContactExtractionAgent(llm_client=self.llm_client, name="ContactExtractionAgent", description="Extracts contact information from lead's data.", event_queue=self.event_queue, user_id=self.user_id)
+        self.pain_point_deepening_agent = PainPointDeepeningAgent(llm_client=self.llm_client, name="PainPointDeepeningAgent", description="Further analyzes and details the lead's potential pain points.", event_queue=self.event_queue, user_id=self.user_id)
+        self.lead_qualification_agent = LeadQualificationAgent(llm_client=self.llm_client, name="LeadQualificationAgent", description="Qualifies the lead by assigning a tier and provides a justification.", event_queue=self.event_queue, user_id=self.user_id)
+        self.competitor_identification_agent = CompetitorIdentificationAgent(llm_client=self.llm_client, name="CompetitorIdentificationAgent", description="Identifies potential competitors of the lead company.", event_queue=self.event_queue, user_id=self.user_id)
+        self.strategic_question_generation_agent = StrategicQuestionGenerationAgent(llm_client=self.llm_client, name="StrategicQuestionGenerationAgent", description="Generates additional strategic, open-ended questions.", event_queue=self.event_queue, user_id=self.user_id)
+        self.buying_trigger_identification_agent = BuyingTriggerIdentificationAgent(llm_client=self.llm_client, name="BuyingTriggerIdentificationAgent", description="Identifies events or signals that might indicate the lead is actively looking for solutions.", event_queue=self.event_queue, user_id=self.user_id)
+        self.b2b_persona_creation_agent = B2BPersonaCreationAgent(llm_client=self.llm_client, name="B2BPersonaCreationAgent", description="Creates B2B persona profiles from lead data.", event_queue=self.event_queue, user_id=self.user_id)
+        self.tot_strategy_generation_agent = ToTStrategyGenerationAgent(llm_client=self.llm_client, name="ToTStrategyGenerationAgent", description="Generates multiple distinct strategic approach options for the lead.", event_queue=self.event_queue, user_id=self.user_id)
+        self.tot_strategy_evaluation_agent = ToTStrategyEvaluationAgent(llm_client=self.llm_client, name="ToTStrategyEvaluationAgent", description="Evaluates the generated strategic options.", event_queue=self.event_queue, user_id=self.user_id)
+        self.tot_action_plan_synthesis_agent = ToTActionPlanSynthesisAgent(llm_client=self.llm_client, name="ToTActionPlanSynthesisAgent", description="Synthesizes the evaluated strategies into a single, refined action plan.", event_queue=self.event_queue, user_id=self.user_id)
+        self.detailed_approach_plan_agent = DetailedApproachPlanAgent(llm_client=self.llm_client, name="DetailedApproachPlanAgent", description="Develops a detailed, step-by-step approach plan.", event_queue=self.event_queue, user_id=self.user_id)
+        self.objection_handling_agent = ObjectionHandlingAgent(llm_client=self.llm_client, name="ObjectionHandlingAgent", description="Anticipates potential objections the lead might have.", event_queue=self.event_queue, user_id=self.user_id)
+        self.value_proposition_customization_agent = ValuePropositionCustomizationAgent(llm_client=self.llm_client, name="ValuePropositionCustomizationAgent", description="Crafts customized value propositions.", event_queue=self.event_queue, user_id=self.user_id)
+        self.b2b_personalized_message_agent = B2BPersonalizedMessageAgent(llm_client=self.llm_client, name="B2BPersonalizedMessageAgent", description="Generates personalized outreach messages.", event_queue=self.event_queue, user_id=self.user_id)
+        self.internal_briefing_summary_agent = InternalBriefingSummaryAgent(llm_client=self.llm_client, name="InternalBriefingSummaryAgent", description="Generates a concise internal briefing summary.", event_queue=self.event_queue, user_id=self.user_id)
+        self.event_stream = asyncio.Queue() # Placeholder for event stream
+
     def _construct_persona_profile_string(self, analysis_obj: LeadAnalysis, company_name: str) -> str:
         """Helper to create a descriptive persona string from analysis."""
         persona_parts = [
@@ -136,6 +163,9 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
     async def execute_enrichment_pipeline(
         self, analyzed_lead: AnalyzedLead, job_id: str, user_id: str
     ) -> AsyncIterator[Dict[str, Any]]:
+        lead_id = analyzed_lead.validated_lead.lead_id
+        await self._emit_event("enrichment_start", {"lead_id": lead_id, "job_id": job_id})
+        
         start_time = time.time()
         url = str(analyzed_lead.validated_lead.site_data.url)
         company_name = self._extract_company_name(analyzed_lead)
@@ -165,30 +195,6 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         ).to_dict()
 
         try:
-            async def run_and_log_agent(agent, input_data, agent_input_description):
-                agent_logger = pipeline_logger.bind(agent_name=agent.name)
-                agent_logger.info(f"🔄 AGENT STARTING: {agent.name}")
-                agent_logger.info(f"📝 Agent description: {agent.description}")
-                agent_logger.info(f"🔍 Input description: {agent_input_description}")
-                
-                # Log input data details
-                input_data_info = {
-                    "input_type": type(input_data).__name__,
-                    "input_fields": list(input_data.__dict__.keys()) if hasattr(input_data, '__dict__') else "unknown"
-                }
-                agent_logger.debug(f"📊 Input data info: {input_data_info}")
-
-                yield AgentStartEvent(
-                    event_type="agent_start",
-                    timestamp=datetime.now().isoformat(),
-                    job_id=job_id,
-                    user_id=user_id,
-                    agent_name=agent.name,
-                    agent_description=agent.description,
-                    input_query=agent_input_description
-                ).to_dict()
-                
-                output = None
             async def get_agent_result(agent, input_data, description):
                 start_time = time.time()
                 agent_name = agent.name
@@ -236,8 +242,14 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             
             # Step 1: Tavily Enrichment
             pipeline_logger.info("📡 Step 1/15: Tavily External Intelligence")
-            tavily_output, events = await get_agent_result(self.tavily_enrichment_agent, TavilyEnrichmentInput(company_name=company_name, initial_extracted_text=analyzed_lead.validated_lead.site_data.extracted_text_content or ""), f"Enriching data for {company_name}")
-            for event in events: yield event
+            tavily_input = TavilyEnrichmentInput(
+                company_name=analyzed_lead.validated_lead.company_name,
+                initial_extracted_text=analyzed_lead.validated_lead.website_text,
+                product_service_description=self.product_service_description,
+            )
+            tavily_output = await self.tavily_enrichment_agent.process(
+                lead_id=analyzed_lead.validated_lead.lead_id, input_data=tavily_input
+            )
             external_intel = ExternalIntelligence(tavily_enrichment=tavily_output.enriched_data if tavily_output else "")
             pipeline_logger.info(f"✅ Tavily enrichment completed: api_called={getattr(tavily_output, 'tavily_api_called', False)}, data_length={len(external_intel.tavily_enrichment)}")
             
@@ -422,6 +434,9 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             pipeline_logger.info("💌 Step 14/15: Personalized Message Creation")
             
             personalized_message_output = None
+            messages_count = 0
+            message_channel = "N/A"
+            total_message_length = 0
             
             # Check if there are any contact channels to generate a message for
             if contact_info and (contact_info.emails_found or contact_info.instagram_profiles_found):
@@ -448,6 +463,11 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                     persona_fictional_name=persona_profile_str # The agent uses the fictional persona name for personalization
                 )
                 
+                b2b_persona_output = await self.b2b_persona_creation_agent.process(
+                lead_id=analyzed_lead.validated_lead.lead_id,
+                input_data=message_input,
+            )
+                
                 personalized_message_output, events = await get_agent_result(
                     self.b2b_personalized_message_agent,
                     message_input,
@@ -457,9 +477,10 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
 
                 # Log the result of the single message generation
                 if personalized_message_output and not personalized_message_output.error_message:
+                    messages_count = 1
                     message_channel = personalized_message_output.crafted_message_channel
-                    message_length = len(personalized_message_output.crafted_message_body)
-                    pipeline_logger.info(f"✅ Personalized message completed: 1 message generated for channel '{message_channel}', length={message_length}")
+                    total_message_length = len(personalized_message_output.crafted_message_body)
+                    pipeline_logger.info(f"✅ Personalized message completed: 1 message generated for channel '{message_channel}', length={total_message_length}")
                 else:
                     error_msg = personalized_message_output.error_message if personalized_message_output else "Agent returned no output."
                     pipeline_logger.warning(f"⚠️ Personalized message generation failed: {error_msg}")
@@ -475,7 +496,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 pain_point_analysis=pain_analysis_output.model_dump() if pain_analysis_output else None,
                 competitor_intelligence=competitor_intel_output.model_dump() if competitor_intel_output else None,
                 purchase_triggers=purchase_triggers_output.model_dump() if purchase_triggers_output else None,
-                lead_qualification=lead_qual_data,
+                lead_qualification=qualification_output.model_dump() if qualification_output else None,
                 tot_generated_strategies=[s.model_dump() for s in tot_generation_output.proposed_strategies] if tot_generation_output and tot_generation_output.proposed_strategies else [],
                 tot_evaluated_strategies=[e.model_dump() for e in tot_evaluation_output.evaluated_strategies] if tot_evaluation_output and tot_evaluation_output.evaluated_strategies else [],
                 tot_synthesized_action_plan=tot_synthesis_output.model_dump() if tot_synthesis_output else None,
@@ -607,7 +628,6 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 internal_briefing=internal_briefing_output,
                 confidence_score=self._calculate_confidence_score_with_ai(enhanced_strategy, ai_prospect_profile),
                 roi_potential_score=self._calculate_roi_potential_with_ai(enhanced_strategy, ai_prospect_profile),
-                brazilian_market_fit=self._calculate_brazilian_fit(analyzed_lead),
                 processing_metadata={
                     "total_processing_time": total_time,
                     "processing_mode": "enhanced_with_ai_intelligence",
@@ -624,10 +644,9 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             # Calculate final quality scores for logging
             final_confidence = self._calculate_confidence_score(enhanced_strategy)
             final_roi = self._calculate_roi_potential(enhanced_strategy)
-            final_brazil_fit = self._calculate_brazilian_fit(analyzed_lead)
             
             pipeline_logger.info("🎉 ENRICHMENT PIPELINE COMPLETED SUCCESSFULLY!")
-            pipeline_logger.info(f"📊 Final Quality Scores: confidence={final_confidence:.2f}, roi_potential={final_roi:.2f}, brazil_fit={final_brazil_fit:.2f}")
+            pipeline_logger.info(f"📊 Final Quality Scores: confidence={final_confidence:.2f}, roi_potential={final_roi:.2f}")
             pipeline_logger.info(f"⏱️  Total execution time: {total_time:.2f} seconds ({total_time/60:.1f} minutes)")
             pipeline_logger.info(f"📦 Final package size: {len(str(final_package.model_dump()))} characters")
             
@@ -639,18 +658,20 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             pipeline_logger.info(f"   • Lead Qualification: {'✅' if qual_tier != 'N/A' else '❌'} (tier: {qual_tier}, confidence: {qual_confidence})")
             pipeline_logger.info(f"   • Strategic Planning: {'✅' if synthesis_success else '❌'} ({tot_strategies_count} strategies → {tot_evaluated_count} evaluated)")
             pipeline_logger.info(f"   • Value Propositions: {'✅' if value_props_count > 0 else '❌'} ({value_props_count} propositions)")
-            pipeline_logger.info(f"   • Personalized Message: {'✅' if message_length > 0 else '❌'} ({message_length} chars via {message_channel})")
+            pipeline_logger.info(f"   • Personalized Message: {'✅' if total_message_length > 0 else '❌'} ({total_message_length} chars via {message_channel})")
 
-            yield PipelineEndEvent(
-                event_type="pipeline_end",
-                timestamp=datetime.now().isoformat(),
-                job_id=job_id,
-                user_id=user_id,
-                success=True,
-                total_leads_generated=1,
-                execution_time_seconds=total_time,
-                data=final_package.model_dump()
-            ).to_dict()
+            # Final event to signal completion
+            final_event = {
+                "event_type": "pipeline_end",
+                "timestamp": datetime.now().isoformat(),
+                "job_id": job_id,
+                "user_id": user_id,
+                "lead_id": analyzed_lead.validated_lead.lead_id,
+                "data": final_package.model_dump(),
+                "status": "completed"
+            }
+            await self._emit_event("enrichment_end", {"lead_id": lead_id, "job_id": job_id, "package": final_package.model_dump()})
+            yield final_event
 
         except Exception as e:
             pipeline_logger.error(f"❌ ENRICHMENT PIPELINE FAILED: {e}")
@@ -671,30 +692,237 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
         """
         DEPRECATED: Synchronous wrapper for the async pipeline.
         This method is not compatible with the new event-streaming architecture and will not return the final package.
-        For streaming, call execute_enrichment_pipeline directly.
+        It is maintained for compatibility with older parts of the system that may not be async yet.
         """
         self.logger.warning("Executing enrichment pipeline synchronously. Event streaming is disabled.")
         
         async def run_sync():
-            events = []
-            final_result = None
+            final_package = None
             try:
                 async for event in self.execute_enrichment_pipeline(analyzed_lead, "sync_job", "sync_user"):
                     if event.get("event_type") == "pipeline_end":
                         # Attempt to reconstruct the package from the final event
                         final_data = event.get("data", {})
-                        return ComprehensiveProspectPackage(**final_data)
-                    events.append(event)
-
-                self.logger.warning("Synchronous execution finished, but no 'pipeline_end' event was found.")
-                # Fallback for safety, though it shouldn't be reached in a successful run.
-                return ComprehensiveProspectPackage(analyzed_lead=analyzed_lead)
-
+                        if final_data:
+                            final_package = ComprehensiveProspectPackage(**final_data)
+                        break # Exit after getting the final package
             except Exception as e:
                 self.logger.error(f"Synchronous execution failed: {e}")
                 raise
+            return final_package
 
         return asyncio.run(run_sync())
+
+    def _extract_company_name(self, analyzed_lead: AnalyzedLead) -> str:
+        # Simple implementation, can be made more robust
+        if analyzed_lead.analysis and analyzed_lead.analysis.company_name:
+            return analyzed_lead.analysis.company_name
+        # Fallback logic if company_name is not in analysis
+        # This could involve parsing the URL or other data
+        if analyzed_lead.validated_lead and analyzed_lead.validated_lead.site_data and analyzed_lead.validated_lead.site_data.url:
+            try:
+                from urllib.parse import urlparse
+                domain = urlparse(str(analyzed_lead.validated_lead.site_data.url)).netloc
+                # simple domain to name logic
+                company_name = domain.replace('www.', '').split('.')[0].capitalize()
+                return company_name
+            except Exception:
+                return "Unknown Company"
+        return "Unknown Company"
+
+    def _create_rag_vector_store(self, enriched_context: Dict, external_intel: ExternalIntelligence) -> Dict:
+        """Creates a RAG vector store from enriched context and external intelligence."""
+        self.logger.info("Creating RAG vector store...")
+        if not self.embedding_model or not RAG_LIBRARIES_AVAILABLE:
+            self.logger.warning("RAG components not available. Skipping vector store creation.")
+            return {}
+
+        # 1. Flatten context into a list of text paragraphs
+        paragraphs = []
+        if self.product_service_context:
+            paragraphs.append(f"Contexto do Produto/Serviço: {self.product_service_context}")
+        
+        if enriched_context:
+            if enriched_context.get('prospect_targeting', {}).get('ideal_customer_profile'):
+                paragraphs.append(f"Perfil do Cliente Ideal: {enriched_context['prospect_targeting']['ideal_customer_profile']}")
+            
+            pains = enriched_context.get('lead_qualification_criteria', {}).get('problems_we_solve', [])
+            if pains:
+                pain_text = ". ".join([p.get('pain_point', '') for p in pains if isinstance(p, dict) and p.get('pain_point')])
+                if pain_text:
+                    paragraphs.append(f"Dores que resolvemos: {pain_text}")
+
+        if external_intel and external_intel.tavily_enrichment:
+            paragraphs.append(f"Inteligência Externa (Tavily): {external_intel.tavily_enrichment}")
+
+        if not paragraphs:
+            self.logger.warning("No text content available to create RAG vector store.")
+            return {}
+        
+        self.logger.info(f"Collected {len(paragraphs)} paragraphs for RAG context.")
+
+        # 2. Chunk the text
+        text_chunks = self._chunk_text(paragraphs)
+        if not text_chunks:
+            self.logger.warning("Text chunking resulted in no chunks.")
+            return {}
+        self.logger.info(f"Chunked text into {len(text_chunks)} chunks.")
+
+        # 3. Generate embeddings
+        embeddings = self.embedding_model.encode(text_chunks, show_progress_bar=False)
+        if embeddings is None:
+            self.logger.error("Failed to generate embeddings.")
+            return {}
+        
+        # 4. Create FAISS index (if available)
+        faiss_index = None
+        if faiss:
+            try:
+                dimension = embeddings.shape[1]
+                faiss_index = faiss.IndexFlatL2(dimension)
+                faiss_index.add(np.array(embeddings, dtype=np.float32))
+                self.logger.success(f"FAISS index created successfully with {faiss_index.ntotal} vectors.")
+            except Exception as e:
+                self.logger.error(f"Failed to create FAISS index: {e}", exc_info=True)
+                faiss_index = None # Ensure it's None on failure
+
+        vector_store = {
+            "chunks": text_chunks,
+            "embeddings": embeddings,
+            "faiss_index": faiss_index
+        }
+        self.logger.success("RAG vector store created successfully.")
+        return vector_store
+
+    def _calculate_engagement_readiness(self, ai_profile: Dict, strategy: EnhancedStrategy) -> Dict:
+        """
+        Calculates engagement readiness based on AI profile and strategy quality.
+        """
+        readiness_score = 0.0
+        reasons = []
+
+        prospect_score = ai_profile.get('prospect_score', 0.5)
+        urgency_score = ai_profile.get('urgency_score', 0.5)
+        confidence = self._calculate_confidence_score_with_ai(strategy, ai_profile)
+
+        # Weighted average
+        readiness_score = (prospect_score * 0.4) + (urgency_score * 0.3) + (confidence * 0.3)
+        
+        if readiness_score > 0.75:
+            reasons.append("High prospect score, urgency, and confidence in strategy.")
+        elif readiness_score > 0.5:
+            reasons.append("Moderate prospect score and/or urgency. Strategy is sound.")
+        else:
+            reasons.append("Low prospect score or urgency. Proceed with caution.")
+            
+        if not strategy.personalized_messages:
+            reasons.append("Personalized messages are not yet generated.")
+            readiness_score *= 0.8 # Penalize if messages are missing
+
+        return {"ready": readiness_score > 0.6, "score": round(readiness_score, 2), "reason": " ".join(reasons)}
+
+    def _generate_engagement_instructions(self, ai_profile: Dict, strategy: EnhancedStrategy, message_output: Any, company_name: str) -> Dict:
+        """
+        Generates next-step instructions for the sales team.
+        """
+        instructions = {
+            "next_step": "Review the complete prospect package before taking action.",
+            "talking_points": [],
+            "suggested_channel": "Email",
+            "key_insight": "N/A"
+        }
+
+        if strategy.detailed_approach_plan and strategy.detailed_approach_plan.contact_steps:
+            first_step = strategy.detailed_approach_plan.contact_steps[0]
+            instructions["next_step"] = f"Initiate Step 1: {first_step.step_title} via {first_step.channel}."
+            instructions["suggested_channel"] = first_step.channel
+
+        if ai_profile.get('predictive_insights'):
+            instructions["key_insight"] = ai_profile['predictive_insights'][0]
+        
+        if strategy.value_propositions:
+            for vp in strategy.value_propositions[:2]:
+                instructions["talking_points"].append(f"VP: {vp.value_proposition_title}")
+
+        if strategy.objection_handling and strategy.objection_handling.anticipated_objections:
+            first_objection = strategy.objection_handling.anticipated_objections[0]
+            instructions["talking_points"].append(f"Be prepared for objection: '{first_objection.objection}'")
+
+        return instructions
+
+    def _calculate_confidence_score_with_ai(self, strategy: EnhancedStrategy, ai_profile: Dict) -> float:
+        """Calculates confidence score, boosted by AI prospect profile."""
+        base_score = self._calculate_confidence_score(strategy)
+        ai_prospect_score = ai_profile.get('prospect_score', 0.5)
+        
+        # AI score contributes up to 20% of the final score
+        ai_boost = (ai_prospect_score - 0.5) * 0.4 # Scale to be between -0.2 and 0.2
+        
+        final_score = base_score + ai_boost
+        return max(0.0, min(1.0, final_score))
+
+    def _calculate_roi_potential_with_ai(self, strategy: EnhancedStrategy, ai_profile: Dict) -> float:
+        """Calculates ROI potential, boosted by AI buying intent score."""
+        base_roi = self._calculate_roi_potential(strategy)
+        buying_intent_score = ai_profile.get('buying_intent_score', 0.5)
+        
+        # Buying intent contributes up to 30%
+        ai_boost = (buying_intent_score - 0.5) * 0.6 # Scale to be between -0.3 and 0.3
+        
+        final_roi = base_roi + ai_boost
+        return max(0.0, min(1.0, final_roi))
+
+    def _calculate_confidence_score(self, strategy: EnhancedStrategy) -> float:
+        """
+        Calculates a base confidence score based on the completeness of the strategy.
+        """
+        if not strategy:
+            return 0.1
+        
+        score = 0.5 # Base score
+        if strategy.value_propositions:
+            score += 0.15
+        if strategy.objection_handling:
+            score += 0.15
+        if strategy.detailed_approach_plan:
+            score += 0.2
+            
+        return min(1.0, score)
+
+    def _calculate_roi_potential(self, strategy: EnhancedStrategy) -> float:
+        """
+        Calculates a base ROI potential score.
+        A real implementation would be more sophisticated.
+        """
+        if not strategy:
+            return 0.1
+            
+        # Simple logic: more detailed plans suggest higher potential
+        score = 0.4
+        if strategy.detailed_approach_plan and strategy.detailed_approach_plan.contact_steps:
+            score += 0.1 * len(strategy.detailed_approach_plan.contact_steps)
+        
+        if strategy.value_propositions:
+            score += 0.1 * len(strategy.value_propositions)
+            
+        return min(1.0, score)
+
+    
+    # Helper methods
+    
+    def _chunk_text(self, paragraphs: List[str], chunk_size: int = 500) -> List[str]:
+        """Chunks text into smaller pieces."""
+        chunks = []
+        current_chunk = ""
+        for p in paragraphs:
+            if len(current_chunk) + len(p) + 2 > chunk_size and current_chunk:
+                chunks.append(current_chunk)
+                current_chunk = ""
+            current_chunk += ("\n\n" if current_chunk else "") + p
+        if current_chunk:
+            chunks.append(current_chunk)
+        return chunks
+
     
     # Helper methods
     
@@ -1160,20 +1388,6 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             "backup_strategy": "If no response after 3 touchpoints, move to nurture campaign with educational content"
         }
 
-    def _calculate_brazilian_fit(self, analyzed_lead: AnalyzedLead) -> float:
-        base_score = 0.7
-        text_content = analyzed_lead.validated_lead.cleaned_text_content or ""
-        if not text_content:
-            text_content = analyzed_lead.validated_lead.site_data.extracted_text_content or ""
-            
-        brazilian_indicators = ["brasil", "brazilian", "são paulo", "rio de janeiro", "bh", "cnpj", ".br"]
-        
-        indicator_count = sum(1 for indicator in brazilian_indicators if indicator in text_content.lower())
-        if ".br" in str(analyzed_lead.validated_lead.site_data.url).lower():
-            indicator_count +=1
-            
-        indicator_bonus = min(indicator_count * 0.1, 0.3)
-        return min(base_score + indicator_bonus, 1.0)
     
     def _build_prompt(self, input_data: AnalyzedLead) -> str:
         return f"Enhanced processing task for lead: {self._extract_company_name(input_data)}"

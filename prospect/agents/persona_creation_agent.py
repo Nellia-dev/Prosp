@@ -3,7 +3,7 @@ Persona Creation Agent for Nellia Prospector
 Creates detailed decision-maker personas for analyzed leads.
 """
 
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from loguru import logger
 import json # For mock test
@@ -14,7 +14,7 @@ from data_models.lead_structures import (
     LeadWithPersona
     # PersonaDetails will be defined/redefined in this file as per subtask
 )
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
 
 # --- Updated Pydantic Model for PersonaDetails ---
@@ -257,5 +257,3 @@ if __name__ == '__main__':
     assert "ROI" in output.persona.decision_making_process_summary
 
     logger.info("\nMock test for PersonaCreationAgent completed successfully.")
-
-```

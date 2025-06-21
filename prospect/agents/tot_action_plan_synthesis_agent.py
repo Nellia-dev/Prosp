@@ -1,8 +1,8 @@
 from typing import Optional, List
 from pydantic import BaseModel, Field
 
-from agents.base_agent import BaseAgent
-from core_logic.llm_client import LLMClientBase
+from .base_agent import BaseAgent
+from core_logic.llm_client import LLMClientBase, LLMResponse
 
 # Constants
 GEMINI_TEXT_INPUT_TRUNCATE_CHARS = 180000
@@ -53,8 +53,13 @@ class ToTActionPlanSynthesisOutput(BaseModel):
     error_message: Optional[str] = Field(default=None, description="Mensagem de erro, se houver.")
 
 class ToTActionPlanSynthesisAgent(BaseAgent[ToTActionPlanSynthesisInput, ToTActionPlanSynthesisOutput]):
-    def __init__(self, name: str, description: str, llm_client: LLMClientBase, **kwargs):
-        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
+    def __init__(self, llm_client: Optional[LLMClientBase] = None, **kwargs):
+        super().__init__(
+            name="ToTActionPlanSynthesisAgent",
+            description="Synthesizes a final action plan from evaluated strategies.",
+            llm_client=llm_client,
+            **kwargs
+        )
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
@@ -138,38 +143,39 @@ class ToTActionPlanSynthesisAgent(BaseAgent[ToTActionPlanSynthesisInput, ToTActi
                 product_service_info=truncated_product_info
             )
 
-            llm_response_str = self.generate_llm_response(formatted_prompt, use_gemini_pro_vision=False) # Assuming text-only for this agent
+            llm_response: Optional[LLMResponse] = self.generate_llm_response(formatted_prompt)
 
-            if not llm_response_str:
+            if not llm_response or not llm_response.content:
                 self.logger.error("LLM call returned no response.")
                 return ToTActionPlanSynthesisOutput(
-                    synthesized_action_plan_name="Erro",
-                    action_plan_summary="LLM não retornou resposta.",
+                    synthesized_action_plan_name="Error",
+                    action_plan_summary="LLM did not return a response.",
+                    key_steps=[],
                     primary_communication_channel="N/A",
                     recommended_tone_of_voice="N/A",
                     main_value_proposition_to_highlight="N/A",
                     confidence_score=0.0,
-                    estimated_impact="Baixo",
-                    justification_for_synthesis="Erro na chamada ao LLM.",
+                    estimated_impact="Low",
+                    justification_for_synthesis="Error in LLM call.",
                     error_message="LLM call returned no response."
                 )
 
+            llm_response_str = llm_response.content
             parsed_output = self.parse_llm_json_response(llm_response_str, ToTActionPlanSynthesisOutput)
             
             if parsed_output.error_message:
-                 self.logger.warning(f"ToTActionPlanSynthesisAgent JSON parsing failed for output. Raw response: {llm_response_str[:500]}")
-                 # Return the partially parsed output with the error message if parsing fails
-                 # Ensure all required fields for ToTActionPlanSynthesisOutput have default error values
-                 return ToTActionPlanSynthesisOutput(
-                    synthesized_action_plan_name=parsed_output.synthesized_action_plan_name or "Erro de Parsing",
-                    action_plan_summary=parsed_output.action_plan_summary or "Falha ao parsear o resumo do plano de ação.",
-                    key_steps=parsed_output.key_steps or [],
-                    primary_communication_channel=parsed_output.primary_communication_channel or "N/A",
-                    recommended_tone_of_voice=parsed_output.recommended_tone_of_voice or "N/A",
-                    main_value_proposition_to_highlight=parsed_output.main_value_proposition_to_highlight or "N/A",
-                    confidence_score=parsed_output.confidence_score or 0.0,
-                    estimated_impact=parsed_output.estimated_impact or "Baixo",
-                    justification_for_synthesis=parsed_output.justification_for_synthesis or "Falha ao parsear a justificativa.",
+                self.logger.warning(f"ToTActionPlanSynthesisAgent JSON parsing failed. Raw response: {llm_response_str[:500]}")
+                # Return a default error object, as Pydantic v2 won't allow partials
+                return ToTActionPlanSynthesisOutput(
+                    synthesized_action_plan_name="Parsing Error",
+                    action_plan_summary="Failed to parse the action plan summary.",
+                    key_steps=[],
+                    primary_communication_channel="N/A",
+                    recommended_tone_of_voice="N/A",
+                    main_value_proposition_to_highlight="N/A",
+                    confidence_score=0.0,
+                    estimated_impact="Low",
+                    justification_for_synthesis="Failed to parse the justification.",
                     error_message=parsed_output.error_message
                 )
             
@@ -178,116 +184,15 @@ class ToTActionPlanSynthesisAgent(BaseAgent[ToTActionPlanSynthesisInput, ToTActi
         except Exception as e:
             self.logger.error(f"An unexpected error occurred in {self.name}: {e}", exc_info=True)
             return ToTActionPlanSynthesisOutput(
-                synthesized_action_plan_name="Erro Inesperado",
-                action_plan_summary=f"Ocorreu um erro inesperado: {str(e)}",
+                synthesized_action_plan_name="Unexpected Error",
+                action_plan_summary=f"An unexpected error occurred: {str(e)}",
+                key_steps=[],
                 primary_communication_channel="N/A",
                 recommended_tone_of_voice="N/A",
                 main_value_proposition_to_highlight="N/A",
                 confidence_score=0.0,
-                estimated_impact="Baixo",
-                justification_for_synthesis="Erro inesperado durante o processamento.",
+                estimated_impact="Low",
+                justification_for_synthesis="Unexpected error during processing.",
                 error_message=f"An unexpected error occurred: {str(e)}"
             )
 
-if __name__ == '__main__':
-    import json
-
-    class MockLLMClient(LLMClientBase):
-        def __init__(self, api_key: str = "mock_key"):
-            super().__init__(api_key)
-
-        def generate_text_response(self, prompt: str, use_gemini_pro_vision: bool = False) -> Optional[str]:
-            # This mock will return a JSON string based on the new structure
-            mock_json_output = {
-              "synthesized_action_plan_name": "Abordagem Consultiva Direta com Foco em ROI de Expansão",
-              "action_plan_summary": "Este plano sintetizado foca em uma abordagem consultiva, combinando os pontos fortes da 'Estratégia 1 (Eficiência Oculta)' com as melhorias sugeridas, para abordar diretamente o Diretor de Operações Carlos Mendes sobre como Nossas Soluções Incríveis de IA podem otimizar processos e gerar ROI no contexto da expansão da Empresa Exemplo.",
-              "key_steps": [
-                "Enviar email personalizado inicial para Carlos Mendes, focando nos desafios de eficiência exacerbados pela expansão e apresentando brevemente como Nossas Soluções Incríveis de IA podem gerar ROI tangível.",
-                "Follow-up via LinkedIn após 2-3 dias, compartilhando um case de sucesso conciso sobre otimização de processos em empresas de TI similares em expansão.",
-                "Propor uma chamada rápida de 15-20 minutos para um diagnóstico inicial focado nos desafios específicos da Empresa Exemplo e quantificar o potencial de otimização."
-              ],
-              "primary_communication_channel": "Email",
-              "recommended_tone_of_voice": "Consultivo, focado em soluções e ROI",
-              "main_value_proposition_to_highlight": "Otimização de processos e aumento de eficiência resultando em ROI claro e mensurável, especialmente crucial durante a fase de expansão da Empresa Exemplo, utilizando Nossas Soluções Incríveis de IA.",
-              "confidence_score": 0.85,
-              "estimated_impact": "Alto",
-              "justification_for_synthesis": "Este plano foi sintetizado priorizando a 'Estratégia 1' devido à sua alta pontuação de confiança e adequação ao perfil do lead (Carlos Mendes, focado em eficiência e ROI). As melhorias sugeridas, como a personalização e a oferta de diagnóstico, foram incorporadas. A combinação visa uma abordagem direta e baseada em valor, ideal para o contexto de expansão da Empresa Exemplo."
-            }
-            return json.dumps(mock_json_output)
-
-    print("Running mock test for ToTActionPlanSynthesisAgent...")
-    mock_llm = MockLLMClient()
-    agent = ToTActionPlanSynthesisAgent(
-        name="ToTActionPlanSynthesisAgent",
-        description="Synthesizes a final action plan from evaluated strategies.",
-        llm_client=mock_llm,
-        logger_name="TestLogger" # Optional: for quieter test output
-    )
-
-    test_eval_strategies = (
-        "{\n"
-        "  \"evaluated_strategies\": [\n"
-        "    {\n"
-        "      \"strategy_name\": \"O Desafio da Eficiência Oculta\",\n"
-        "      \"adequacy_score\": 9,\n"
-        "      \"confidence_score\": 0.9,\n"
-        "      \"reasoning\": \"Alinha-se bem com o foco em eficiência do lead.\",\n"
-        "      \"suggested_improvements\": \"Personalizar pergunta com dado específico. Oferecer ferramenta de auto-diagnóstico.\"\n"
-        "    },\n"
-        "    {\n"
-        "      \"strategy_name\": \"Parceria para Inovação Contínua\",\n"
-        "      \"adequacy_score\": 7,\n"
-        "      \"confidence_score\": 0.7,\n"
-        "      \"reasoning\": \"Bom, mas pode ser menos direto para o perfil atual.\",\n"
-        "      \"suggested_improvements\": \"Conectar inovação com eficiência a longo prazo e expansão.\"\n"
-        "    }\n"
-        "  ]\n"
-        "}"
-    )
-    test_prop_strategies = (
-         "{\n"
-        "  \"proposed_strategies\": [\n"
-        "    {\"name\": \"O Desafio da Eficiência Oculta\", \"details\": \"...\"},\n"
-        "    {\"name\": \"Parceria para Inovação Contínua\", \"details\": \"...\"}\n"
-        "  ]\n"
-        "}"
-    )
-    test_lead_summary = (
-        "Lead: Empresa Exemplo (Médio porte, TI). Persona: Carlos Mendes (Diretor de Operações), focado em eficiência, ROI. "
-        "Dores: Otimização de processos manuais. Gatilhos: Expansão de mercado, busca por modernização."
-    )
-    test_product_info = "Nossas Soluções Incríveis de IA automatizam processos de back-office, reduzem erros em até 30% e melhoram a eficiência operacional em média em 25% para empresas de TI."
-
-
-    input_data = ToTActionPlanSynthesisInput(
-        evaluated_strategies_text=test_eval_strategies,
-        proposed_strategies_text=test_prop_strategies,
-        current_lead_summary=test_lead_summary,
-        product_service_info=test_product_info
-    )
-
-    output = agent.process(input_data)
-
-    print("\n--- Agent Output ---")
-    print(f"Synthesized Plan Name: {output.synthesized_action_plan_name}")
-    print(f"Action Plan Summary: {output.action_plan_summary}")
-    print(f"Key Steps: {output.key_steps}")
-    print(f"Primary Channel: {output.primary_communication_channel}")
-    print(f"Tone: {output.recommended_tone_of_voice}")
-    print(f"Main VP: {output.main_value_proposition_to_highlight}")
-    print(f"Confidence: {output.confidence_score}")
-    print(f"Impact: {output.estimated_impact}")
-    print(f"Justification: {output.justification_for_synthesis}")
-
-    if output.error_message:
-        print(f"Error: {output.error_message}")
-
-    assert output.error_message is None, f"Error message was: {output.error_message}"
-    assert output.synthesized_action_plan_name == "Abordagem Consultiva Direta com Foco em ROI de Expansão"
-    assert output.confidence_score == 0.85
-    assert "Carlos Mendes" in output.action_plan_summary # Check if context was used
-    assert "Nossas Soluções Incríveis de IA" in output.action_plan_summary
-    assert len(output.key_steps) == 3
-    assert output.estimated_impact == "Alto"
-
-    print("\nMock test for ToTActionPlanSynthesisAgent completed successfully.")

@@ -7,7 +7,8 @@ from typing import List, Optional
 from loguru import logger
 from datetime import datetime
 
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
+from core_logic.llm_client import LLMClientBase
 from data_models.lead_structures import (
     SiteData,
     ValidatedLead,
@@ -24,7 +25,7 @@ class LeadIntakeAgent(BaseAgent[SiteData, ValidatedLead]):
     - Preparing leads for analysis
     """
     
-    def __init__(self, name: str, description: str, llm_client: Optional[object] = None, skip_failed_extractions: bool = False, **kwargs):
+    def __init__(self, name: str, description: str, llm_client: Optional[LLMClientBase] = None, skip_failed_extractions: bool = False, **kwargs):
         """
         Initialize the Lead Intake Agent.
         

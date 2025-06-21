@@ -4,7 +4,7 @@ from typing import Optional, List
 
 from pydantic import BaseModel, Field
 
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
 
 # Constants
@@ -231,5 +231,3 @@ if __name__ == '__main__':
     assert "No direct contacts found" in output_gamma.extraction_summary
     
     logger.info("\nAll mock tests for ContactExtractionAgent completed.")
-
-```

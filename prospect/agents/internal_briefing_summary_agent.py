@@ -2,8 +2,8 @@ from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 import json # Ensure json is imported
 
-from agents.base_agent import BaseAgent
-from core_logic.llm_client import LLMClientBase
+from .base_agent import BaseAgent
+from core_logic.llm_client import LLMClientBase, LLMConfig, LLMResponse, LLMProvider
 
 # Constants
 GEMINI_TEXT_INPUT_TRUNCATE_CHARS = 180000
@@ -183,101 +183,3 @@ class InternalBriefingSummaryAgent(BaseAgent[InternalBriefingSummaryInput, Inter
             self.logger.error(f"❌ An unexpected error occurred in {self.name}: {e}", exc_info=True)
             return InternalBriefingSummaryOutput(error_message=f"An unexpected error occurred: {str(e)}")
 
-if __name__ == '__main__':
-    from loguru import logger
-    import sys
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG")
-
-    class MockLLMClient(LLMClientBase): # Assuming LLMClientBase is correctly imported/defined
-        def __init__(self, api_key: str = "mock_key", **kwargs):
-            # super().__init__(api_key) # Depends on LLMClientBase
-            self.api_key = api_key
-
-        def generate_text_response(self, prompt: str, output_language: str = "en-US") -> Optional[str]:
-            logger.debug(f"MockLLMClient received prompt (lang: {output_language}):\n{prompt[:700]}...")
-            if f"strictly in the following language: {output_language}" not in prompt:
-                 logger.error(f"Language instruction for '{output_language}' missing in prompt!")
-
-            # Example in English
-            return json.dumps({
-                "executive_summary": "Example Inc. (IT, Medium Size) shows high synergy with Our AI Solutions, especially due to its LATAM expansion and focus on optimizing operations. The COO, Carlos Mendes, is the key contact.",
-                "lead_profile_highlights": {
-                    "company_overview": "Example Inc. is a medium-sized IT company, focused on SaaS for project management, currently expanding to Latin America. Seeks to modernize its technology.",
-                    "key_persona_traits": "Carlos Mendes (COO) values ROI, efficiency, and easy integration. Communicates formally via email/LinkedIn.",
-                    "critical_pain_points": ["Scalability of manual QA processes during expansion.", "Need for technological modernization without disruption."]
-                },
-                "strategic_approach_summary": {
-                    "main_objective": "Schedule a 20-minute exploratory call with Carlos Mendes to discuss QA and DevOps optimization with AI in the context of LATAM expansion.",
-                    "core_value_proposition": "Our AI Solutions for QA and DevOps Automation can help Example Inc. scale its LATAM operations efficiently, ensuring quality and speed without overburdening the team.",
-                    "suggested_communication_channels": ["Personalized Email", "LinkedIn"]
-                },
-                "engagement_plan_overview": {
-                    "first_step_action": "Send a personalized email to Carlos Mendes focusing on expansion challenges and QA optimization, with a CTA for a 20-min call.",
-                    "key_talking_points_initial": ["Impact of LATAM expansion on QA efficiency", "Benefits of QA automation with AI", "Similar success cases"]
-                },
-                "potential_objections_and_responses": [
-                    {
-                        "objection": "We already have a QA solution or are developing one internally.",
-                        "suggested_response": "I understand. Many companies look to complement their current initiatives to accelerate results. Our AI can integrate or offer a new perspective on specific bottlenecks. Could we explore how?"
-                    },
-                    {
-                        "objection": "We don't have a budget for new tools right now.",
-                        "suggested_response": "Comprehensible, especially during an expansion. Our focus is precisely on optimizing costs and generating ROI. Could a quick conversation help us identify potential savings for Example Inc.?"
-                    }
-                ],
-                "key_discussion_points_for_sales_exec": [
-                    "What are the current biggest bottlenecks in Example Inc.'s QA cycles with the expansion?",
-                    "How does Example Inc. measure the success of operational efficiency in DevOps?",
-                    "What are Carlos Mendes's priorities for the next 6 months regarding technology and operations?"
-                ],
-                "suggested_next_steps_internal": [
-                    "Research 2nd-degree connections with Carlos Mendes on LinkedIn.",
-                    "Review the 'GlobalTech' success case, which had a similar expansion."
-                ],
-                "final_recommendation_notes": "Focus the approach on the impact of expansion and Carlos's experience with optimization. Be consultative and ROI-focused."
-            })
-
-    logger.info("Running mock test for InternalBriefingSummaryAgent...")
-    mock_llm = MockLLMClient(api_key="mock_llm_key")
-    agent = InternalBriefingSummaryAgent(
-        name="TestInternalBriefingAgent",
-        description="Test Agent for Internal Briefing Summary",
-        llm_client=mock_llm,
-        output_language="en-US" # Testing with English
-    )
-
-    # Test data in English
-    test_all_lead_data = {
-        "company_name": "Example Inc.",
-        "lead_url": "http://www.exampleinc.com",
-        "product_service_context": "Our AI Solutions for QA and DevOps Automation",
-        "lead_analysis": {"company_sector": "IT", "company_size_estimate": "Medium Size", "main_services": ["SaaS for project management"], "potential_challenges": ["scalability", "technological modernization"], "general_diagnosis": "Company expanding into LATAM."},
-        "persona_profile": {"fictional_name": "Carlos Mendes", "likely_role": "COO", "key_responsibilities": ["operational efficiency"], "motivations": ["clear ROI", "easy integration"]},
-        "deepened_pain_points": {"primary_pain_category": "Operational Efficiency in Expansion", "detailed_pain_points": [{"pain": "Manual QA processes", "impact": "Delays"}]},
-        "final_action_plan_text": {"recommended_strategy_name": "Consultative Efficiency", "main_call_to_action": "Schedule 20-min call"},
-        "customized_value_propositions_text": [{"proposition_title": "Scalability with AI", "detailed_explanation": "Helps with LATAM expansion."}],
-        "objection_handling_strategies": [{"objection": "Cost", "response_strategy": "Focus on ROI."}],
-        "detailed_approach_plan": {"main_objective": "Schedule call", "contact_sequence": [{"step_number": 1, "channel": "Email", "objective": "Introduction"}]},
-        "personalized_message_draft": {"crafted_message_channel": "Email", "crafted_message_subject": "Optimizing QA at Example Inc.", "crafted_message_body": "Hello Carlos..."},
-    }
-
-    input_data = InternalBriefingSummaryInput(all_lead_data=test_all_lead_data)
-    output = agent.process(input_data)
-
-    if output.error_message:
-        logger.error(f"Error: {output.error_message}")
-    else:
-        logger.success("InternalBriefingSummaryAgent processed successfully.")
-        logger.info(f"Executive Summary: {output.executive_summary}")
-        logger.info(f"Lead Overview Title: {output.lead_profile_highlights.company_overview}")
-        logger.info(f"Strategic Approach Objective: {output.strategic_approach_summary.main_objective}")
-        assert "Example Inc." in output.executive_summary # English
-        assert "Carlos Mendes" in output.lead_profile_highlights.key_persona_traits
-        assert len(output.potential_objections_and_responses) > 0
-        assert output.final_recommendation_notes is not None and "ROI-focused" in output.final_recommendation_notes
-
-    assert output.error_message is None
-    logger.info("\nMock test for InternalBriefingSummaryAgent completed successfully.")
-
-```

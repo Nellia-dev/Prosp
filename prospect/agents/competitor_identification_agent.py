@@ -2,7 +2,7 @@ from typing import Optional, List
 from pydantic import BaseModel, Field
 import json # Ensure json is imported
 
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
 
 # Constants
@@ -210,5 +210,3 @@ if __name__ == '__main__':
     assert not any(c.name == "RivalTech" for c in output_2.identified_competitors)
     
     logger.info("\nMock tests completed successfully.")
-
-```

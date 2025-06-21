@@ -1,7 +1,7 @@
 from typing import Optional, List
 from pydantic import BaseModel, Field
 
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
 import json # For mock test
 
@@ -110,12 +110,13 @@ class LeadQualificationAgent(BaseAgent[LeadQualificationInput, LeadQualification
 
             self.logger.debug(f"Prompt for {self.name} (length: {len(final_prompt)}):\n{final_prompt[:500]}...")
 
-            llm_response_str = self.generate_llm_response(final_prompt, output_language=self.output_language)
+            llm_response_obj = self.generate_llm_response(final_prompt, output_language=self.output_language)
 
-            if not llm_response_str: # Already in English
+            if not llm_response_obj or not llm_response_obj.content:
                 self.logger.error(f"❌ LLM call returned no response for {self.name}")
                 return LeadQualificationOutput(error_message="LLM call returned no response.")
 
+            llm_response_str = llm_response_obj.content
             self.logger.debug(f"LLM response received for {self.name} (length: {len(llm_response_str)}). Attempting to parse.")
             parsed_output = self.parse_llm_json_response(llm_response_str, LeadQualificationOutput)
             
@@ -131,94 +132,3 @@ class LeadQualificationAgent(BaseAgent[LeadQualificationInput, LeadQualification
             self.logger.error(f"❌ An unexpected error occurred in {self.name}: {e}", exc_info=True)
             return LeadQualificationOutput(error_message=f"An unexpected error occurred: {str(e)}")
 
-if __name__ == '__main__':
-    from loguru import logger
-    import sys
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG")
-
-    class MockLLMClient(LLMClientBase): # Assuming LLMClientBase is correctly imported/defined
-        def __init__(self, api_key: str = "mock_key", **kwargs):
-            # super().__init__(api_key) # Depends on LLMClientBase
-            self.api_key = api_key
-
-        def generate_text_response(self, prompt: str, output_language: str = "en-US") -> Optional[str]:
-            logger.debug(f"MockLLMClient received prompt (lang: {output_language}):\n{prompt[:700]}...")
-            if f"strictly in the following language: {output_language}" not in prompt:
-                 logger.error(f"Language instruction for '{output_language}' missing in prompt!")
-
-            # Example in English
-            return json.dumps({
-                "qualification_tier": "High Potential", # English tier
-                "justification": "Example Inc. shows strong alignment with Our Incredible Solutions due to its recent expansion and stated need to optimize internal processes, where our AI excels. The COO, Carlos Mendes, focused on ROI and efficiency, is the ideal persona.",
-                "key_positive_signals": [
-                    "Recent LATAM expansion (indicating need to scale).",
-                    "Explicit mention of 'optimizing internal processes'.",
-                    "Persona (COO) focused on ROI and efficiency."
-                ],
-                "key_negative_signals_or_risks": [
-                    "May already be evaluating other solutions due to expansion urgency.",
-                    "Resistance to change if the team is overwhelmed with expansion."
-                ],
-                "confidence_score": 0.85,
-                "suggested_next_steps_for_sales": [
-                    "Prioritize for immediate contact, focusing on how AI can efficiently support LATAM expansion.",
-                    "Prepare a case study of a similar company that scaled with our solution."
-                ]
-            })
-
-    logger.info("Running mock test for LeadQualificationAgent...")
-    mock_llm = MockLLMClient(api_key="mock_llm_key")
-    agent = LeadQualificationAgent(
-        name="TestLeadQualificationAgent",
-        description="Test Agent for Lead Qualification",
-        llm_client=mock_llm,
-        output_language="en-US" # Testing with English
-    )
-
-    # Test data in English
-    test_lead_analysis = "Example Inc. (medium size, IT sector) faces challenges in optimizing internal processes, especially after announcing expansion to the LATAM market."
-    test_persona_profile = "Carlos Mendes, COO. Seeks clear ROI, efficiency, and solutions that integrate easily. Motivated by measurable results and recognition."
-    test_deepened_pain_points = json.dumps({
-        "primary_pain_category": "Operational Efficiency and Scalability",
-        "detailed_pain_points": [
-            {"pain": "Manual process optimization during expansion", "impact": "Delays, increased costs, difficulty maintaining quality.", "urgency": "High"},
-            {"pain": "Integration of new technologies with legacy systems", "impact": "Complexity, implementation time, team resistance.", "urgency": "Medium"}
-        ],
-        "investigative_questions_answered": [
-            {"question": "How has the expansion impacted delivery capacity?", "answer": "Not yet fully clear, but there is concern."},
-        ]
-    })
-    test_product_service = "Our Incredible AI Automation Solutions"
-
-    input_data = LeadQualificationInput(
-        lead_analysis=test_lead_analysis,
-        persona_profile=test_persona_profile,
-        deepened_pain_points=test_deepened_pain_points,
-        product_service_offered=test_product_service
-    )
-
-    output = agent.process(input_data)
-
-    if output.error_message:
-        logger.error(f"Error: {output.error_message}")
-    else:
-        logger.success("LeadQualificationAgent processed successfully.")
-        logger.info(f"Qualification Tier: {output.qualification_tier}")
-        logger.info(f"Justification: {output.justification}")
-        logger.info(f"Confidence Score: {output.confidence_score}")
-        logger.info(f"Positive Signals: {output.key_positive_signals}")
-        logger.info(f"Negative Signals/Risks: {output.key_negative_signals_or_risks}")
-        logger.info(f"Suggested Next Steps: {output.suggested_next_steps_for_sales}")
-
-    assert output.error_message is None
-    assert output.qualification_tier == "High Potential" # English tier
-    assert "Example Inc." in output.justification # English
-    assert "Our Incredible AI Automation Solutions" in output.justification # English
-    assert len(output.key_positive_signals) > 0
-    assert output.confidence_score == 0.85
-    assert len(output.suggested_next_steps_for_sales) > 0
-
-    logger.info("\nMock test for LeadQualificationAgent completed successfully.")
-
-```

@@ -3,7 +3,7 @@ Approach Strategy Agent for Nellia Prospector
 Develops strategic approach plans for leads with personas.
 """
 
-from typing import Optional, Dict, List # Added Dict, List
+from typing import Optional, Dict, List, Any # Added Dict, List
 from datetime import datetime
 from loguru import logger
 import json
@@ -14,7 +14,7 @@ from data_models.lead_structures import (
     ApproachStrategy,
     CommunicationChannel
 )
-from agents.base_agent import BaseAgent
+from .base_agent import BaseAgent
 from core_logic.llm_client import LLMClientBase
 
 class ApproachStrategyAgent(BaseAgent[LeadWithPersona, LeadWithStrategy]):
