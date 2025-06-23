@@ -57,6 +57,10 @@ class TavilyEnrichmentAgent(BaseAgent[TavilyEnrichmentInput, TavilyEnrichmentOut
                 prompt
             )
         response_text = llm_response.content
+        # Clean the response: remove markdown and trim whitespace
+        if '```json' in response_text:
+            response_text = response_text.split('```json')[1].split('```')[0]
+        response_text = response_text.strip()
         try:
             queries = json.loads(response_text)
             if isinstance(queries, list):

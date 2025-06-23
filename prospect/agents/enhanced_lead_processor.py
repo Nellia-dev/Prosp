@@ -251,7 +251,7 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             tavily_output = await self.tavily_enrichment_agent.process(
                 lead_id=analyzed_lead.validated_lead.lead_id, input_data=tavily_input
             )
-            external_intel = ExternalIntelligence(tavily_enrichment=tavily_output.enriched_data if tavily_output else "")
+            external_intel = ExternalIntelligence(tavily_enrichment=tavily_output.enrichment_summary if tavily_output else "")
             pipeline_logger.info(f"✅ Tavily enrichment completed: api_called={getattr(tavily_output, 'tavily_api_called', False)}, data_length={len(external_intel.tavily_enrichment)}")
             
             # Step 2: Contact Extraction
