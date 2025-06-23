@@ -36,7 +36,7 @@ class LeadIntakeAgent(BaseAgent[SiteData, ValidatedLead]):
             skip_failed_extractions: Whether to mark failed extractions as invalid
             **kwargs: Additional arguments for BaseAgent
         """
-        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
+        super().__init__(**kwargs, name=name, description=description, llm_client=llm_client)
         self.skip_failed_extractions = skip_failed_extractions
     
     def process(self, input_data: SiteData) -> ValidatedLead:

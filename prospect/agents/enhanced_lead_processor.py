@@ -75,6 +75,7 @@ from .objection_handling_agent import ObjectionHandlingAgent, ObjectionHandlingI
 from .value_proposition_customization_agent import ValuePropositionCustomizationAgent, ValuePropositionCustomizationInput, ValuePropositionCustomizationOutput
 from .b2b_personalized_message_agent import B2BPersonalizedMessageAgent, B2BPersonalizedMessageInput, B2BPersonalizedMessageOutput, ContactDetailsInput as B2BContactDetailsInput
 from .internal_briefing_summary_agent import InternalBriefingSummaryAgent, InternalBriefingSummaryInput, InternalBriefingSummaryOutput
+from .b2b_persona_creation_agent import B2BPersonaCreationAgent, B2BPersonaCreationInput
 
 
 class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage]):
@@ -244,8 +245,8 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
             pipeline_logger.info("📡 Step 1/15: Tavily External Intelligence")
             tavily_input = TavilyEnrichmentInput(
                 company_name=analyzed_lead.validated_lead.company_name,
-                initial_extracted_text=analyzed_lead.validated_lead.website_text,
-                product_service_description=self.product_service_description,
+                initial_extracted_text=analyzed_lead.validated_lead.cleaned_text_content,
+                product_service_description=self.product_service_context,
             )
             tavily_output = await self.tavily_enrichment_agent.process(
                 lead_id=analyzed_lead.validated_lead.lead_id, input_data=tavily_input

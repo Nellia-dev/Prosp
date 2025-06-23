@@ -115,7 +115,7 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
         """
         return self.process(input_data)
 
-    def execute(self, input_data: TInput) -> TOutput:
+    def execute(self, input_data: TInput, **kwargs) -> TOutput:
         """
         Execute the agent with error handling and metrics tracking.
         
@@ -139,7 +139,7 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
                 raise ValueError(f"Input must be a Pydantic model, got {type(input_data)}")
             
             # Process the data
-            output = self.process(input_data)
+            output = self.process(input_data, **kwargs)
             
             # Validate output
             if not isinstance(output, BaseModel):
@@ -181,7 +181,7 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
             
             self.metrics.append(metrics)
 
-    async def execute_async(self, input_data: TInput) -> TOutput:
+    async def execute_async(self, input_data: TInput, **kwargs) -> TOutput:
         """
         Asynchronously execute the agent with error handling and metrics tracking.
         """
@@ -195,7 +195,7 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
                 raise ValueError(f"Input must be a Pydantic model, got {type(input_data)}")
 
             # Await the async process method
-            output = await self.process_async(input_data)
+            output = await self.process_async(input_data, **kwargs)
 
             if not isinstance(output, BaseModel):
                 raise ValueError(f"Output must be a Pydantic model, got {type(output)}")

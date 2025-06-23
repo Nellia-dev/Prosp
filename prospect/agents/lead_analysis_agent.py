@@ -44,7 +44,15 @@ class LeadAnalysisAgent(BaseAgent[ValidatedLead, AnalyzedLead]):
         self.product_service_context = product_service_context
         self.output_language = output_language
     
-    def process(self, input_data: ValidatedLead) -> AnalyzedLead:
+    def process(self, input_data: ValidatedLead, **kwargs) -> AnalyzedLead:
+        """
+        Synchronous wrapper for the async process method.
+        """
+        self.logger.warning(f"[{self.name}] process() called synchronously. Using asyncio.run().")
+        import asyncio
+        return asyncio.run(self.process_async(input_data, **kwargs))
+
+    async def process_async(self, input_data: ValidatedLead, **kwargs) -> AnalyzedLead:
         """
         Process validated lead data to generate analysis.
         
@@ -54,7 +62,14 @@ class LeadAnalysisAgent(BaseAgent[ValidatedLead, AnalyzedLead]):
         Returns:
             AnalyzedLead object with complete analysis
         """
-        logger.info(f"Analyzing lead: {input_data.site_data.url}")
+        lead_id = kwargs.get("lead_id")
+        if not lead_id:
+            raise ValueError("lead_id must be provided to process_async")
+
+        logger.info(f"Analyzing lead ID: {lead_id} for URL: {input_data.site_data.url}")
+
+        # Assign lead_id to the validated_lead object for downstream consumers
+        input_data.lead_id = lead_id
         
         # Check if we have sufficient content for full analysis
         has_content = (
@@ -71,16 +86,21 @@ class LeadAnalysisAgent(BaseAgent[ValidatedLead, AnalyzedLead]):
         else:
             logger.info(f"Lead has sufficient data for full analysis")
             # Generate full analysis using LLM
-            analysis = self._generate_full_analysis(input_data)
+            analysis = self._generate_full_analysis(input_data, lead_id=lead_id)
         
+        # Assign the extracted company name for downstream use
+        if analysis and analysis.company_name:
+            input_data.company_name = analysis.company_name
+
         # Create and return analyzed lead
         return AnalyzedLead(
+            lead_id=lead_id,
             validated_lead=input_data,
             analysis=analysis,
             product_service_context=self.product_service_context
         )
     
-    def _generate_full_analysis(self, lead: ValidatedLead) -> LeadAnalysis:
+    def _generate_full_analysis(self, lead: ValidatedLead, lead_id: str) -> LeadAnalysis:
         """Generate comprehensive analysis for leads with successful extraction"""
         
         # Prepare data for LLM
@@ -113,7 +133,7 @@ class LeadAnalysisAgent(BaseAgent[ValidatedLead, AnalyzedLead]):
                 return self._create_lead_analysis_from_dict(analysis_dict)
                 
         except Exception as e:
-            logger.error(f"Error generating analysis for {lead.site_data.url}: {e}", exc_info=True)
+            logger.error(f"Error generating analysis for lead ID {lead_id} ({lead.site_data.url}): {e}", exc_info=True)
             # Return a basic analysis on error
             return self._generate_fallback_analysis(lead)
     
@@ -133,8 +153,9 @@ class LeadAnalysisAgent(BaseAgent[ValidatedLead, AnalyzedLead]):
         sector = self._detect_sector_from_text(f"{title} {snippet}")
         
         return LeadAnalysis(
+            company_name=title,
             company_sector=sector,
-            main_services=["Information not available - extraction failed"],
+            main_services=["Not determined due to limited data"],
             recent_activities=[],
             potential_challenges=[
                 "Digital presence may need improvement (website access issues)",
@@ -150,6 +171,7 @@ class LeadAnalysisAgent(BaseAgent[ValidatedLead, AnalyzedLead]):
     def _generate_fallback_analysis(self, lead: ValidatedLead) -> LeadAnalysis:
         """Generate fallback analysis when all else fails"""
         return LeadAnalysis(
+            company_name=lead.site_data.google_search_data.title if lead.site_data.google_search_data else "Unknown",
             company_sector="Not Identified",
             main_services=["Not Identified"],
             recent_activities=[],

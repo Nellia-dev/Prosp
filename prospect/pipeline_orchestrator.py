@@ -401,7 +401,7 @@ class PipelineOrchestrator:
                 extraction_status_message="Initial data from ADK1 harvester; full extraction status TBD."
             )
             validated_lead = self.lead_intake_agent.execute(site_data)
-            analyzed_lead = self.lead_analysis_agent.execute(validated_lead)
+            analyzed_lead = await self.lead_analysis_agent.execute_async(validated_lead, lead_id=lead_id)
 
             # Ponto de integração do RAG
             rag_store = self.job_vector_stores.get(self.job_id)

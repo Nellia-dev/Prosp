@@ -53,10 +53,10 @@ class ToTActionPlanSynthesisOutput(BaseModel):
     error_message: Optional[str] = Field(default=None, description="Mensagem de erro, se houver.")
 
 class ToTActionPlanSynthesisAgent(BaseAgent[ToTActionPlanSynthesisInput, ToTActionPlanSynthesisOutput]):
-    def __init__(self, llm_client: Optional[LLMClientBase] = None, **kwargs):
+    def __init__(self, name: str, description: str, llm_client: Optional[LLMClientBase] = None, **kwargs):
         super().__init__(
-            name="ToTActionPlanSynthesisAgent",
-            description="Synthesizes a final action plan from evaluated strategies.",
+            name=name,
+            description=description,
             llm_client=llm_client,
             **kwargs
         )

@@ -51,6 +51,8 @@ class HarvesterOutput(BaseModel):
 
 
 class ValidatedLead(BaseModel):
+    lead_id: Optional[str] = None
+    company_name: Optional[str] = None # Added to ensure company_name is part of the model
     """Validated lead after intake processing"""
     site_data: SiteData = Field(..., description="Original site data")
     validation_timestamp: datetime = Field(default_factory=datetime.now)
@@ -61,6 +63,7 @@ class ValidatedLead(BaseModel):
 
 
 class LeadAnalysis(BaseModel):
+    company_name: Optional[str] = Field(None, description="Company name extracted from analysis")
     """Analysis results for a lead"""
     company_sector: str = Field(..., description="Industry sector of the company")
     main_services: List[str] = Field(..., description="Main services/products offered")
@@ -74,6 +77,7 @@ class LeadAnalysis(BaseModel):
 
 
 class AnalyzedLead(BaseModel):
+    lead_id: Optional[str] = None # Added to ensure lead_id is part of the model
     """Lead with complete analysis"""
     validated_lead: ValidatedLead = Field(..., description="Validated lead data")
     analysis: LeadAnalysis = Field(..., description="Lead analysis results")

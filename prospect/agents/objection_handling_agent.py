@@ -27,13 +27,8 @@ class ObjectionHandlingOutput(BaseModel):
     error_message: Optional[str] = None
 
 class ObjectionHandlingAgent(BaseAgent[ObjectionHandlingInput, ObjectionHandlingOutput]):
-    def __init__(self, llm_client: Optional[LLMClientBase] = None, **kwargs):
-        super().__init__(
-            name="ObjectionHandlingAgent",
-            description="Anticipates and prepares responses for potential B2B sales objections.",
-            llm_client=llm_client,
-            **kwargs
-        )
+    def __init__(self, *, name: str, description: str, llm_client: Optional[LLMClientBase] = None, **kwargs):
+        super().__init__(name=name, description=description, llm_client=llm_client, **kwargs)
 
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""

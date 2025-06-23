@@ -44,7 +44,7 @@ class ValuePropositionCustomizationAgent(BaseAgent[ValuePropositionCustomization
         event_queue: Optional[asyncio.Queue] = None,
         user_id: Optional[str] = None,
     ):
-        super().__init__(llm_client, name, description, event_queue, user_id)
+        super().__init__(name=name, description=description, llm_client=llm_client, event_queue=event_queue, user_id=user_id)
 
     async def process(self, lead_id: str, input_data: ValuePropositionCustomizationInput) -> ValuePropositionCustomizationOutput:
         """

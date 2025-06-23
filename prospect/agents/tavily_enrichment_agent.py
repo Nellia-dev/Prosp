@@ -38,7 +38,7 @@ class TavilyEnrichmentAgent(BaseAgent[TavilyEnrichmentInput, TavilyEnrichmentOut
         user_id: str,
         tavily_api_key: Optional[str] = None,
     ):
-        super().__init__(llm_client, name, description, event_queue, user_id)
+        super().__init__(name=name, description=description, llm_client=llm_client, event_queue=event_queue, user_id=user_id)
         self.tavily_api_key = tavily_api_key or os.getenv("TAVILY_API_KEY")
         if not self.tavily_api_key:
             self.tavily_client = None
@@ -52,12 +52,11 @@ class TavilyEnrichmentAgent(BaseAgent[TavilyEnrichmentInput, TavilyEnrichmentOut
         Based on the company '{company_name}' and its description: '{initial_text}', and considering they might be interested in '{product_service_desc}', generate {TavilyConfig.max_queries} distinct and concise search queries for the Tavily API to find recent news, financial reports, and strategic initiatives. Return a JSON list of strings.
         Example: [\"recent financial performance of {company_name}\", \"strategic partnerships of {company_name} 2024\"]
         """
-        response_text = await self.llm_client.get_response(
-            model="gemini-1.5-flash",
-            temperature=0.2,
-            system_message="You are an expert research assistant that returns only a JSON list of strings.",
-            prompt=prompt,
-        )
+        llm_response = await asyncio.to_thread(
+                self.llm_client.generate,
+                prompt
+            )
+        response_text = llm_response.content
         try:
             queries = json.loads(response_text)
             if isinstance(queries, list):
@@ -97,12 +96,8 @@ class TavilyEnrichmentAgent(BaseAgent[TavilyEnrichmentInput, TavilyEnrichmentOut
         Summarize the following research findings about '{company_name}' into a concise paragraph. Focus on key insights relevant for sales prospecting.
         Context:\n{context}
         """
-        summary = await self.llm_client.get_response(
-            model="claude-3-haiku-20240307",
-            temperature=0.3,
-            system_message="You are an expert sales intelligence analyst.",
-            prompt=prompt,
-        )
+        llm_response = await asyncio.to_thread(self.llm_client.generate, prompt)
+        summary = llm_response.content
         return summary
 
     async def process(self, lead_id: str, input_data: TavilyEnrichmentInput) -> TavilyEnrichmentOutput:

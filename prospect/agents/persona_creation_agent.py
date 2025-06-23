@@ -35,12 +35,7 @@ class PersonaCreationAgent(BaseAgent[AnalyzedLead, LeadWithPersona]):
     """Agent responsible for creating decision-maker personas for leads"""
     
     def __init__(self, llm_client: Optional[LLMClientBase] = None, **kwargs): # Added **kwargs
-        super().__init__(
-            name="PersonaCreationAgent",
-            description="Creates detailed decision-maker personas for B2B leads",
-            llm_client=llm_client,
-            **kwargs # Pass **kwargs
-        )
+        super().__init__(name="PersonaCreationAgent", description="Creates detailed decision-maker personas for B2B leads", llm_client=llm_client, **kwargs) # Pass **kwargs
         
     def process(self, analyzed_lead: AnalyzedLead) -> LeadWithPersona:
         """
