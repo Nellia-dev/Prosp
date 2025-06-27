@@ -1,4 +1,7 @@
 from typing import Optional, List
+import asyncio
+import time
+import traceback
 from pydantic import BaseModel, Field
 import json # Ensure json is imported for potential use in main block if needed
 
@@ -31,19 +34,26 @@ class BuyingTriggerIdentificationAgent(BaseAgent[BuyingTriggerIdentificationInpu
         """Truncates text to a maximum number of characters."""
         return text[:max_chars]
 
-    def process(self, input_data: BuyingTriggerIdentificationInput) -> BuyingTriggerIdentificationOutput:
-        error_message = None
+    async def process(self, lead_id: str, job_id: str, input_data: BuyingTriggerIdentificationInput) -> BuyingTriggerIdentificationOutput:
+        start_time = time.time()
+        self.logger.info(f"⚡️ Identifying buying triggers for lead {lead_id} in job {job_id}")
+        await self._emit_event("agent_start", {
+            "agent_name": self.name,
+            "job_id": job_id,
+            "lead_id": lead_id,
+            "agent_description": self.description,
+            "input_query": input_data.model_dump_json(indent=2)
+        })
 
         try:
             # Truncate inputs
-            # Approximate character allocation, leaving room for prompt overhead
             char_limit_lead_data = GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 3
             char_limit_enriched_data = GEMINI_TEXT_INPUT_TRUNCATE_CHARS // 3
 
             truncated_lead_data = self._truncate_text(input_data.lead_data_str, char_limit_lead_data)
             truncated_enriched_data = self._truncate_text(input_data.enriched_data, char_limit_enriched_data)
 
-            # Refined prompt_template, now in English
+            # Refined prompt_template
             prompt_template = """
                 You are a Market Intelligence Analyst and B2B Sales Strategist, a corporate detective expert in identifying 'windows of opportunity' through buying signals.
                 Your mission is to analyze the provided data about a lead and identify events or circumstances (buying triggers) that suggest the company might be receptive to or in need of solutions like ours: "{product_service_offered}".
@@ -94,41 +104,57 @@ class BuyingTriggerIdentificationAgent(BaseAgent[BuyingTriggerIdentificationInpu
                 product_service_offered=input_data.product_service_offered
             ) + f"\n\nImportant: Generate your entire response, including all textual content and string values within any JSON structure, strictly in the following language: {self.output_language}. Do not include any English text unless it is part of the original input data that should be preserved as is."
 
-            llm_response_str = self.generate_llm_response(final_prompt, output_language=self.output_language)
+            response_obj = await asyncio.to_thread(
+                self.generate_llm_response,
+                final_prompt,
+                output_language=self.output_language
+            )
+            llm_response_str = response_obj.content if response_obj else None
 
-            if not llm_response_str: # Already in English
-                return BuyingTriggerIdentificationOutput(error_message="LLM call returned no response.")
+            if not llm_response_str:
+                output = BuyingTriggerIdentificationOutput(error_message="LLM call returned no response.")
+                duration = time.time() - start_time
+                await self._emit_event("agent_end", {
+                    "agent_name": self.name, "job_id": job_id, "lead_id": lead_id,
+                    "duration": duration, "output": output.model_dump()
+                })
+                return output
 
-            # parse_llm_json_response should ideally handle Pydantic validation internally
-            # or return a dict that can be validated by Pydantic model.
             parsed_output = self.parse_llm_json_response(llm_response_str, BuyingTriggerIdentificationOutput)
             
             if parsed_output.error_message:
                  self.logger.warning(f"{self.name} JSON parsing failed or model validation issue. Error: {parsed_output.error_message}. Raw response: {llm_response_str[:500]}")
-                 # Return the output with the error message set by parse_llm_json_response
+                 duration = time.time() - start_time
+                 await self._emit_event("agent_end", {
+                     "agent_name": self.name, "job_id": job_id, "lead_id": lead_id,
+                     "duration": duration, "output": parsed_output.model_dump()
+                 })
                  return parsed_output
 
-            # Ensure identified_triggers is a list of IdentifiedTrigger objects if parsing was successful
-            # This should be handled by Pydantic validation if parse_llm_json_response returns a dict
-            # If parse_llm_json_response already returns a BuyingTriggerIdentificationOutput, this is fine.
             if not isinstance(parsed_output.identified_triggers, list) or \
                not all(isinstance(item, IdentifiedTrigger) for item in parsed_output.identified_triggers):
-                # This case might indicate that parse_llm_json_response did not fully hydrate the model correctly
-                # or the LLM returned an unexpected structure for identified_triggers.
                 self.logger.warning(f"{self.name}: 'identified_triggers' is not a list of IdentifiedTrigger objects. LLM output might be malformed for this field.")
-                # We might still return parsed_output as is, relying on the error_message if Pydantic validation failed,
-                # or attempt a more specific error message here.
-                # For now, we trust that parse_llm_json_response + Pydantic validation handles this.
-                pass
 
-
+            duration = time.time() - start_time
+            await self._emit_event("agent_end", {
+                "agent_name": self.name,
+                "job_id": job_id,
+                "lead_id": lead_id,
+                "duration": duration,
+                "output": parsed_output.model_dump()
+            })
             return parsed_output
 
         except Exception as e:
-            self.logger.error(f"An unexpected error occurred in {self.name}: {e}", exc_info=True)
-            # import traceback # Already imported if needed
-            # traceback.print_exc() # Handled by logger's exc_info=True
-            return BuyingTriggerIdentificationOutput(error_message=f"An unexpected error occurred: {str(e)}")
+            self.logger.error(f"[{self.name}] Critical error in process for lead {lead_id}: {e}", exc_info=True)
+            await self._emit_event("pipeline_error", {
+                "agent_name": self.name,
+                "job_id": job_id,
+                "lead_id": lead_id,
+                "error_message": str(e),
+                "details": traceback.format_exc()
+            })
+            raise
 
 if __name__ == '__main__':
     from loguru import logger # Ensure logger is available

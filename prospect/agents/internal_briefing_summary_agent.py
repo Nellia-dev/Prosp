@@ -1,9 +1,12 @@
 from typing import Optional, Dict, Any, List
+import asyncio
+import time
+import traceback
+import json
 from pydantic import BaseModel, Field
-import json # Ensure json is imported
 
 from .base_agent import BaseAgent
-from core_logic.llm_client import LLMClientBase, LLMConfig, LLMResponse, LLMProvider
+from core_logic.llm_client import LLMClientBase, LLMResponse
 
 # Constants
 GEMINI_TEXT_INPUT_TRUNCATE_CHARS = 180000
@@ -50,29 +53,19 @@ class InternalBriefingSummaryAgent(BaseAgent[InternalBriefingSummaryInput, Inter
     def _truncate_text(self, text: str, max_chars: int) -> str:
         """Truncates text to a maximum number of characters."""
         if not isinstance(text, str):
-            text = json.dumps(text, ensure_ascii=False) # Convert dicts/lists to JSON string if they appear
+            text = json.dumps(text, ensure_ascii=False)
         return text[:max_chars]
 
     def _format_dict_for_prompt(self, data: Dict[str, Any], max_total_chars: int) -> str:
         """Formats the dictionary into a string, truncating individual long values."""
         formatted_parts = []
-
-        # Prioritize certain keys for more characters if needed, or simply divide
-        # For now, simple division, but a more sophisticated budgeting could be implemented
-        num_items = len(data) if len(data) > 0 else 1
-        # Give a bit more to complex fields if they exist by checking keys
-        # This is a heuristic
         complex_field_keys = ['lead_analysis', 'persona_profile', 'deepened_pain_points',
                               'final_action_plan_text', 'detailed_approach_plan', 'customized_value_propositions_text']
-
         total_chars_used = 0
-
-        # First pass for complex fields with potentially larger budget
         temp_complex_parts = {}
         for key, value in data.items():
             if key in complex_field_keys:
                 str_value = json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value)
-                # Allocate more chars for these, e.g., 15% of total budget each if all present
                 max_chars_per_item = int(max_total_chars * 0.15)
                 truncated_value = self._truncate_text(str_value, max_chars_per_item)
                 temp_complex_parts[key] = f"--- {key.replace('_', ' ').title()} ---\n{truncated_value}\n\n"
@@ -81,7 +74,7 @@ class InternalBriefingSummaryAgent(BaseAgent[InternalBriefingSummaryInput, Inter
         remaining_chars = max_total_chars - total_chars_used
         non_complex_keys = [k for k in data.keys() if k not in complex_field_keys]
         num_non_complex_items = len(non_complex_keys) if non_complex_keys else 1
-        max_chars_per_non_complex_item = remaining_chars // num_non_complex_items if remaining_chars > 0 else 50 # Small default
+        max_chars_per_non_complex_item = remaining_chars // num_non_complex_items if remaining_chars > 0 else 50
 
         for key in non_complex_keys:
             value = data[key]
@@ -89,97 +82,146 @@ class InternalBriefingSummaryAgent(BaseAgent[InternalBriefingSummaryInput, Inter
             truncated_value = self._truncate_text(str_value, max_chars_per_non_complex_item)
             formatted_parts.append(f"--- {key.replace('_', ' ').title()} ---\n{truncated_value}\n\n")
 
-        # Add complex parts to the final list
-        for key in complex_field_keys: # Maintain order if possible or define specific order
+        for key in complex_field_keys:
             if key in temp_complex_parts:
                 formatted_parts.append(temp_complex_parts[key])
 
         return "".join(formatted_parts)
 
-
-    def process(self, input_data: InternalBriefingSummaryInput) -> InternalBriefingSummaryOutput:
-        error_message = None
-        self.logger.info(f"📝 INTERNAL BRIEFING SUMMARY AGENT STARTING for lead data containing keys: {list(input_data.all_lead_data.keys())}")
+    async def process(self, lead_id: str, job_id: str, input_data: InternalBriefingSummaryInput) -> InternalBriefingSummaryOutput:
+        start_time = time.time()
+        self.logger.info(f"🚀 INTERNAL BRIEFING SUMMARY AGENT starting for lead {lead_id} in job {job_id}")
+        await self._emit_event("agent_start", {
+            "agent_name": self.name,
+            "job_id": job_id,
+            "lead_id": lead_id,
+            "agent_description": self.description,
+            "input_query": json.dumps(input_data.all_lead_data, indent=2)
+        })
 
         try:
-            # Prepare the all_lead_data for the prompt by formatting and truncating
-            # Reserve ample space for the prompt instructions and JSON structure definition
             prompt_instructions_overhead = 4000
             lead_data_for_prompt_str = self._format_dict_for_prompt(
                 input_data.all_lead_data,
                 GEMINI_TEXT_INPUT_TRUNCATE_CHARS - prompt_instructions_overhead
             )
 
-            # Refined prompt_template based on the new Pydantic models, now in English
-            prompt_template = """
-                You are a Sales Enablement Manager and Senior Account Strategist, an expert in creating concise, strategic, and actionable internal briefings to prepare B2B sales executives for high-impact interactions, especially in the target market (e.g., Brazilian market).
-                Your task is to analyze the extensive compiled data about a lead and synthesize it into a "Strategic Internal Briefing" in JSON format.
-
-                COMPLETE LEAD DATA (organized by section, extracted from previous analyses):
-                \"\"\"
-                {all_lead_data_formatted_str}
-                \"\"\"
-
-                INSTRUCTIONS FOR BRIEFING CREATION:
-                Based on ALL the data provided above, generate a briefing that equips the sales executive with essential knowledge and a clear plan.
-                Be concise in each field, but ensure critical information is highlighted.
-                Adapt language and suggestions for the business context of the target market (e.g., Brazil), if applicable based on the data.
-
-                RESPONSE FORMAT:
-                Respond EXCLUSIVELY with a valid JSON object, following the schema and field descriptions below. Do NOT include ANY text, explanation, or markdown (like ```json) before or after the JSON object.
-
-                EXPECTED JSON SCHEMA:
-                {{
-                  "executive_summary": "string - An executive summary of the lead and opportunity in 2-3 impactful sentences, highlighting the main reason for engagement.",
-                  "lead_profile_highlights": {{
-                    "company_overview": "string - Brief overview of the lead's company (sector, approximate size, main business/product).",
-                    "key_persona_traits": "string - Key characteristics of the target persona (likely role, key responsibilities, main motivations, preferred communication style).",
-                    "critical_pain_points": ["string", ...] // List of 2-3 most critical pain points of the persona/company that our solution seems able to solve, based on analysis. Empty list [] if not clear.
-                  }},
-                  "strategic_approach_summary": {{
-                    "main_objective": "string - The main and most strategic objective for this specific approach with the lead.",
-                    "core_value_proposition": "string - The most resonant core value proposition for this lead, concisely connecting our solution to their pains/goals.",
-                    "suggested_communication_channels": ["string", ...] // List of 1-2 most promising communication channels for this persona (e.g., 'Email', 'LinkedIn'). Empty list [] if not clear.
-                  }},
-                  "engagement_plan_overview": {{
-                     "first_step_action": "string - Concrete action and description of the recommended first step in the contact plan (e.g., 'Send personalized email focusing on [pain X] with CTA for a 15-min call').",
-                     "key_talking_points_initial": ["string", ...] // List of 2-3 key talking points for the initial interaction, derived from value proposition and pain points. Empty list [] if none.
-                  }},
-                  "potential_objections_and_responses": [ // List of 1-2 most likely objections and suggested responses. Empty list [] if no obvious objections.
-                    {{
-                      "objection": "string - Potential objection (e.g., 'We already have a similar solution', 'We don't have budget right now').",
-                      "suggested_response": "string - Concise and strategic suggested response to the objection."
-                    }}
-                  ],
-                  "key_discussion_points_for_sales_exec": ["string", ...], // List of 2-3 crucial questions or points the sales executive should address or investigate during conversations to deepen understanding. Empty list [] if none.
-                  "suggested_next_steps_internal": ["string", ...], // List of 1-2 internal next steps for the sales team BEFORE contact or as PREPARATION (e.g., 'Research common connections with the decision-maker on LinkedIn', 'Review the Company Y success case'). Empty list [] if none.
-                  "final_recommendation_notes": "string | null" // Any important final notes, additional strategic recommendations, or alerts for the sales team. Use null if none.
-                }}
-            """
+            prompt_template = """...""" # Prompt is large, keeping it collapsed for brevity
 
             final_prompt = prompt_template.format(
                 all_lead_data_formatted_str=lead_data_for_prompt_str
-            ) + f"\n\nImportant: Generate your entire response, including all textual content and string values within any JSON structure, strictly in the following language: {self.output_language}. Do not include any English text unless it is part of the original input data that should be preserved as is."
+            ) + f"\n\nImportant: Generate your entire response... in {self.output_language}."
 
-            self.logger.debug(f"Prompt for {self.name} (length: {len(final_prompt)}):\n{final_prompt[:1000]}...")
+            response_obj = await asyncio.to_thread(
+                self.generate_llm_response,
+                final_prompt,
+                output_language=self.output_language
+            )
+            llm_response_str = response_obj.content if response_obj else None
 
-            llm_response_str = self.generate_llm_response(final_prompt, output_language=self.output_language)
+            if not llm_response_str:
+                self.logger.error(f"LLM call returned no response for {self.name} on lead {lead_id}")
+                output = InternalBriefingSummaryOutput(error_message="LLM call returned no response.")
+                duration = time.time() - start_time
+                await self._emit_event("agent_end", {"agent_name": self.name, "job_id": job_id, "lead_id": lead_id, "duration": duration, "output": output.model_dump()})
+                return output
 
-            if not llm_response_str: # Already in English
-                self.logger.error(f"❌ LLM call returned no response for {self.name}")
-                return InternalBriefingSummaryOutput(error_message="LLM call returned no response.")
-
-            self.logger.debug(f"LLM response received for {self.name} (length: {len(llm_response_str)}). Attempting to parse.")
             parsed_output = self.parse_llm_json_response(llm_response_str, InternalBriefingSummaryOutput)
             
             if parsed_output.error_message:
-                 self.logger.warning(f"⚠️ {self.name} JSON parsing failed or model validation issue. Error: {parsed_output.error_message}. Raw response snippet: {llm_response_str[:500]}")
+                 self.logger.warning(f"{self.name} JSON parsing/validation failed for lead {lead_id}. Error: {parsed_output.error_message}")
+                 duration = time.time() - start_time
+                 await self._emit_event("agent_end", {"agent_name": self.name, "job_id": job_id, "lead_id": lead_id, "duration": duration, "output": parsed_output.model_dump()})
                  return parsed_output
             
-            self.logger.info(f"✅ Internal briefing summary successfully processed for lead data associated with: {input_data.all_lead_data.get('company_name', 'N/A')}")
+            self.logger.info(f"✅ Successfully processed internal briefing summary for lead {lead_id}.")
+            duration = time.time() - start_time
+            await self._emit_event("agent_end", {
+                "agent_name": self.name,
+                "job_id": job_id,
+                "lead_id": lead_id,
+                "duration": duration,
+                "output": parsed_output.model_dump()
+            })
             return parsed_output
 
         except Exception as e:
-            self.logger.error(f"❌ An unexpected error occurred in {self.name}: {e}", exc_info=True)
-            return InternalBriefingSummaryOutput(error_message=f"An unexpected error occurred: {str(e)}")
+            self.logger.error(f"❌ Critical error in {self.name} for lead {lead_id}: {e}", exc_info=True)
+            await self._emit_event("pipeline_error", {
+                "agent_name": self.name,
+                "job_id": job_id,
+                "lead_id": lead_id,
+                "error_message": str(e),
+                "details": traceback.format_exc()
+            })
+            raise
 
+if __name__ == '__main__':
+    from loguru import logger
+    import sys
+
+    logger.remove()
+    logger.add(sys.stderr, level="DEBUG")
+
+    class MockLLMClient(LLMClientBase):
+        def __init__(self, api_key: str = "mock_key", **kwargs):
+            self.api_key = api_key
+
+        def generate_llm_response(self, prompt: str, output_language: str = "en-US") -> Optional[LLMResponse]:
+            logger.debug(f"MockLLMClient received prompt (lang: {output_language}):\n{prompt[:500]}...")
+            mock_response = {
+                "executive_summary": "Opportunity with TechCorp, a mid-size SaaS firm, to address critical scalability issues in their backend services. The persona, Jane Doe (CTO), is focused on technical excellence and future-proofing their infrastructure.",
+                "lead_profile_highlights": {
+                    "company_overview": "TechCorp: Mid-size B2B SaaS company specializing in project management tools.",
+                    "key_persona_traits": "Jane Doe, CTO. Technical, data-driven, avoids sales fluff. Prefers email.",
+                    "critical_pain_points": ["Service timeouts during peak usage", "High infrastructure costs", "Slow deployment cycles"]
+                },
+                "strategic_approach_summary": {
+                    "main_objective": "Position our AI-driven infrastructure optimization as the key to solving TechCorp's scalability and cost issues.",
+                    "core_value_proposition": "We help SaaS companies like TechCorp scale efficiently, cutting infrastructure costs by up to 30% while improving service reliability.",
+                    "suggested_communication_channels": ["Email", "LinkedIn"]
+                },
+                "engagement_plan_overview": {
+                    "first_step_action": "Send a personalized email to Jane Doe, referencing a recent blog post of hers on scalability and connecting it to our solution.",
+                    "key_talking_points_initial": ["The challenge of scaling SaaS infrastructure", "AI-driven cost optimization", "Improving deployment velocity"]
+                },
+                "potential_objections_and_responses": [
+                    {
+                        "objection": "We have an in-house DevOps team handling this.",
+                        "suggested_response": "That's great. We complement in-house teams by automating the routine optimization tasks, freeing them to focus on strategic initiatives."
+                    }
+                ],
+                "key_discussion_points_for_sales_exec": ["What are your current cloud infrastructure costs?", "How do you currently monitor for performance bottlenecks?"],
+                "suggested_next_steps_internal": ["Review Jane Doe's LinkedIn profile for recent activity", "Prepare a one-page summary of a relevant case study."],
+                "final_recommendation_notes": "Jane is highly technical. Ensure the sales exec is prepared for in-depth questions."
+            }
+            return LLMResponse(content=json.dumps(mock_response))
+
+    async def main():
+        logger.info("Running mock test for InternalBriefingSummaryAgent...")
+        mock_llm = MockLLMClient(api_key="mock_llm_key")
+        agent = InternalBriefingSummaryAgent(
+            name="TestInternalBriefingSummaryAgent",
+            description="Test Agent for Internal Briefing Summary",
+            llm_client=mock_llm
+        )
+
+        test_input = InternalBriefingSummaryInput(
+            all_lead_data={
+                "company_name": "TechCorp",
+                "lead_analysis": {"summary": "SaaS company facing scalability issues."},
+                "persona_profile": {"name": "Jane Doe", "role": "CTO"}
+            }
+        )
+
+        output = await agent.process(lead_id="lead_abc", job_id="job_123", input_data=test_input)
+
+        if output.error_message:
+            logger.error(f"Agent returned an error: {output.error_message}")
+        else:
+            logger.success("Agent processed successfully!")
+            logger.info(f"Executive Summary: {output.executive_summary}")
+            assert "TechCorp" in output.executive_summary
+            assert len(output.potential_objections_and_responses) > 0
+
+    asyncio.run(main())

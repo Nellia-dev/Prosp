@@ -93,93 +93,28 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
             await self.event_queue.put(event)
 
     @abstractmethod
-    async def process(self, input_data: TInput) -> TOutput:
+    async def process(self, lead_id: str, job_id: str, input_data: TInput) -> TOutput:
         """
         Process the input data and return the output.
         
         This is the main method that each agent must implement.
         
         Args:
-            input_data: The input data for this agent
+            lead_id: The ID of the lead being processed.
+            job_id: The ID of the job processing the lead.
+            input_data: The input data for this agent.
             
         Returns:
             The processed output data
         """
         pass
 
-    async def process_async(self, input_data: TInput) -> TOutput:
-        """
-        Asynchronous version of the process method.
-        Default implementation calls the synchronous version.
-        Agents that need true async processing should override this.
-        """
-        return self.process(input_data)
-
     def execute(self, input_data: TInput, **kwargs) -> TOutput:
         """
-        Execute the agent with error handling and metrics tracking.
-        
-        Args:
-            input_data: The input data for this agent
-            
-        Returns:
-            The processed output data
-            
-        Raises:
-            Exception: If processing fails after error handling
+        Synchronous execution is deprecated. Use execute_async instead.
         """
-        metrics = AgentMetrics(start_time=datetime.now())
-        
-        try:
-            logger.info(f"[{self.name}] Starting processing")
-            logger.debug(f"[{self.name}] Input type: {type(input_data).__name__}")
-            
-            # Validate input
-            if not isinstance(input_data, BaseModel):
-                raise ValueError(f"Input must be a Pydantic model, got {type(input_data)}")
-            
-            # Process the data
-            output = self.process(input_data, **kwargs)
-            
-            # Validate output
-            if not isinstance(output, BaseModel):
-                raise ValueError(f"Output must be a Pydantic model, got {type(output)}")
-            
-            # Update metrics
-            metrics.end_time = datetime.now()
-            metrics.processing_time_seconds = (metrics.end_time - metrics.start_time).total_seconds()
-            metrics.success = True
-            
-            if self.llm_client:
-                metrics.llm_usage = self.llm_client.get_usage_stats()
-            
-            logger.info(
-                f"[{self.name}] Processing completed successfully in "
-                f"{metrics.processing_time_seconds:.2f} seconds"
-            )
-            
-            return output
-            
-        except ValidationError as e:
-            error_msg = f"Validation error: {e}"
-            logger.error(f"[{self.name}] {error_msg}")
-            metrics.success = False
-            metrics.error_message = error_msg
-            raise
-            
-        except Exception as e:
-            error_msg = f"Processing error: {str(e)}\n{traceback.format_exc()}"
-            logger.error(f"[{self.name}] {error_msg}")
-            metrics.success = False
-            metrics.error_message = str(e)
-            raise
-            
-        finally:
-            if not metrics.end_time:
-                metrics.end_time = datetime.now()
-                metrics.processing_time_seconds = (metrics.end_time - metrics.start_time).total_seconds()
-            
-            self.metrics.append(metrics)
+        self.logger.error("Synchronous `execute` method is deprecated and not supported for async agents.")
+        raise NotImplementedError("This agent is asynchronous. Please use the `execute_async` method.")
 
     async def execute_async(self, input_data: TInput, **kwargs) -> TOutput:
         """
@@ -187,15 +122,21 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
         """
         metrics = AgentMetrics(start_time=datetime.now())
         
+        lead_id = kwargs.get("lead_id")
+        job_id = kwargs.get("job_id")
+
         try:
-            logger.info(f"[{self.name}] Starting async processing")
-            logger.debug(f"[{self.name}] Input type: {type(input_data).__name__}")
+            self.logger.info(f"[{self.name}] Starting async processing for lead: {lead_id}, job: {job_id}")
+            self.logger.debug(f"[{self.name}] Input type: {type(input_data).__name__}")
 
             if not isinstance(input_data, BaseModel):
                 raise ValueError(f"Input must be a Pydantic model, got {type(input_data)}")
 
+            if not lead_id or not job_id:
+                raise ValueError("`lead_id` and `job_id` are required arguments for execute_async.")
+
             # Await the async process method
-            output = await self.process_async(input_data, **kwargs)
+            output = await self.process(lead_id=lead_id, job_id=job_id, input_data=input_data)
 
             if not isinstance(output, BaseModel):
                 raise ValueError(f"Output must be a Pydantic model, got {type(output)}")
@@ -207,7 +148,7 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
             if self.llm_client:
                 metrics.llm_usage = self.llm_client.get_usage_stats()
 
-            logger.info(
+            self.logger.info(
                 f"[{self.name}] Async processing completed successfully in "
                 f"{metrics.processing_time_seconds:.2f} seconds"
             )
@@ -216,14 +157,14 @@ class BaseAgent(ABC, Generic[TInput, TOutput]):
 
         except ValidationError as e:
             error_msg = f"Validation error during async execution: {e}"
-            logger.error(f"[{self.name}] {error_msg}")
+            self.logger.error(f"[{self.name}] {error_msg}")
             metrics.success = False
             metrics.error_message = error_msg
             raise
 
         except Exception as e:
             error_msg = f"Async processing error: {str(e)}\n{traceback.format_exc()}"
-            logger.error(f"[{self.name}] {error_msg}")
+            self.logger.error(f"[{self.name}] {error_msg}")
             metrics.success = False
             metrics.error_message = str(e)
             raise

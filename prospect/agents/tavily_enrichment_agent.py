@@ -2,6 +2,8 @@ import os
 import json
 import requests
 import asyncio
+import time
+import traceback
 from typing import Optional, List, Dict, Any
 
 from loguru import logger
@@ -104,141 +106,175 @@ class TavilyEnrichmentAgent(BaseAgent[TavilyEnrichmentInput, TavilyEnrichmentOut
         summary = llm_response.content
         return summary
 
-    async def process(self, lead_id: str, input_data: TavilyEnrichmentInput) -> TavilyEnrichmentOutput:
+    async def process(self, lead_id: str, job_id: str, input_data: TavilyEnrichmentInput) -> TavilyEnrichmentOutput:
         """The main asynchronous processing method for the agent."""
-        await self._emit_event("agent_start", {"agent_name": self.name, "lead_id": lead_id})
+        start_time = time.time()
+        await self._emit_event("agent_start", {
+            "agent_name": self.name,
+            "job_id": job_id,
+            "lead_id": lead_id,
+            "agent_description": self.description,
+            "input_query": input_data.model_dump_json(indent=2)
+        })
         logger.info(f"🔍 Starting Tavily enrichment for {input_data.company_name} (Lead ID: {lead_id})")
 
-        if not self.tavily_client:
-            output = TavilyEnrichmentOutput(
-                tavily_api_called=False,
-                enrichment_summary=input_data.initial_extracted_text,
-                error_message="Tavily client not initialized.",
+        try:
+            if not self.tavily_client:
+                output = TavilyEnrichmentOutput(
+                    tavily_api_called=False,
+                    enrichment_summary=input_data.initial_extracted_text,
+                    error_message="Tavily client not initialized.",
+                )
+                duration = time.time() - start_time
+                await self._emit_event("agent_end", {
+                    "agent_name": self.name,
+                    "job_id": job_id,
+                    "lead_id": lead_id,
+                    "duration": duration,
+                    "output": output.model_dump()
+                })
+                return output
+
+            search_queries = await self._generate_search_queries(
+                input_data.company_name, input_data.initial_extracted_text, input_data.product_service_description
             )
-            await self._emit_event("agent_end", {"agent_name": self.name, "lead_id": lead_id, "response": output.model_dump()})
+
+            if not search_queries:
+                output = TavilyEnrichmentOutput(
+                    tavily_api_called=False,
+                    enrichment_summary=input_data.initial_extracted_text,
+                    error_message="Could not generate search queries.",
+                )
+                duration = time.time() - start_time
+                await self._emit_event("agent_end", {
+                    "agent_name": self.name,
+                    "job_id": job_id,
+                    "lead_id": lead_id,
+                    "duration": duration,
+                    "output": output.model_dump()
+                })
+                return output
+
+            # Run searches in parallel
+            search_tasks = [self._call_tavily_api(query) for query in search_queries]
+            search_results_lists = await asyncio.gather(*search_tasks)
+            all_results = [item for sublist in search_results_lists for item in sublist]  # Flatten the list of lists
+
+            if not all_results:
+                summary = "No new information found from web search."
+            else:
+                summary = await self._summarize_results(all_results, input_data.company_name)
+
+            final_summary = f"{input_data.initial_extracted_text}\n\n**Enrichment Data:**\n{summary}"
+
+            output = TavilyEnrichmentOutput(
+                enrichment_summary=final_summary,
+                tavily_api_called=True,
+            )
+
+            logger.info(f"✅ Finished Tavily enrichment for {input_data.company_name} (Lead ID: {lead_id})")
+            duration = time.time() - start_time
+            await self._emit_event("agent_end", {
+                "agent_name": self.name,
+                "job_id": job_id,
+                "lead_id": lead_id,
+                "duration": duration,
+                "output": output.model_dump()
+            })
             return output
 
-        search_queries = await self._generate_search_queries(
-            input_data.company_name, input_data.initial_extracted_text, input_data.product_service_description
-        )
+        except Exception as e:
+            duration = time.time() - start_time
+            self.logger.error(f"❌ An unexpected error occurred in {self.name} for {input_data.company_name}: {e}", exc_info=True)
+            await self._emit_event("pipeline_error", {
+                "agent_name": self.name,
+                "job_id": job_id,
+                "lead_id": lead_id,
+                "duration": duration,
+                "error_message": str(e),
+                "details": traceback.format_exc()
+            })
+            raise
 
-        if not search_queries:
-            output = TavilyEnrichmentOutput(
-                tavily_api_called=False,
-                enrichment_summary=input_data.initial_extracted_text,
-                error_message="Could not generate search queries.",
-            )
-            await self._emit_event("agent_end", {"agent_name": self.name, "lead_id": lead_id, "response": output.model_dump()})
-            return output
-
-        # Run searches in parallel
-        search_tasks = [self._call_tavily_api(query) for query in search_queries]
-        search_results_lists = await asyncio.gather(*search_tasks)
-        all_results = [item for sublist in search_results_lists for item in sublist]  # Flatten the list of lists
-
-        if not all_results:
-            summary = "No new information found from web search."
-        else:
-            summary = await self._summarize_results(all_results, input_data.company_name)
-
-        final_summary = f"{input_data.initial_extracted_text}\n\n**Enrichment Data:**\n{summary}"
-
-        output = TavilyEnrichmentOutput(
-            enrichment_summary=final_summary,
-            tavily_api_called=True,
-        )
-
-        logger.info(f"✅ Finished Tavily enrichment for {input_data.company_name} (Lead ID: {lead_id})")
-        await self._emit_event("agent_end", {"agent_name": self.name, "lead_id": lead_id, "response": output.model_dump()})
-        return output
-
-        # except Exception as e:
-        #     self.logger.error(f"❌ An unexpected error occurred in {self.name} for {input_data.company_name}: {e}", exc_info=True)
-        #     error_message = f"An unexpected error occurred: {str(e)}"
-
-        # return TavilyEnrichmentOutput(
-        #     enrichment_summary=input_data.initial_extracted_text,
-        #     tavily_api_called=False,
-        #     key_findings=key_findings,
-        #     tavily_api_called=tavily_api_called,
-        #     error_message=error_message.strip() if error_message else None
-        # )
 
 if __name__ == '__main__':
-    from loguru import logger
     import sys
+    from core_logic.llm_client import MockLLMResponse
+
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")
 
     class MockLLMClient(LLMClientBase):
-        def __init__(self, api_key: str = "mock_key"): # api_key needed for base
-            super().__init__(api_key)
+        def __init__(self, api_key: str = "mock_key"):
+            super().__init__(api_key=api_key)
 
-        def generate_text_response(self, prompt: str) -> Optional[str]:
-            logger.debug(f"MockLLMClient received prompt snippet:\n{prompt[:600]}...")
-            if "consultas de pesquisa" in prompt: # Query generation prompt
-                return json.dumps({
-                    "search_queries": [
-                        "latest news about Test Company Inc.",
-                        "Test Company Inc. products and services overview",
-                        "key contacts or decision makers at Test Company Inc."
-                    ]
-                })
-            elif "Resumo Enriquecido" in prompt or "SCHEMA JSON ESPERADO" in prompt: # Summarization prompt (new)
-                return json.dumps({
-                    "enrichment_summary": "Test Company Inc. is a notable innovator in the testing solutions sector. Recent news includes a partnership with Beta Corp and the launch of their new 'TestMax' product line. They are actively hiring for sales roles, suggesting expansion.",
-                    "key_findings": [
-                        "Partnership with Beta Corp.",
-                        "Launch of 'TestMax' product line.",
-                        "Actively hiring for sales roles (indicates expansion)."
-                    ]
-                })
-            return json.dumps({"enrichment_summary": "Default mock summary.", "key_findings": ["Default finding."]})
+        def generate(self, prompt: str, temperature: float = 0.1) -> MockLLMResponse:
+            logger.debug(f"MockLLMClient received prompt snippet:\n{prompt[:500]}...")
+            if "generate search queries" in prompt:
+                # Return a JSON list of strings for search queries
+                queries = [
+                    "latest news about Test Company Inc.",
+                    "Test Company Inc. products and services overview",
+                    "key contacts or decision makers at Test Company Inc."
+                ]
+                return MockLLMResponse(content=json.dumps(queries))
+            elif "Summarize the following research findings" in prompt:
+                # Return a summary string
+                summary = "Test Company Inc. is a notable innovator in the testing solutions sector. Recent news includes a partnership with Beta Corp and the launch of their new 'TestMax' product line."
+                return MockLLMResponse(content=summary)
+            
+            return MockLLMResponse(content="Default mock summary.")
 
-    tavily_key = os.getenv("TAVILY_API_KEY_TEST") # Use a specific test key if needed, or fallback to main
-    if not tavily_key:
+    async def main():
         tavily_key = os.getenv("TAVILY_API_KEY")
+        if not tavily_key:
+            logger.warning("TAVILY_API_KEY not found. Actual API calls will be skipped.")
 
-    if not tavily_key:
-        logger.warning("TAVILY_API_KEY not found in environment variables. Mock tests requiring actual Tavily calls will be limited.")
-        # Mock _search_with_tavily to prevent actual API calls if key is missing
-        def mock_search_disabled(self, query: str, search_depth: str = "advanced", max_results: int = 5) -> List[dict]:
-            logger.info(f"MOCK SEARCH (DISABLED): Would search for '{query}'")
-            return [{"url": f"http://mock.tavily.com/{query.replace(' ', '-')}", "content": f"Mock content for query: {query}"}]
-        TavilyEnrichmentAgent._search_with_tavily_original = TavilyEnrichmentAgent._search_with_tavily
-        TavilyEnrichmentAgent._search_with_tavily = mock_search_disabled
+        mock_llm = MockLLMClient()
+        event_queue = asyncio.Queue()
+
+        agent = TavilyEnrichmentAgent(
+            name="TestTavilyAgent",
+            description="Test Tavily Agent",
+            llm_client=mock_llm,
+            event_queue=event_queue,
+            user_id="test_user",
+            tavily_api_key=tavily_key
+        )
+
+        test_input = TavilyEnrichmentInput(
+            company_name="Test Company Inc.",
+            initial_extracted_text="Test Company Inc. is a company that does testing.",
+            product_service_description="testing solutions"
+        )
+
+        lead_id = "test_lead_123"
+        job_id = "test_job_456"
+
+        logger.info(f"Running test for TavilyEnrichmentAgent with Lead ID: {lead_id}")
         
-    logger.info("Running mock test for TavilyEnrichmentAgent...")
-    mock_llm = MockLLMClient(api_key="mock_llm_key")
-    agent = TavilyEnrichmentAgent(
-        name="TestTavilyAgent",
-        description="Test Tavily Agent",
-        llm_client=mock_llm,
-        tavily_api_key=tavily_key # Pass key, even if it's None (agent handles it)
-    )
+        # In a real scenario, Tavily client would make a network request.
+        # For this test, it will proceed if the key is present.
+        output = await agent.process(lead_id, job_id, test_input)
 
-    test_input = TavilyEnrichmentInput(
-        company_name="Test Company Inc.",
-        initial_extracted_text="Test Company Inc. is a company that does testing. Their website is testcompany.com."
-    )
+        logger.info(f"\n--- Agent Output ---")
+        logger.info(f"Tavily API Called: {output.tavily_api_called}")
+        logger.info(f"Enrichment Summary:\n{output.enrichment_summary}")
+        if output.error_message:
+            logger.error(f"Error: {output.error_message}")
+        logger.info(f"--------------------\n")
 
-    output = agent.process(test_input)
+        assert output.tavily_api_called == bool(tavily_key)
+        assert "Test Company Inc." in output.enrichment_summary
+        if tavily_key:
+            assert "TestMax" in output.enrichment_summary
 
-    logger.info(f"Tavily API Called: {output.tavily_api_called}")
-    logger.info(f"Enrichment Summary: {output.enrichment_summary}")
-    logger.info(f"Key Findings: {output.key_findings}")
-    if output.error_message:
-        logger.error(f"Error: {output.error_message}")
+        # Check events
+        while not event_queue.empty():
+            event = await event_queue.get()
+            logger.info(f"Event received: {event['event_type']}")
+            assert event['payload']['lead_id'] == lead_id
 
-    assert output.tavily_api_called if tavily_key else not output.tavily_api_called # API called only if key exists
-    assert "Test Company Inc." in output.enrichment_summary
-    if tavily_key: # Only expect key findings if Tavily was actually called and summarization worked
-        assert len(output.key_findings) > 0
-        assert "TestMax" in output.key_findings[1]
+        logger.info("✅ Test for TavilyEnrichmentAgent completed successfully.")
 
-    # Restore original method if mocked
-    if hasattr(TavilyEnrichmentAgent, '_search_with_tavily_original'):
-        TavilyEnrichmentAgent._search_with_tavily = TavilyEnrichmentAgent._search_with_tavily_original
-        del TavilyEnrichmentAgent._search_with_tavily_original
-
-    logger.info("\nMock test for TavilyEnrichmentAgent completed.")
+    asyncio.run(main())

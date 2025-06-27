@@ -400,8 +400,8 @@ class PipelineOrchestrator:
                 extracted_text_content=lead_data.get("description", ""),
                 extraction_status_message="Initial data from ADK1 harvester; full extraction status TBD."
             )
-            validated_lead = self.lead_intake_agent.execute(site_data)
-            analyzed_lead = await self.lead_analysis_agent.execute_async(validated_lead, lead_id=lead_id)
+            validated_lead = await self.lead_intake_agent.execute_async(input_data=site_data, lead_id=lead_id, job_id=self.job_id)
+            analyzed_lead = await self.lead_analysis_agent.execute_async(input_data=validated_lead, lead_id=lead_id, job_id=self.job_id)
 
             # Ponto de integração do RAG
             rag_store = self.job_vector_stores.get(self.job_id)
@@ -907,7 +907,7 @@ class PipelineOrchestrator:
                 enriched_data=external_intelligence_data,
                 product_service_offered=self.product_service_context
             )
-            summary_output = await self.lead_analysis_generation_agent.execute_async(input_data)
+            summary_output = await self.lead_analysis_generation_agent.execute_async(input_data=input_data, lead_id=lead_id, job_id=self.job_id)
             if summary_output and not summary_output.error_message:
                 logger.success(f"[{self.job_id}] Executive summary generated successfully.")
                 return summary_output.analysis_report
@@ -943,7 +943,7 @@ class PipelineOrchestrator:
                 product_service_offered=self.product_service_context,
                 lead_url=str(analyzed_lead.validated_lead.site_data.url)
             )
-            persona_output = await self.b2b_persona_creation_agent.execute_async(input_data)
+            persona_output = await self.b2b_persona_creation_agent.execute_async(input_data=input_data, lead_id=lead_id, job_id=self.job_id)
 
             if persona_output and not persona_output.error_message:
                 logger.success(f"[{self.job_id}] Narrative persona generated successfully.")

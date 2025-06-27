@@ -1,4 +1,5 @@
 import asyncio
+import time
 import json
 import textwrap
 from typing import List, Optional
@@ -42,11 +43,18 @@ class B2BPersonaCreationAgent(BaseAgent[B2BPersonaCreationInput, B2BPersonaCreat
     ):
         super().__init__(name=name, description=description, llm_client=llm_client, event_queue=event_queue, user_id=user_id)
 
-    async def process(self, lead_id: str, input_data: B2BPersonaCreationInput) -> B2BPersonaCreationOutput:
+    async def process(self, lead_id: str, job_id: str, input_data: B2BPersonaCreationInput) -> B2BPersonaCreationOutput:
         """
         Generates B2B personas based on company information and external intelligence.
         """
-        await self._emit_event("agent_start", {"agent_name": self.name, "lead_id": lead_id})
+        start_time = time.time()
+        input_json = input_data.model_dump_json()
+        await self._emit_event("agent_start", {
+            "agent_name": self.name, 
+            "job_id": job_id,
+            "agent_description": self.description,
+            "input_query": input_json
+        })
         logger.info(f"Starting B2B Persona Creation for {input_data.company_name} (Lead ID: {lead_id})")
 
         system_prompt = textwrap.dedent(
@@ -98,6 +106,12 @@ class B2BPersonaCreationAgent(BaseAgent[B2BPersonaCreationInput, B2BPersonaCreat
         output = B2BPersonaCreationOutput(personas=personas, error_message=error_message)
 
         logger.info(f"Finished B2B Persona Creation for {input_data.company_name} (Lead ID: {lead_id})")
-        await self._emit_event("agent_end", {"agent_name": self.name, "lead_id": lead_id, "response": output.model_dump()})
+        duration = time.time() - start_time
+        await self._emit_event("agent_end", {
+            "agent_name": self.name, 
+            "job_id": job_id,
+            "duration": duration,
+            "output": output.model_dump()
+        })
 
         return output

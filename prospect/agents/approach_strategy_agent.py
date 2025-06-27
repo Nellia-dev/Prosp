@@ -3,7 +3,10 @@ Approach Strategy Agent for Nellia Prospector
 Develops strategic approach plans for leads with personas.
 """
 
-from typing import Optional, Dict, List, Any # Added Dict, List
+from typing import Optional, Dict, List, Any
+import asyncio
+import time
+import traceback
 from datetime import datetime
 from loguru import logger
 import json
@@ -30,39 +33,76 @@ class ApproachStrategyAgent(BaseAgent[LeadWithPersona, LeadWithStrategy]):
         self.product_service_context = product_service_context
         self.output_language = output_language
     
-    def process(self, lead_with_persona: LeadWithPersona) -> LeadWithStrategy:
+    async def process(self, lead_id: str, job_id: str, lead_with_persona: LeadWithPersona) -> LeadWithStrategy:
         """
         Create a strategic approach plan for the lead with persona
         
         Args:
+            lead_id: Unique identifier for the lead.
+            job_id: Unique identifier for the job.
             lead_with_persona: LeadWithPersona with company analysis and persona
             
         Returns:
             LeadWithStrategy with complete approach strategy
         """
-        logger.info(f"Creating strategy for: {lead_with_persona.analyzed_lead.validated_lead.site_data.url}")
-        
-        # Build the prompt for strategy creation
-        prompt = self._build_strategy_prompt(lead_with_persona, self.output_language)
-        
-        # Generate LLM response
-        response_text = self.generate_llm_response(prompt, output_language=self.output_language)
-        
-        # Parse the response
-        strategy_data = self.parse_llm_json_response(response_text, None)
-        
-        # Create ApproachStrategy from parsed data
-        strategy = self._create_approach_strategy(strategy_data)
-        
-        # Build and return result
-        result = LeadWithStrategy(
-            lead_with_persona=lead_with_persona,
-            strategy=strategy,
-            strategy_timestamp=datetime.now()
-        )
-        
-        logger.info(f"Strategy created: {strategy.primary_channel.value if strategy.primary_channel else 'N/A'} approach for {strategy.first_interaction_goal}")
-        return result
+        start_time = time.time()
+        await self._emit_event("agent_start", {
+            "agent_name": self.name,
+            "job_id": job_id,
+            "lead_id": lead_id,
+            "agent_description": self.description,
+            "input_query": lead_with_persona.model_dump_json(indent=2)
+        })
+
+        try:
+            logger.info(f"🧠 Creating strategy for: {lead_with_persona.analyzed_lead.validated_lead.site_data.url}")
+            
+            # Build the prompt for strategy creation
+            prompt = self._build_strategy_prompt(lead_with_persona, self.output_language)
+            
+            # Generate LLM response
+            response_obj = await asyncio.to_thread(
+                self.generate_llm_response,
+                prompt,
+                output_language=self.output_language
+            )
+            response_text = response_obj.content if response_obj else None
+
+            # Parse the response
+            strategy_data = self.parse_llm_json_response(response_text, dict) if response_text else None
+            
+            # Create ApproachStrategy from parsed data
+            strategy = self._create_approach_strategy(strategy_data)
+            
+            # Build and return result
+            result = LeadWithStrategy(
+                lead_with_persona=lead_with_persona,
+                strategy=strategy,
+                strategy_timestamp=datetime.now()
+            )
+            
+            logger.info(f"✅ Strategy created: {strategy.primary_channel.value if strategy.primary_channel else 'N/A'} approach for {strategy.first_interaction_goal}")
+            
+            duration = time.time() - start_time
+            await self._emit_event("agent_end", {
+                "agent_name": self.name,
+                "job_id": job_id,
+                "lead_id": lead_id,
+                "duration": duration,
+                "output": result.model_dump()
+            })
+            return result
+
+        except Exception as e:
+            logger.error(f"[{self.name}] Critical error in process for lead {lead_id}: {e}", exc_info=True)
+            await self._emit_event("pipeline_error", {
+                "agent_name": self.name,
+                "job_id": job_id,
+                "lead_id": lead_id,
+                "error_message": str(e),
+                "details": traceback.format_exc()
+            })
+            raise
     
     def _build_strategy_prompt(self, lead_with_persona: LeadWithPersona, output_language: str) -> str:
         """Build the prompt for strategy creation, now in English and language-aware."""

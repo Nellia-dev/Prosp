@@ -205,8 +205,17 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                 input_json = input_data.model_dump_json()
                 self.logger.debug(f"Agent '{agent_name}' input: {input_json[:1000] + ('...' if len(input_json) > 1000 else '')}")
 
-                await self.event_stream.emit(AgentStartEvent(job_id=job_id, user_id=user_id, agent_name=agent_name, timestamp=datetime.now().isoformat()))
-                events.append(AgentStartEvent(job_id=job_id, user_id=user_id, agent_name=agent_name, timestamp=datetime.now().isoformat()))
+                start_event = AgentStartEvent(
+                    job_id=job_id, 
+                    user_id=user_id, 
+                    agent_name=agent_name, 
+                    timestamp=datetime.now().isoformat(),
+                    event_type="agent_start",
+                    agent_description=agent.description,
+                    input_query=input_json
+                )
+                await self.event_stream.put(start_event)
+                events.append(start_event)
 
                 output = None
                 try:
@@ -222,16 +231,33 @@ class EnhancedLeadProcessor(BaseAgent[AnalyzedLead, ComprehensiveProspectPackage
                     error_message = f"Agent '{agent_name}' failed: {e}"
                     self.logger.error(error_message)
                     self.logger.debug(traceback.format_exc())
-                    await self.event_stream.emit(PipelineErrorEvent(job_id=job_id, user_id=user_id, agent_name=agent_name, error=str(e), timestamp=datetime.now().isoformat()))
-                    events.append(PipelineErrorEvent(job_id=job_id, user_id=user_id, agent_name=agent_name, error=str(e), timestamp=datetime.now().isoformat()))
+                    error_event = PipelineErrorEvent(
+                        job_id=job_id, 
+                        user_id=user_id, 
+                        agent_name=agent_name, 
+                        error=str(e), 
+                        timestamp=datetime.now().isoformat(),
+                        event_type="pipeline_error"
+                    )
+                    await self.event_stream.put(error_event)
+                    events.append(error_event)
                     
                     output = self._create_default_output_for_agent(agent_name, str(e))
 
                 end_time = time.time()
                 duration = end_time - start_time
                 output_dump = output.model_dump() if output else {}
-                await self.event_stream.emit(AgentEndEvent(job_id=job_id, user_id=user_id, agent_name=agent_name, timestamp=datetime.now().isoformat(), duration=duration, output=output_dump))
-                events.append(AgentEndEvent(job_id=job_id, user_id=user_id, agent_name=agent_name, timestamp=datetime.now().isoformat(), duration=duration, output=output_dump))
+                end_event = AgentEndEvent(
+                    job_id=job_id, 
+                    user_id=user_id, 
+                    agent_name=agent_name, 
+                    timestamp=datetime.now().isoformat(), 
+                    duration=duration, 
+                    output=output_dump,
+                    event_type="agent_end"
+                )
+                await self.event_stream.put(end_event)
+                events.append(end_event)
 
                 return output, events  
 

@@ -1,6 +1,9 @@
 import json
 import re
 from typing import Optional, List
+import asyncio
+import time
+import traceback
 
 from pydantic import BaseModel, Field
 
@@ -36,18 +39,21 @@ class ContactExtractionAgent(BaseAgent[ContactExtractionInput, ContactExtraction
         """Truncates text to a maximum number of characters."""
         return text[:max_chars]
 
-    def process(self, input_data: ContactExtractionInput) -> ContactExtractionOutput:
-        error_message = None
-        
-        self.logger.info(f"📧 CONTACT EXTRACTION STARTING for company: {input_data.company_name}")
-        self.logger.info(f"📊 Input data: text_length={len(input_data.extracted_text)}, service_context_for_lead='{input_data.product_service_offered}'")
+    async def process(self, lead_id: str, job_id: str, input_data: ContactExtractionInput) -> ContactExtractionOutput:
+        start_time = time.time()
+        self.logger.info(f"📧 CONTACT EXTRACTION STARTING for lead {lead_id} in job {job_id}")
+        await self._emit_event("agent_start", {
+            "agent_name": self.name,
+            "job_id": job_id,
+            "lead_id": lead_id,
+            "agent_description": self.description,
+            "input_query": input_data.model_dump_json(indent=2)
+        })
 
         try:
-            # Reserve characters for the rest of the prompt
             char_limit_extracted_text = GEMINI_TEXT_INPUT_TRUNCATE_CHARS - 2500
             truncated_text = self._truncate_text(input_data.extracted_text, char_limit_extracted_text)
 
-            # Refined prompt to match the extended ContactExtractionOutput model, now in English
             prompt_template = """
                 You are a Data Mining and OSINT (Open Source Intelligence) Specialist, highly skilled in extracting B2B contact information from web content and unstructured texts.
                 Your task is to analyze the provided content about the company '{company_name}' (which offers '{product_service_offered}') and extract a variety of contact information, as well as suggest search queries to find more details.
@@ -87,46 +93,57 @@ class ContactExtractionAgent(BaseAgent[ContactExtractionInput, ContactExtraction
                     "extraction_summary": "string | null" // Summary of the extraction process or null.
                 }}
             """
-            
+
             final_prompt = prompt_template.format(
                 company_name=input_data.company_name,
                 product_service_offered=input_data.product_service_offered,
                 extracted_text=truncated_text
             ) + f"\n\nImportant: Generate your entire response, including all textual content and string values within any JSON structure, strictly in the following language: {self.output_language}. Do not include any English text unless it is part of the original input data that should be preserved as is."
 
-            llm_response_str = self.generate_llm_response(final_prompt, output_language=self.output_language)
+            response_obj = await asyncio.to_thread(
+                self.generate_llm_response,
+                final_prompt,
+                output_language=self.output_language
+            )
+            llm_response_str = response_obj.content if response_obj else None
 
-            if not llm_response_str: # Already in English
+            if not llm_response_str:
                 self.logger.error(f"❌ LLM call returned no response for contact extraction for {input_data.company_name}")
-                return ContactExtractionOutput(
-                    error_message="LLM call returned no response."
-                )
+                output = ContactExtractionOutput(error_message="LLM call returned no response.")
+                duration = time.time() - start_time
+                await self._emit_event("agent_end", {"agent_name": self.name, "job_id": job_id, "lead_id": lead_id, "duration": duration, "output": output.model_dump()})
+                return output
 
             self.logger.debug(f"✅ LLM returned response for {input_data.company_name}, length: {len(llm_response_str)}")
             parsed_output = self.parse_llm_json_response(llm_response_str, ContactExtractionOutput)
-            
-            if parsed_output.error_message:
-                 self.logger.warning(f"⚠️ {self.name} JSON parsing failed or model validation issue for {input_data.company_name}. Error: {parsed_output.error_message}. Raw response: {llm_response_str[:500]}")
-                 # Even if parsing has an error, it returns a default model with the error message set.
-                 # We don't need a separate regex fallback if the prompt is strong for JSON.
-                 return parsed_output # Return the output object which contains the error message
 
-            self.logger.info(f"✅ Contact extraction successful for {input_data.company_name}: "
-                             f"Emails: {len(parsed_output.emails_found)}, "
-                             f"Phones: {len(parsed_output.phone_numbers_found)}, "
-                             f"LinkedIn: {len(parsed_output.linkedin_profiles_found)}, "
-                             f"Instagram: {len(parsed_output.instagram_profiles_found)}, "
-                             f"Facebook: {len(parsed_output.facebook_profiles_found)}, "
-                             f"Twitter/X: {len(parsed_output.twitter_x_profiles_found)}, "
-                             f"Search Queries: {len(parsed_output.suggested_search_queries)}, "
-                             f"Confidence: {parsed_output.confidence_score}")
+            if parsed_output.error_message:
+                 self.logger.warning(f"⚠️ {self.name} JSON parsing failed for {input_data.company_name}. Error: {parsed_output.error_message}. Raw response: {llm_response_str[:500]}")
+                 duration = time.time() - start_time
+                 await self._emit_event("agent_end", {"agent_name": self.name, "job_id": job_id, "lead_id": lead_id, "duration": duration, "output": parsed_output.model_dump()})
+                 return parsed_output
+
+            self.logger.info(f"✅ Contact extraction successful for {input_data.company_name}")
+            duration = time.time() - start_time
+            await self._emit_event("agent_end", {
+                "agent_name": self.name,
+                "job_id": job_id,
+                "lead_id": lead_id,
+                "duration": duration,
+                "output": parsed_output.model_dump()
+            })
             return parsed_output
 
         except Exception as e:
-            self.logger.error(f"❌ An unexpected error occurred in {self.name} for {input_data.company_name}: {e}", exc_info=True)
-            return ContactExtractionOutput(
-                error_message=f"An unexpected error occurred: {str(e)}"
-            )
+            self.logger.error(f"❌ Critical error in {self.name} for lead {lead_id}: {e}", exc_info=True)
+            await self._emit_event("pipeline_error", {
+                "agent_name": self.name,
+                "job_id": job_id,
+                "lead_id": lead_id,
+                "error_message": str(e),
+                "details": traceback.format_exc()
+            })
+            raise
 
 if __name__ == '__main__':
     from loguru import logger

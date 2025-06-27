@@ -4,6 +4,9 @@ Creates personalized outreach messages based on strategy and persona.
 """
 
 from typing import Optional, List, Dict, Any
+import asyncio
+import time
+import traceback
 from datetime import datetime
 from loguru import logger
 import json
@@ -30,45 +33,81 @@ class MessageCraftingAgent(BaseAgent[LeadWithStrategy, FinalProspectPackage]):
         )
         self.output_language = output_language
     
-    def process(self, lead_with_strategy: LeadWithStrategy) -> FinalProspectPackage:
+    async def process(self, lead_id: str, job_id: str, lead_with_strategy: LeadWithStrategy) -> FinalProspectPackage:
         """
         Create personalized outreach message for the lead with strategy
         
         Args:
+            lead_id: Unique identifier for the lead
+            job_id: Unique identifier for the job
             lead_with_strategy: LeadWithStrategy with complete approach plan
             
         Returns:
             FinalProspectPackage with ready-to-send message
         """
-        lead_url = str(lead_with_strategy.lead_with_persona.analyzed_lead.validated_lead.site_data.url)
-        logger.info(f"✍️ MESSAGE CRAFTING AGENT STARTING for: {lead_url}")
-        
-        # Build the prompt for message creation
-        prompt = self._build_message_prompt(lead_with_strategy, self.output_language)
-        
-        # Generate LLM response
-        llm_response_obj = self.generate_llm_response(prompt, output_language=self.output_language)
+        start_time = time.time()
+        await self._emit_event("agent_start", {
+            "agent_name": self.name,
+            "job_id": job_id,
+            "lead_id": lead_id,
+            "agent_description": self.description,
+            "input_query": lead_with_strategy.model_dump_json(indent=2)
+        })
 
-        llm_response_str = llm_response_obj.content if llm_response_obj else None
+        try:
+            lead_url = str(lead_with_strategy.lead_with_persona.analyzed_lead.validated_lead.site_data.url)
+            logger.info(f"✍️ MESSAGE CRAFTING AGENT STARTING for: {lead_url}")
+            
+            # Build the prompt for message creation
+            prompt = self._build_message_prompt(lead_with_strategy, self.output_language)
+            
+            # Generate LLM response
+            llm_response_obj = await asyncio.to_thread(
+                self.generate_llm_response,
+                prompt,
+                output_language=self.output_language
+            )
 
-        # Parse the response
-        message_data_dict = self.parse_llm_json_response(llm_response_str, dict) if llm_response_str else None
-        
-        # Create PersonalizedMessage from parsed data
-        # Pass the determined primary_channel to _create_personalized_message
-        message = self._create_personalized_message(message_data_dict, lead_with_strategy.strategy.primary_channel)
-        
-        # Build final result
-        result = FinalProspectPackage(
-            lead_with_strategy=lead_with_strategy,
-            personalized_message=message,
-            processing_complete_timestamp=datetime.now(),
-            lead_id=self._generate_lead_id(lead_url),
-            confidence_score=self._calculate_confidence_score(lead_with_strategy, message) # Pass message for score calc
-        )
-        
-        logger.info(f"✅ Message created for {lead_url}: Channel: {message.channel.value if message.channel else 'N/A'}, CTA: {message.call_to_action[:50]}...")
-        return result
+            llm_response_str = llm_response_obj.content if llm_response_obj else None
+
+            # Parse the response
+            message_data_dict = self.parse_llm_json_response(llm_response_str, dict) if llm_response_str else None
+            
+            # Create PersonalizedMessage from parsed data
+            # Pass the determined primary_channel to _create_personalized_message
+            message = self._create_personalized_message(message_data_dict, lead_with_strategy.strategy.primary_channel)
+            
+            # Build final result
+            result = FinalProspectPackage(
+                lead_with_strategy=lead_with_strategy,
+                personalized_message=message,
+                processing_complete_timestamp=datetime.now(),
+                lead_id=self._generate_lead_id(lead_url),
+                confidence_score=self._calculate_confidence_score(lead_with_strategy, message) # Pass message for score calc
+            )
+            
+            logger.info(f"✅ Message created for {lead_url}: Channel: {message.channel.value if message.channel else 'N/A'}, CTA: {message.call_to_action[:50]}...")
+            
+            duration = time.time() - start_time
+            await self._emit_event("agent_end", {
+                "agent_name": self.name,
+                "job_id": job_id,
+                "lead_id": lead_id,
+                "duration": duration,
+                "output": result.model_dump()
+            })
+            return result
+            
+        except Exception as e:
+            logger.error(f"[{self.name}] Critical error in process for lead {lead_id}: {e}", exc_info=True)
+            await self._emit_event("pipeline_error", {
+                "agent_name": self.name,
+                "job_id": job_id,
+                "lead_id": lead_id,
+                "error_message": str(e),
+                "details": traceback.format_exc()
+            })
+            raise
     
     def _build_message_prompt(self, lead_with_strategy: LeadWithStrategy, output_language: str) -> str:
         """Build the prompt for message creation, now in English and language-aware."""

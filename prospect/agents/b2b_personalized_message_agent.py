@@ -1,4 +1,5 @@
 import asyncio
+import time
 import json
 import re
 import textwrap
@@ -58,8 +59,15 @@ class B2BPersonalizedMessageAgent(BaseAgent[B2BPersonalizedMessageInput, B2BPers
             return "Instagram DM", contact_details.instagram_profiles_found[0]
         return "N/A", None
 
-    async def process(self, lead_id: str, input_data: B2BPersonalizedMessageInput) -> B2BPersonalizedMessageOutput:
-        await self._emit_event("agent_start", {"agent_name": self.name, "lead_id": lead_id})
+    async def process(self, lead_id: str, job_id: str, input_data: B2BPersonalizedMessageInput) -> B2BPersonalizedMessageOutput:
+        start_time = time.time()
+        input_json = input_data.model_dump_json()
+        await self._emit_event("agent_start", {
+            "agent_name": self.name,
+            "job_id": job_id,
+            "agent_description": self.description,
+            "input_query": input_json
+        })
         logger.info(f"Starting message generation for {input_data.company_name} (Lead ID: {lead_id})")
 
         determined_channel, contact_target = self._determine_channel_and_contact(input_data.contact_details)
@@ -68,7 +76,13 @@ class B2BPersonalizedMessageAgent(BaseAgent[B2BPersonalizedMessageInput, B2BPers
         if determined_channel == "N/A":
             logger.warning(f"No contact channel found for {input_data.company_name} (Lead ID: {lead_id}).")
             output = B2BPersonalizedMessageOutput(error_message="No suitable contact channel found.")
-            await self._emit_event("agent_end", {"agent_name": self.name, "lead_id": lead_id, "response": output.model_dump()})
+            duration = time.time() - start_time
+            await self._emit_event("agent_end", {
+                "agent_name": self.name,
+                "job_id": job_id,
+                "duration": duration,
+                "output": output.model_dump()
+            })
             return output
 
         response_text = ""
@@ -140,6 +154,12 @@ class B2BPersonalizedMessageAgent(BaseAgent[B2BPersonalizedMessageInput, B2BPers
                 error_message=error_message
             )
         
-        await self._emit_event("agent_end", {"agent_name": self.name, "lead_id": lead_id, "response": output.model_dump()})
+        duration = time.time() - start_time
+        await self._emit_event("agent_end", {
+            "agent_name": self.name,
+            "job_id": job_id,
+            "duration": duration,
+            "output": output.model_dump()
+        })
         return output
 

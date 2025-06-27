@@ -1,4 +1,7 @@
 from typing import Optional, List
+import asyncio
+import time
+import traceback
 from pydantic import BaseModel, Field
 import json # Ensure json is imported
 
@@ -33,15 +36,22 @@ class CompetitorIdentificationAgent(BaseAgent[CompetitorIdentificationInput, Com
         """Truncates text to a maximum number of characters."""
         return text[:max_chars]
 
-    def process(self, input_data: CompetitorIdentificationInput) -> CompetitorIdentificationOutput:
-        error_message = None
+    async def process(self, lead_id: str, job_id: str, input_data: CompetitorIdentificationInput) -> CompetitorIdentificationOutput:
+        start_time = time.time()
+        self.logger.info(f"⚡️ Identifying competitors for lead {lead_id} in job {job_id}")
+        await self._emit_event("agent_start", {
+            "agent_name": self.name,
+            "job_id": job_id,
+            "lead_id": lead_id,
+            "agent_description": self.description,
+            "input_query": input_data.model_dump_json(indent=2)
+        })
 
         try:
-            # Reserve space for other prompt parts
             text_truncate_limit = GEMINI_TEXT_INPUT_TRUNCATE_CHARS - (
                 len(input_data.product_service_offered) +
                 len(input_data.known_competitors_list_str) +
-                2000 # Approx length of fixed prompt parts
+                2000
             )
             truncated_text = self._truncate_text(input_data.initial_extracted_text, text_truncate_limit)
 
@@ -49,7 +59,6 @@ class CompetitorIdentificationAgent(BaseAgent[CompetitorIdentificationInput, Com
             if input_data.known_competitors_list_str and input_data.known_competitors_list_str.strip():
                 known_competitors_prompt_segment = f"KNOWN COMPETITORS LIST (of our company, for contextual reference only):\n\"{input_data.known_competitors_list_str}\""
 
-            # Refined prompt, now in English
             prompt_template = """
                 You are a Senior Competitive Intelligence Analyst. Your task is to identify the competitors (direct and indirect) of THE ANALYZED COMPANY, based on its website content and the description of its products/services.
                 The focus is exclusively on the competitors of THE ANALYZED COMPANY, not the competitors of the company using this tool.
@@ -87,28 +96,60 @@ class CompetitorIdentificationAgent(BaseAgent[CompetitorIdentificationInput, Com
                     "other_notes": "string | null - General observations about THE ANALYZED COMPANY's competitive landscape (e.g., 'Market seems fragmented with many niche players', 'Intense price competition', 'Text did not provide enough data for deep competitive analysis'). If none, use null."
                 }}
             """
-            
+
             final_prompt = prompt_template.format(
                 initial_extracted_text=truncated_text,
                 product_service_offered_by_lead=input_data.product_service_offered,
                 known_competitors_prompt_segment=known_competitors_prompt_segment
             ) + f"\n\nImportant: Generate your entire response, including all textual content and string values within any JSON structure, strictly in the following language: {self.output_language}. Do not include any English text unless it is part of the original input data that should be preserved as is."
 
-            llm_response_str = self.generate_llm_response(final_prompt, output_language=self.output_language)
+            response_obj = await asyncio.to_thread(
+                self.generate_llm_response,
+                final_prompt,
+                output_language=self.output_language
+            )
+            llm_response_str = response_obj.content if response_obj else None
 
-            if not llm_response_str: # Already in English
-                return CompetitorIdentificationOutput(error_message="LLM call returned no response.")
+            if not llm_response_str:
+                output = CompetitorIdentificationOutput(error_message="LLM call returned no response.")
+                duration = time.time() - start_time
+                await self._emit_event("agent_end", {
+                    "agent_name": self.name, "job_id": job_id, "lead_id": lead_id,
+                    "duration": duration, "output": output.model_dump()
+                })
+                return output
 
             parsed_output = self.parse_llm_json_response(llm_response_str, CompetitorIdentificationOutput)
-            
-            if parsed_output.error_message:
-                 self.logger.warning(f"{self.name} JSON parsing failed or model validation issue. Error: {parsed_output.error_message}. Raw response: {llm_response_str[:500]}")
 
+            if parsed_output.error_message:
+                self.logger.warning(f"{self.name} JSON parsing failed or model validation issue. Error: {parsed_output.error_message}. Raw response: {llm_response_str[:500]}")
+                duration = time.time() - start_time
+                await self._emit_event("agent_end", {
+                    "agent_name": self.name, "job_id": job_id, "lead_id": lead_id,
+                    "duration": duration, "output": parsed_output.model_dump()
+                })
+                return parsed_output
+
+            duration = time.time() - start_time
+            await self._emit_event("agent_end", {
+                "agent_name": self.name,
+                "job_id": job_id,
+                "lead_id": lead_id,
+                "duration": duration,
+                "output": parsed_output.model_dump()
+            })
             return parsed_output
-        
+
         except Exception as e:
-            self.logger.error(f"An unexpected error occurred in {self.name}: {e}", exc_info=True)
-            return CompetitorIdentificationOutput(error_message=f"An unexpected error occurred: {str(e)}")
+            self.logger.error(f"[{self.name}] Critical error in process for lead {lead_id}: {e}", exc_info=True)
+            await self._emit_event("pipeline_error", {
+                "agent_name": self.name,
+                "job_id": job_id,
+                "lead_id": lead_id,
+                "error_message": str(e),
+                "details": traceback.format_exc()
+            })
+            raise
 
 if __name__ == '__main__':
     from loguru import logger # Ensure logger is available
